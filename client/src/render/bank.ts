@@ -18,6 +18,8 @@ export class BankView {
   private beam: THREE.Group;
   private beamMat: THREE.ShaderMaterial;
   private pulse = 0;
+  private shaftMat: THREE.MeshBasicMaterial;
+  private glowMat: THREE.SpriteMaterial;
   private world: World;
   pos = new THREE.Vector3();
 
@@ -57,7 +59,8 @@ export class BankView {
     this.group.add(this.inner);
 
     // inner glow
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#7ff3ff', transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    this.glowMat = new THREE.SpriteMaterial({ map: glowTex, color: '#7ff3ff', transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const glow = new THREE.Sprite(this.glowMat);
     glow.scale.setScalar(4);
     glow.position.set(0, HOVER, BACK);
     this.group.add(glow);
@@ -77,7 +80,7 @@ export class BankView {
     // soft light cone linking the floating bank to its pad (no geometry over the heroes' bodies)
     const shaft = new THREE.Mesh(
       new THREE.CylinderGeometry(0.9, R - 0.1, HOVER - 1.1, 32, 1, true),
-      new THREE.MeshBasicMaterial({ color: '#7ff3ff', transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false }),
+      (this.shaftMat = new THREE.MeshBasicMaterial({ color: '#7ff3ff', transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false })),
     );
     shaft.position.set(0, (HOVER - 1.1) / 2, BACK / 2);
     shaft.rotation.x = Math.atan2(-BACK / 2, HOVER - 1.1) * -1;
@@ -115,8 +118,12 @@ export class BankView {
     this.beam.visible = true;
   }
 
-  update(dt: number, time: number) {
+  update(dt: number, time: number, cam?: THREE.Vector3) {
     const b = this.world.bank;
+    // a close (third-person) camera inside the light cone would wash the screen out: fade it
+    const near = cam ? Math.min(1, Math.max(0, (Math.hypot(cam.x - b.x, cam.z - b.z) - 3) / 6)) : 1;
+    this.shaftMat.opacity = 0.07 * near;
+    this.glowMat.opacity = 0.2 + 0.35 * near;
     this.group.position.set(b.x, 0, b.z);
     this.pos.set(b.x, HOVER, b.z + BACK);
     this.pulse = Math.max(0, this.pulse - dt * 2.5);

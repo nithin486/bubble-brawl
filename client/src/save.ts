@@ -7,7 +7,7 @@ export interface Profile {
   xp: number;
   map: string;
   name: string;
-  camera: 'far' | 'close' | 'action';
+  camera: 'third' | 'far' | 'close' | 'action';
   unlocked: HeroId[];
   hero: HeroId;
   firstSeen: string;
@@ -21,7 +21,7 @@ const KEY = 'bb_profile_v1';
 
 export function loadProfile(): Profile {
   const today = new Date().toISOString().slice(0, 10);
-  const base: Profile = { matches: 0, coins: 0, xp: 0, map: 'city', name: '', camera: 'close', unlocked: ['bones'], hero: 'bones', firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto' };
+  const base: Profile = { matches: 0, coins: 0, xp: 0, map: 'city', name: '', camera: 'third', unlocked: ['bones'], hero: 'bones', firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto' };
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) return { ...base, ...JSON.parse(raw) };

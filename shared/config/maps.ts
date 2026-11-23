@@ -30,6 +30,8 @@ export interface MapDef {
   /** Where the jackpot fountain erupts from. */
   jackpot: { x: number; z: number; name: string };
   obstacles: Obstacle[];
+  /** Bigger maps get more coins and power-ups (1 = the original island size). */
+  coinScale?: number;
   /** Live map event. */
   event?: 'traffic' | 'bell';
 }
@@ -49,51 +51,74 @@ function long(out: Obstacle[], kind: string, x: number, z: number, rot: number, 
   }
 }
 
-// ------------------------------------------------------------------ City Streets
+// ------------------------------------------------------------------ helpers
+
+/** Stable pseudo-random 0..1 from integers (layouts are the same every match). */
+const hash = (a: number, b: number, c = 0) => {
+  const h = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453;
+  return h - Math.floor(h);
+};
+
+// ------------------------------------------------------------------ City Streets (7×7 blocks)
 
 function city(): MapDef {
   const S = 4.8; // tile edge: KayKit city tiles (2 units) at ×2.4
+  const N = 3; // tiles from the centre to the edge
   const o: Obstacle[] = [];
   const P = (kind: string, x: number, z: number, r: number, rot = 0) => o.push({ kind, x, z, r, rot });
-  // the coin hydrant in the middle of the crossroads
   P('hydrant_gold', 0, 0, 0.45);
-  // parked cars along the four streets (two circles each)
-  long(o, 'car_taxi', 2 * S, 1.25, Math.PI / 2, 2.3, 0.55);
-  long(o, 'car_police', -2 * S, -1.25, -Math.PI / 2, 2.3, 0.55);
-  long(o, 'car_sedan', 1.25, -2 * S, Math.PI, 2.3, 0.55);
-  long(o, 'car_stationwagon', -1.25, 2 * S, 0, 2.3, 0.55);
-  // street furniture around the plazas
+  const cars = ['car_taxi', 'car_police', 'car_sedan', 'car_stationwagon'];
+  // parked cars on the outer road tiles, alternating sides
+  let ci = 0;
+  for (const along of [2, 3])
+    for (const sgn of [1, -1]) {
+      const lane = (along + (sgn > 0 ? 0 : 1)) % 2 ? 1.25 : -1.25;
+      long(o, cars[ci++ % 4], sgn * along * S, lane, sgn > 0 ? Math.PI / 2 : -Math.PI / 2, 2.3, 0.55); // x-road
+      long(o, cars[ci++ % 4], -lane, sgn * along * S, sgn > 0 ? 0 : Math.PI, 2.3, 0.55); // z-road
+    }
+  // traffic lights at the crossroads, streetlights along the streets
   for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-    P('streetlight', sx * (S * 0.5 + 0.35), sz * (S * 0.5 + 0.35), 0.25, Math.atan2(-sx, -sz));
-    P('dumpster', sx * (S * 2 - 0.4), sz * (S + 0.2), 0.62, sx > 0 ? Math.PI / 2 : -Math.PI / 2);
-    P('bench', sx * (S + 1.6), sz * (S * 2 - 1.2), 0.45, 0);
-    P('boxes', sx * (S * 1.55), sz * (S * 1.55), 0.6, sx * sz);
-    P('bush', sx * (S * 2 - 1.4), sz * (S * 2 - 1.4), 0.45);
+    P('trafficlight', sx * (S * 0.5 + 0.35), sz * (S * 0.5 + 0.35), 0.22, Math.atan2(-sx, -sz));
+    for (const along of [2, 3]) {
+      P('streetlight', sx * (S * 0.5 + 0.4), sz * along * S - sz * 1.2, 0.25, sx > 0 ? -Math.PI / 2 : Math.PI / 2);
+      P('streetlight', sx * along * S - sx * 1.2, sz * (S * 0.5 + 0.4), 0.25, sz > 0 ? Math.PI : 0);
+    }
   }
-  P('trafficlight', S * 0.5 + 0.35, -(S * 1.5), 0.22, 0);
-  P('trafficlight', -(S * 0.5 + 0.35), S * 1.5, 0.22, Math.PI);
-  P('hydrant', S * 1.5, S * 0.5 + 0.4, 0.3);
-  P('hydrant', -S * 1.5, -(S * 0.5 + 0.4), 0.3);
+  // plazas: each 3×3 quadrant gets a mix of street furniture (bank and pad tiles stay clear)
+  const furniture = ['boxes', 'dumpster', 'bench', 'bush', 'boxes', 'bush', 'hydrant', 'dumpster'];
+  for (const sx of [1, -1])
+    for (const sz of [1, -1])
+      for (let a = 1; a <= N; a++)
+        for (let b = 1; b <= N; b++) {
+          if ((a === 1 && b === 1) || (a === 2 && b === 2) || (a === N && b === N)) continue;
+          const h = hash(a * sx, b * sz);
+          const kind = furniture[Math.floor(h * furniture.length)];
+          const r = kind === 'dumpster' ? 0.62 : kind === 'boxes' ? 0.6 : kind === 'bench' ? 0.45 : kind === 'hydrant' ? 0.3 : 0.45;
+          const ox = (hash(a, b, 1) - 0.5) * 2.2;
+          const oz = (hash(a, b, 2) - 0.5) * 2.2;
+          P(kind, sx * a * S + ox, sz * b * S + oz, r, Math.floor(h * 4) * (Math.PI / 2));
+          if (hash(a, b, 3) > 0.55) {
+            const k2 = furniture[Math.floor(hash(b, a, 4) * furniture.length)];
+            P(k2, sx * a * S - ox * 0.9, sz * b * S - oz * 0.9, k2 === 'dumpster' ? 0.62 : 0.45, hash(a, b, 5) * 6);
+          }
+        }
+  const spots = [
+    [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 2], [-2, -2], [2, -2], [-2, 2],
+  ].map(([i, j]) => ({ x: i * S, z: j * S }));
   return {
     id: 'city',
     name: 'City Streets',
-    blurb: 'A floating city block at sunset. Hide behind cars!',
-    shape: { grid: 'square', tileSize: S, radius: 15.2 },
-    keepRadius: 7.2,
-    bankSpots: [
-      { x: S, z: S },
-      { x: -S, z: S },
-      { x: S, z: -S },
-      { x: -S, z: -S },
-      { x: S, z: 0 },
-      { x: -S, z: 0 },
-    ],
-    starts: ring(6, 3.6, Math.PI / 6),
+    blurb: 'A big floating city block at sunset. Hide behind cars!',
+    shape: { grid: 'square', tileSize: S, radius: 22.2 },
+    keepRadius: 14,
+    coinScale: 2,
+    bankSpots: spots,
+    starts: ring(6, 4, Math.PI / 6),
     pads: [
-      { x: 2 * S, z: 2 * S },
-      { x: -2 * S, z: 2 * S },
-      { x: 2 * S, z: -2 * S },
-      { x: -2 * S, z: -2 * S },
+      { x: N * S, z: N * S },
+      { x: -N * S, z: N * S },
+      { x: N * S, z: -N * S },
+      { x: -N * S, z: -N * S },
     ],
     jackpot: { x: 0, z: 0, name: 'Coin Hydrant' },
     obstacles: o,
@@ -101,77 +126,59 @@ function city(): MapDef {
   };
 }
 
-// ------------------------------------------------------------------ Spooky Graveyard
+// ------------------------------------------------------------------ Spooky Graveyard (bigger)
 
 function spooky(): MapDef {
   const S = 4; // KayKit Halloween floor tiles are 4 m
+  const R = 19;
   const o: Obstacle[] = [];
   const P = (kind: string, x: number, z: number, r: number, rot = 0) => o.push({ kind, x, z, r, rot });
   P('shrine', 0, 0, 0.65);
-  // graves in little rows
-  for (const [x, z, rot] of [
-    [-S * 1.5, S * 2, 0],
-    [-S * 0.5, S * 2.1, 0.1],
-    [S * 1.5, -S * 2, Math.PI],
-    [S * 0.5, -S * 2.1, Math.PI + 0.1],
-  ] as const)
-    long(o, 'grave', x, z, rot + Math.PI / 2, 2, 0.55);
-  for (const [x, z, rot] of [
-    [S * 2, S * 1.4, -1.6],
-    [S * 2.2, S * 0.6, -1.4],
-    [-S * 2, -S * 1.4, 1.6],
-    [-S * 2.2, -S * 0.6, 1.5],
-    [S * 1.1, S * 2.6, 0.2],
-    [-S * 1.1, -S * 2.6, 3.3],
-  ] as const)
-    P('gravestone', x, z, 0.5, rot);
-  long(o, 'coffin', -S * 2.2, S * 1.3, 0.5, 2.6, 0.62);
-  long(o, 'coffin', S * 2.2, -S * 1.3, 0.5 + Math.PI, 2.6, 0.62);
-  for (const [x, z] of [
-    [S * 1.2, S * 1.2],
-    [-S * 1.2, -S * 1.2],
-    [S * 2.6, 0],
-    [-S * 2.6, 0],
-  ])
-    P('pumpkin', x * 0.92, z * 0.92, 0.65, Math.atan2(-x, -z));
-  for (const [x, z] of [
-    [-S * 1.3, S * 1.25],
-    [S * 1.3, -S * 1.25],
-  ])
-    P('deadtree', x, z, 0.45, x);
-  for (const [x, z] of [
-    [S * 0.55, S * 0.55],
-    [-S * 0.55, -S * 0.55],
-    [S * 0.55, -S * 0.55],
-    [-S * 0.55, S * 0.55],
-  ])
-    P('lantern', x * 1.6, z * 1.6, 0.25);
-  // stepping-stone paths (decoration)
-  for (let i = -3; i <= 3; i++) {
+  // stepping-stone paths along the two axes (decoration)
+  for (let i = -6; i <= 6; i++) {
     if (i === 0) continue;
-    P('path', i * S * 0.5 * 1.35, 0, 0, i);
-    P('path', 0, i * S * 0.5 * 1.35, 0, i * 2);
+    P('path', i * 2.7, 0, 0, i);
+    P('path', 0, i * 2.7, 0, i * 2);
   }
+  // lanterns light the paths
+  for (const d of [5.5, 11.5])
+    for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) P('lantern', sx * d + sz * 1.6, sz * d - sx * 1.6, 0.25);
+  // every quadrant tile gets one "scene": a grave row, gravestones, a coffin, pumpkins or a dead tree
+  const bankish = new Set(['1,1', '2,2', '3,3']);
+  for (const sx of [1, -1])
+    for (const sz of [1, -1])
+      for (let a = 1; a <= 4; a++)
+        for (let b = 1; b <= 4; b++) {
+          const x = sx * a * S;
+          const z = sz * b * S;
+          if (Math.hypot(x, z) > R - 3 || bankish.has(`${a},${b}`)) continue;
+          const h = hash(a * sx, b * sz, 7);
+          const rot = Math.floor(hash(a, b, 8) * 4) * (Math.PI / 2);
+          if (h < 0.28) long(o, 'grave', x, z, rot + Math.PI / 2, 2, 0.55);
+          else if (h < 0.5) {
+            P('gravestone', x - 0.9, z, 0.5, rot);
+            P('gravestone', x + 0.9, z + 0.4, 0.5, rot + 0.2);
+          } else if (h < 0.62) long(o, 'coffin', x, z, rot + 0.4, 2.6, 0.62);
+          else if (h < 0.8) P('pumpkin', x, z, 0.65, rot);
+          else P('deadtree', x, z, 0.45, rot);
+        }
+  const spots = [
+    [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 2], [-2, -2], [2, -2], [-2, 2],
+  ].map(([i, j]) => ({ x: i * S, z: j * S }));
   return {
     id: 'spooky',
     name: 'Spooky Graveyard',
-    blurb: 'Pumpkins, graves and a ghost shrine under a big moon.',
-    shape: { grid: 'square', tileSize: S, radius: 14.4 },
-    keepRadius: 8.6,
-    bankSpots: [
-      { x: S, z: S },
-      { x: -S, z: S },
-      { x: S, z: -S },
-      { x: -S, z: -S },
-      { x: 2 * S, z: 0 },
-      { x: -2 * S, z: 0 },
-    ],
-    starts: ring(6, 3.4, Math.PI / 6),
+    blurb: 'A big moonlit graveyard full of pumpkins and graves.',
+    shape: { grid: 'square', tileSize: S, radius: R },
+    keepRadius: 12,
+    coinScale: 1.7,
+    bankSpots: spots,
+    starts: ring(6, 4, Math.PI / 6),
     pads: [
-      { x: 2 * S, z: 2 * S },
-      { x: -2 * S, z: 2 * S },
-      { x: 2 * S, z: -2 * S },
-      { x: -2 * S, z: -2 * S },
+      { x: 3 * S, z: 3 * S },
+      { x: -3 * S, z: 3 * S },
+      { x: 3 * S, z: -3 * S },
+      { x: -3 * S, z: -3 * S },
     ],
     jackpot: { x: 0, z: 0, name: 'Ghost Shrine' },
     obstacles: o,

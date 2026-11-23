@@ -11,6 +11,10 @@ export class InputManager {
   onFirstInput: (() => void) | null = null;
   onAnyKey: ((code: string) => void) | null = null;
   enabled = true;
+  /** Camera turn accumulated since the last read (radians). */
+  private yaw = 0;
+  /** When true (third-person view) a click locks the mouse so it can turn the camera. */
+  mouseLook = false;
 
   constructor(canvas: HTMLElement) {
     window.addEventListener('keydown', (e) => {
@@ -25,7 +29,15 @@ export class InputManager {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement === canvas) this.yaw -= e.movementX * 0.0032;
+    });
     canvas.addEventListener('mousedown', (e) => {
+      if (this.mouseLook && document.pointerLockElement !== canvas && this.enabled) {
+        // first click only captures the mouse (no accidental grab)
+        canvas.requestPointerLock?.();
+        return;
+      }
       if (e.button === 0) this.press('grab');
       if (e.button === 2) this.press('skill');
       this.first();
@@ -52,6 +64,24 @@ export class InputManager {
     this.stick.y = y;
     this.stick.active = active;
     if (active && (x || y)) this.first();
+  }
+
+  /** Drag-to-look from the touch look zone. */
+  look(dx: number) {
+    this.yaw -= dx * 0.0085;
+  }
+
+  /** Camera turn since last call (mouse, touch drag, Q/E). */
+  takeYaw(dt: number) {
+    let y = this.yaw;
+    this.yaw = 0;
+    if (this.keys.has('KeyQ')) y += dt * 2.6;
+    if (this.keys.has('KeyE')) y -= dt * 2.6;
+    return y;
+  }
+
+  releaseMouse() {
+    if (document.pointerLockElement) document.exitPointerLock?.();
   }
 
   /** Read and clear. */

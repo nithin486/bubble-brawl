@@ -61,7 +61,7 @@ const CITY_S = 2.4; // KayKit city scale (tile 2 → 4.8 m)
 const city: Theme = {
   id: 'city',
   sky: { top: '#2a3c9e', mid: '#9a6fd6', horizon: '#ffb48a', bottom: '#ff9fb4' },
-  fog: { color: '#f0a8bc', near: 60, far: 170 },
+  fog: { color: '#f0a8bc', near: 70, far: 200 },
   hemi: { sky: '#ffe2cf', ground: '#5c4a7c', intensity: 1.15 },
   sun: { color: '#ffd2a1', intensity: 2.5, pos: [-16, 22, 10] },
   exposure: 1.02,
@@ -70,10 +70,10 @@ const city: Theme = {
   bubbles: true,
   under: { piece: 'hex_grass_bottom', sx: 2.75, sy: 1.5, sz: 2.4, y: -0.24 },
   core: [
-    { y: -1.9, r: 12, s: 0.95 },
-    { y: -3.3, r: 9, s: 0.9 },
-    { y: -4.7, r: 6, s: 0.85 },
-    { y: -6.1, r: 3.5, s: 0.8 },
+    { y: -1.9, r: 19.2, s: 0.95 },
+    { y: -3.3, r: 14.4, s: 0.9 },
+    { y: -4.7, r: 9.6, s: 0.85 },
+    { y: -6.1, r: 5.6, s: 0.8 },
   ],
   tiles(world) {
     return world.arena.tiles.map((t) => {
@@ -143,15 +143,15 @@ const city: Theme = {
   backdrop(ctx) {
     const S = 4.8;
     const blocks = [
-      { a: -0.2, d: 38, y: -1, w: 3, h: 2 },
-      { a: 0.75, d: 36, y: -5, w: 2, h: 2 },
-      { a: -1.0, d: 34, y: -4, w: 2, h: 2 },
-      { a: 1.6, d: 34, y: -9, w: 2, h: 1 },
-      { a: -1.75, d: 32, y: -8, w: 1, h: 2 },
-      { a: 0.25, d: 58, y: 8, w: 2, h: 2 },
-      { a: -0.7, d: 60, y: 5, w: 2, h: 1 },
-      { a: 2.7, d: 36, y: -6, w: 2, h: 2 },
-      { a: -2.6, d: 37, y: -7, w: 2, h: 2 },
+      { a: -0.2, d: 51, y: -1, w: 3, h: 2 },
+      { a: 0.75, d: 49, y: -5, w: 2, h: 2 },
+      { a: -1.0, d: 47, y: -4, w: 2, h: 2 },
+      { a: 1.6, d: 47, y: -9, w: 2, h: 1 },
+      { a: -1.75, d: 45, y: -8, w: 1, h: 2 },
+      { a: 0.25, d: 71, y: 8, w: 2, h: 2 },
+      { a: -0.7, d: 73, y: 5, w: 2, h: 1 },
+      { a: 2.7, d: 49, y: -6, w: 2, h: 2 },
+      { a: -2.6, d: 50, y: -7, w: 2, h: 2 },
     ];
     const buildings = ['building_A', 'building_B', 'building_C', 'building_D', 'building_E', 'building_F', 'building_G', 'building_H'];
     for (const b of blocks) {
@@ -174,7 +174,7 @@ const city: Theme = {
 const spooky: Theme = {
   id: 'spooky',
   sky: { top: '#0b0628', mid: '#2c1560', horizon: '#ff8a5c', bottom: '#3a1a6a' },
-  fog: { color: '#3d2470', near: 45, far: 130 },
+  fog: { color: '#3d2470', near: 50, far: 160 },
   hemi: { sky: '#8f7dff', ground: '#2a1840', intensity: 1.25 },
   sun: { color: '#c9d4ff', intensity: 1.9, pos: [12, 24, 8] },
   exposure: 1.12,
@@ -183,10 +183,10 @@ const spooky: Theme = {
   bubbles: true,
   under: { piece: 'hex_grass_bottom', sx: 2.3, sy: 1.3, sz: 2.0, y: -0.5 },
   core: [
-    { y: -2.0, r: 11.5, s: 0.95 },
-    { y: -3.3, r: 8.5, s: 0.9 },
-    { y: -4.6, r: 5.5, s: 0.85 },
-    { y: -5.9, r: 3, s: 0.8 },
+    { y: -2.0, r: 18.4, s: 0.95 },
+    { y: -3.3, r: 13.6, s: 0.9 },
+    { y: -4.6, r: 8.8, s: 0.85 },
+    { y: -5.9, r: 4.8, s: 0.8 },
   ],
   tiles(world) {
     return world.arena.tiles.map((t) => {
@@ -239,14 +239,14 @@ const spooky: Theme = {
   backdrop(ctx) {
     const S = 4;
     const isles = [
-      { a: -0.1, d: 40, y: -2, w: 3, h: 2, main: 'crypt', ms: 1 },
-      { a: 0.8, d: 34, y: -6, w: 2, h: 2, main: 'arch_gate', ms: 1.2 },
-      { a: -0.9, d: 34, y: -5, w: 2, h: 2, main: 'tree_pine_orange_large', ms: 1 },
-      { a: 1.7, d: 33, y: -9, w: 2, h: 1, main: 'tree_dead_large_decorated', ms: 1 },
-      { a: -1.8, d: 32, y: -8, w: 1, h: 2, main: 'tree_pine_yellow_large', ms: 1 },
-      { a: 2.7, d: 36, y: -7, w: 2, h: 2, main: 'tree_pine_orange_medium', ms: 1.2 },
-      { a: -2.6, d: 36, y: -7, w: 2, h: 2, main: 'tree_dead_large', ms: 1.2 },
-      { a: 0.35, d: 58, y: 6, w: 2, h: 1, main: 'tree_pine_orange_large', ms: 1.3 },
+      { a: -0.1, d: 53, y: -2, w: 3, h: 2, main: 'crypt', ms: 1 },
+      { a: 0.8, d: 47, y: -6, w: 2, h: 2, main: 'arch_gate', ms: 1.2 },
+      { a: -0.9, d: 47, y: -5, w: 2, h: 2, main: 'tree_pine_orange_large', ms: 1 },
+      { a: 1.7, d: 46, y: -9, w: 2, h: 1, main: 'tree_dead_large_decorated', ms: 1 },
+      { a: -1.8, d: 45, y: -8, w: 1, h: 2, main: 'tree_pine_yellow_large', ms: 1 },
+      { a: 2.7, d: 49, y: -7, w: 2, h: 2, main: 'tree_pine_orange_medium', ms: 1.2 },
+      { a: -2.6, d: 49, y: -7, w: 2, h: 2, main: 'tree_dead_large', ms: 1.2 },
+      { a: 0.35, d: 71, y: 6, w: 2, h: 1, main: 'tree_pine_orange_large', ms: 1.3 },
     ];
     const extras = ['gravestone', 'grave_B', 'pumpkin_orange', 'tree_pine_orange_small', 'tree_dead_small', 'fence', 'post_lantern', 'pumpkin_yellow_jackolantern'];
     for (const b of isles) {

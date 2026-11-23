@@ -393,3 +393,12 @@ body { font-family: var(--body); color: #fff; user-select: none; -webkit-user-se
 .banner.small { top: 36.5%; }
 .skillname { top: 21%; }
 @media (max-height: 520px) { .banner { top: 27%; } .banner.small { top: 35%; } .skillname { top: 19%; } }
+
+/* third-person: right half of the screen turns the camera (buttons stay on top) */
+.look-zone { position: absolute; right: 0; top: 70px; bottom: 0; width: 50%; pointer-events: auto; touch-action: none; z-index: 0; }
+.controls { z-index: 2; }
+.desktop .look-zone { display: none; }
+.cam-hint { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); font-weight: 900; font-size: 14px; padding: 5px 12px; border-radius: 10px; background: #1d0d52b0; pointer-events: none; white-space: nowrap; }
+
+/* third-person view: you are the hero in front of the camera, no need for a YOU label */
+body.cam-third .tag.me .tn{display:none}

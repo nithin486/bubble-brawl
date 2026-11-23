@@ -72,6 +72,8 @@ export class ArenaView {
   private props: PropView[] = [];
   /** Set each frame: props between the camera and this point fade out so you never lose your hero. */
   focus: THREE.Vector3 | null = null;
+  /** Set by the game: does a prop at (x, z) hide the focus point from the camera? */
+  blocks: ((x: number, z: number, fx: number, fz: number) => boolean) | null = null;
   private falls = new Map<number, FallAnim>();
   private clouds: THREE.Object3D[] = [];
   private spinners: THREE.Object3D[] = [];
@@ -280,7 +282,7 @@ export class ArenaView {
     });
     const box = new THREE.Box3().setFromObject(g);
     const tile = this.world.arena.tileAt(o.x, o.z);
-    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), mats, fade: 1, tall: box.max.y > 1.4 });
+    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), mats, fade: 1, tall: box.max.y > 0.7 });
     this.group.add(g);
   }
 
@@ -471,7 +473,7 @@ export class ArenaView {
         if (t.state === 1) p.obj.position.x += Math.sin(time * 47) * 0.06;
       }
       const fc = this.focus;
-      const hide = p.tall && !!fc && p.base.z > fc.z - 0.3 && p.base.z < fc.z + 5 && Math.abs(p.base.x - fc.x) < 2.6;
+      const hide = p.tall && !!fc && !!this.blocks && this.blocks(p.base.x, p.base.z, fc.x, fc.z);
       const target = hide ? 0.3 : 1;
       if (Math.abs(p.fade - target) > 0.01) {
         p.fade += (target - p.fade) * Math.min(1, dt * 8);

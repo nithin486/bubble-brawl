@@ -175,7 +175,27 @@ export class Hud {
     stick.append(knob);
     zone.append(stick);
     const ghost = el('div', 'stick-ghost stroke', 'MOVE');
-    this.root.append(ghost, zone);
+    // right half: drag to turn the camera (third-person view)
+    const lookZone = el('div', 'look-zone');
+    let lid = -1;
+    let lx = 0;
+    lookZone.addEventListener('pointerdown', (e) => {
+      if (lid !== -1) return;
+      lid = e.pointerId;
+      lx = e.clientX;
+      lookZone.setPointerCapture(e.pointerId);
+    });
+    lookZone.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== lid) return;
+      input.look(e.clientX - lx);
+      lx = e.clientX;
+    });
+    const lend = (e: PointerEvent) => {
+      if (e.pointerId === lid) lid = -1;
+    };
+    lookZone.addEventListener('pointerup', lend);
+    lookZone.addEventListener('pointercancel', lend);
+    this.root.append(lookZone, ghost, zone);
     let sid = -1;
     let ox = 0;
     let oy = 0;
@@ -493,6 +513,13 @@ export class Hud {
     while (this.feedEl.children.length > 4) this.feedEl.lastElementChild!.remove();
     setTimeout(() => f.classList.add('out'), 3200);
     setTimeout(() => f.remove(), 3700);
+  }
+
+  /** A short hint near the middle of the screen. */
+  tip(text: string, seconds: number) {
+    const t = el('div', 'cam-hint', text);
+    this.root.append(t);
+    setTimeout(() => t.remove(), seconds * 1000);
   }
 
   /** Full-screen colour flash for big moments. */
