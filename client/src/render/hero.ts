@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addOutlines } from './style.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { HeroAsset } from './assets.ts';
 import type { Player } from '../../../shared/sim/types.ts';
@@ -17,6 +18,7 @@ export class HeroView {
   private currentName = '';
   private oneShotUntil = 0;
   private mats: THREE.MeshStandardMaterial[] = [];
+  private ink: THREE.Material[] = [];
   private flashT = 0;
   private squash = 0;
   private yaw = 0;
@@ -55,6 +57,7 @@ export class HeroView {
         this.mats.push(mat);
       }
     });
+    this.ink = addOutlines(this.model, 0.022 / asset.scale);
     this.root.add(this.model);
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const [name, clip] of asset.clips) {
@@ -237,6 +240,7 @@ export class HeroView {
     // see-through when standing between the camera and you
     if (Math.abs(this.fade - this.fadeTarget) > 0.01) {
       this.fade += (this.fadeTarget - this.fade) * Math.min(1, dt * 10);
+      for (const m of this.ink) m.visible = this.fade > 0.95;
       for (const m of this.mats) {
         m.transparent = this.fade < 0.99;
         m.opacity = this.fade;

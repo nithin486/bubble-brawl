@@ -102,6 +102,19 @@ function city(): MapDef {
             P(k2, sx * a * S - ox * 0.9, sz * b * S - oz * 0.9, k2 === 'dumpster' ? 0.62 : 0.45, hash(a, b, 5) * 6);
           }
         }
+  // ground detail (r = 0: looks only, no collision)
+  for (let i = -4; i <= 4; i++) {
+    if (i === 0) continue;
+    if (Math.abs(i) % 2) P('manhole', i * S + 0.6, i % 3 ? 0.9 : -0.9, 0);
+    else P('manhole', i % 4 ? 0.9 : -0.9, i * S - 0.6, 0);
+  }
+  for (let k = 0; k < 34; k++) {
+    const x = (hash(k, 1, 9) - 0.5) * 38;
+    const z = (hash(k, 2, 9) - 0.5) * 38;
+    if (Math.hypot(x, z) > 19.5) continue;
+    const kind = ['puddle', 'crack', 'litter', 'tufts', 'tufts', 'crack'][k % 6];
+    P(kind, x, z, 0, hash(k, 3, 9) * 6.28);
+  }
   const spots = [
     [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 2], [-2, -2], [2, -2], [-2, 2],
   ].map(([i, j]) => ({ x: i * S, z: j * S }));
@@ -162,6 +175,14 @@ function spooky(): MapDef {
           else if (h < 0.8) P('pumpkin', x, z, 0.65, rot);
           else P('deadtree', x, z, 0.45, rot);
         }
+  // ground detail (r = 0: looks only, no collision)
+  for (let k = 0; k < 40; k++) {
+    const x = (hash(k, 5, 11) - 0.5) * 34;
+    const z = (hash(k, 6, 11) - 0.5) * 34;
+    if (Math.hypot(x, z) > R - 2 || Math.hypot(x, z) < 2) continue;
+    const kind = ['tufts', 'bones', 'tufts', 'candles', 'smallpumpkin', 'tufts', 'bones'][k % 7];
+    P(kind, x, z, 0, Math.floor(hash(k, 7, 11) * 3) + hash(k, 8, 11));
+  }
   const spots = [
     [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 2], [-2, -2], [2, -2], [-2, 2],
   ].map(([i, j]) => ({ x: i * S, z: j * S }));

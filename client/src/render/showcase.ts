@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addOutlines } from './style.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Assets } from './assets.ts';
 import type { HeroId } from '../../../shared/config/heroes.ts';
@@ -68,6 +69,7 @@ export class Showcase {
           if (m.isMesh) m.material = (m.material as THREE.Material).clone();
         });
       }
+      addOutlines(model, 0.02 / a.scale);
       root.add(model);
       const mixer = new THREE.AnimationMixer(model);
       const clip = a.clips.get(s.anim) ?? a.clips.get('Idle');

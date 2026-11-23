@@ -23,6 +23,9 @@ export interface ThemeCtx {
 }
 
 /** Builds one obstacle's visual into group g (centred on the obstacle). */
+/** Flat ground detail (and grass tufts) drawn by the arena view. */
+export type Decal = (kind: 'manhole' | 'puddle' | 'crack' | 'leaves' | 'grass' | 'moss', size: number, x?: number, z?: number, rot?: number) => void;
+
 export type PropAdd = (name: string, s: number, x?: number, z?: number, ry?: number, y?: number) => THREE.Object3D | null;
 
 export interface TilePlan {
@@ -48,7 +51,7 @@ export interface Theme {
   /** Permanent stepped core layers under the middle. */
   core: { y: number; r: number; s: number }[];
   tiles(world: World): TilePlan[];
-  prop(o: Obstacle, add: PropAdd, glow: (color: string, size: number, x: number, y: number, z: number) => void): void;
+  prop(o: Obstacle, add: PropAdd, glow: (color: string, size: number, x: number, y: number, z: number) => void, decal: Decal): void;
   backdrop(ctx: ThemeCtx): void;
   /** Extra things on the arena (not obstacles), e.g. the well plaza. */
   extras?(ctx: ThemeCtx): void;
@@ -90,7 +93,7 @@ const city: Theme = {
       return { piece, rot, scale: [CITY_S, CITY_S, CITY_S], y: -0.24 };
     });
   },
-  prop(o, add, glow) {
+  prop(o, add, glow, decal) {
     const S = CITY_S;
     switch (o.kind) {
       case 'hydrant_gold': {
@@ -137,6 +140,25 @@ const city: Theme = {
         break;
       case 'hydrant':
         add('firehydrant', 3.4);
+        break;
+      // ---- ground detail (no collision)
+      case 'manhole':
+        decal('manhole', 1.3);
+        break;
+      case 'puddle':
+        decal('puddle', 2.2, 0, 0, o.rot);
+        break;
+      case 'crack':
+        decal('crack', 2.4, 0, 0, o.rot);
+        break;
+      case 'litter':
+        add(o.rot > 3 ? 'trash_A' : 'trash_B', S * 0.9, 0, 0, o.rot);
+        decal('leaves', 1.6, 0.4, 0.3, o.rot);
+        break;
+      case 'tufts':
+        decal('grass', 0.9, 0, 0, o.rot);
+        decal('grass', 0.7, 0.55, 0.3, o.rot + 1);
+        decal('grass', 0.6, -0.4, 0.45, o.rot + 2);
         break;
     }
   },
@@ -203,7 +225,7 @@ const spooky: Theme = {
       };
     });
   },
-  prop(o, add, glow) {
+  prop(o, add, glow, decal) {
     switch (o.kind) {
       case 'shrine':
         add('shrine_candles', 1.25);
@@ -233,6 +255,24 @@ const spooky: Theme = {
         break;
       case 'path':
         add(['path_A', 'path_B', 'path_C', 'path_D'][Math.abs(Math.round(o.rot)) % 4], 0.85, 0, 0, o.rot, 0.02);
+        break;
+      // ---- ground detail (no collision)
+      case 'bones':
+        add(['bone_A', 'skull', 'ribcage'][Math.floor(o.rot) % 3], 0.9, 0, 0, o.rot);
+        decal('moss', 1.8, 0, 0, o.rot);
+        break;
+      case 'candles':
+        add('skull_candle', 0.9, 0, 0, o.rot);
+        add('skull_candle', 0.7, 0.45, 0.3, o.rot + 1);
+        glow('#ffb347', 1.4, 0.2, 0.55, 0.15);
+        break;
+      case 'tufts':
+        decal('grass', 0.8, 0, 0, o.rot);
+        decal('grass', 0.65, 0.5, 0.35, o.rot + 1);
+        decal('moss', 1.6, 0.2, 0.1, o.rot);
+        break;
+      case 'smallpumpkin':
+        add('pumpkin_orange_small', 1, 0, 0, o.rot);
         break;
     }
   },

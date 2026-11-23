@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { HeroId } from '../../../shared/config/heroes.ts';
+import { celify } from './style.ts';
 
 export interface HeroAsset {
   scene: THREE.Group;
@@ -89,6 +90,8 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
     }),
   );
 
+  env.forEach((o) => celify(o));
+
   const heroes = new Map<HeroId, HeroAsset>();
   heroIds.forEach((id, i) => {
     const g = results[i + 1];
@@ -104,6 +107,7 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
         mat.metalness = 0;
       }
     });
+    celify(g.scene);
     // normalise height using the body meshes only (weapons stick out)
     const box = new THREE.Box3();
     g.scene.updateMatrixWorld(true);

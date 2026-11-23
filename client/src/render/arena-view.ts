@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { addOutlines } from './style.ts';
+import { makeDecal } from './decals.ts';
+import type { Decal } from './themes.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
@@ -59,6 +62,7 @@ interface PropView {
   mats: THREE.MeshStandardMaterial[];
   fade: number;
   tall: boolean;
+  ink: THREE.Material[];
 }
 
 /** Renders any map: themed tiles that shake and fall, props that ride their tile, pads, backdrop and ambience. */
@@ -101,7 +105,8 @@ export class ArenaView {
     const meshes = new Map<string, THREE.InstancedMesh>();
     for (const [piece, n] of counts) {
       const { geo, mat } = this.bake(piece);
-      const m = (mat as THREE.MeshStandardMaterial).clone();
+      // ground keeps smooth PBR light (cel bands on big flat tiles look washed out)
+      const m = ((mat.userData.pbr as THREE.Material) ?? mat).clone() as THREE.MeshStandardMaterial;
       m.roughness = 0.9;
       const im = new THREE.InstancedMesh(geo, m, n);
       im.receiveShadow = true;
@@ -272,7 +277,10 @@ export class ArenaView {
       s.position.set(x, y, z);
       g.add(s);
     };
-    this.theme.prop(o as never, add, glow);
+    const decal: Decal = (kind, size, x = 0, z = 0, rot = 0) => {
+      g.add(makeDecal(kind, size, x, z, rot));
+    };
+    this.theme.prop(o as never, add, glow, decal);
     g.position.set(o.x, 0, o.z);
     g.rotation.y = o.rot;
     const mats: THREE.MeshStandardMaterial[] = [];
@@ -288,8 +296,11 @@ export class ArenaView {
       }
     });
     const box = new THREE.Box3().setFromObject(g);
+    // ink outline on solid obstacles: they pop out of the ground and read as "can't walk here"
+    const ink: THREE.Material[] = [];
+    if (o.r > 0) for (const c of [...g.children]) if (!(c as THREE.Sprite).isSprite) ink.push(...addOutlines(c, 0.03 / Math.max(0.3, c.scale.x)));
     const tile = this.world.arena.tileAt(o.x, o.z);
-    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), mats, fade: 1, tall: box.max.y > 0.7 });
+    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), mats, ink, fade: 1, tall: box.max.y > 0.7 });
     this.group.add(g);
   }
 
@@ -484,6 +495,7 @@ export class ArenaView {
       const target = hide ? 0.3 : 1;
       if (Math.abs(p.fade - target) > 0.01) {
         p.fade += (target - p.fade) * Math.min(1, dt * 8);
+        for (const m of p.ink) m.visible = p.fade > 0.95;
         for (const m of p.mats) {
           m.opacity = p.fade;
           m.depthWrite = p.fade > 0.95;

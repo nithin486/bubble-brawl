@@ -3,6 +3,16 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+
+/** Final colour grade: a touch more saturation and contrast, like a cartoon poster. */
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, sat: { value: 1.18 }, con: { value: 1.06 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float sat; uniform float con; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      vec3 g = mix(vec3(l), c.rgb, sat); g = (g - 0.5) * con + 0.5; gl_FragColor = vec4(clamp(g, 0.0, 1.0), c.a); }`,
+};
 
 export type Quality = 'low' | 'medium' | 'high';
 
@@ -130,6 +140,7 @@ export class Stage {
       this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.5, 0.82);
       composer.addPass(this.bloom);
       composer.addPass(new OutputPass());
+      composer.addPass(new ShaderPass(GradeShader));
       this.composer = composer;
     }
     this.resize();
