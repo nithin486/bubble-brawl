@@ -71,7 +71,9 @@ export class IslandView {
   private under: THREE.InstancedMesh;
   private pads: THREE.Group[] = [];
   private padMats: THREE.MeshBasicMaterial[] = [];
-  private props: { obj: THREE.Object3D; tile: number; base: THREE.Vector3 }[] = [];
+  private props: { obj: THREE.Object3D; tile: number; base: THREE.Vector3; mats: THREE.MeshStandardMaterial[]; fade: number }[] = [];
+  /** Set each frame: props between the camera and this point fade out so you never lose your hero. */
+  focus: THREE.Vector3 | null = null;
   private falls = new Map<number, FallAnim>();
   private clouds: THREE.Object3D[] = [];
   private lastStates: number[] = [];
@@ -226,15 +228,20 @@ export class IslandView {
     }
     g.position.set(o.x, 0, o.z);
     g.rotation.y = o.rot;
+    const mats: THREE.MeshStandardMaterial[] = [];
     g.traverse((m) => {
       const mesh = m as THREE.Mesh;
       if (mesh.isMesh) {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+        mat.transparent = true;
+        mesh.material = mat;
+        mats.push(mat);
       }
     });
     const tile = this.world.arena.tileAt(o.x, o.z);
-    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone() });
+    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), mats, fade: 1 });
     this.group.add(g);
   }
 
@@ -427,6 +434,15 @@ export class IslandView {
         p.obj.visible = true;
         p.obj.position.copy(p.base);
         if (t.state === 1) p.obj.position.x += Math.sin(time * 47) * 0.06;
+      }
+      // camera looks toward -z: tall props just "below" the hero on screen hide it
+      const fc = this.focus;
+      const hide = !!fc && p.base.z > fc.z - 0.3 && p.base.z < fc.z + 5 && Math.abs(p.base.x - fc.x) < 2.6;
+      const target = hide ? 0.3 : 1;
+      p.fade += (target - p.fade) * Math.min(1, dt * 8);
+      for (const m of p.mats) {
+        m.opacity = p.fade;
+        m.depthWrite = p.fade > 0.95;
       }
     }
     for (const m of dirty) {

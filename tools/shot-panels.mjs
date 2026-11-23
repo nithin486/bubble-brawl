@@ -17,8 +17,8 @@ await page.evaluate(() => { const w = window.__bb.world; w.round = 5; w.roundTim
 await page.waitForFunction(() => document.querySelector('.big-btn'), null, { timeout: 300000, polling: 500 });
 await page.waitForTimeout(800);
 await page.screenshot({ path: `${out}/panel-results.png` });
-await page.click('.hcard:nth-child(2)');
-await page.click('.big-btn');
+
+await page.click('.big-btn:not(.alt)', { force: true });
 await page.waitForTimeout(3000);
 await page.screenshot({ path: `${out}/rematch.png` });
 console.log('errors:', errs.join('\n') || 'none');

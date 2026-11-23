@@ -6,7 +6,7 @@ import { TUNING } from '../../../shared/config/tuning.ts';
 import { HEROES, type HeroId } from '../../../shared/config/heroes.ts';
 import type { InputManager } from '../input.ts';
 
-const ICONS = {
+export const ICONS = {
   grab: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V3.5a1.5 1.5 0 0 1 3 0V10h.5V4.5a1.5 1.5 0 0 1 3 0V11h.5V7.5a1.5 1.5 0 0 1 3 0V14c0 4.4-3.1 8-7.5 8-3 0-4.8-1.3-6.3-3.6L3.8 14.6a1.5 1.5 0 0 1 2.4-1.8L7 13.8z"/></svg>`,
   dash: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M13 4l8 8-8 8v-5H3V9h10z"/><rect x="1" y="7" width="3" height="2" rx="1" opacity=".6"/><rect x="0" y="15" width="4" height="2" rx="1" opacity=".6"/></svg>`,
   rattleBurst: `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="3" fill="#fff"/><circle cx="12" cy="12" r="7.5" stroke-dasharray="3 3"/><path d="M12 1v2M12 21v2M1 12h2M21 12h2"/></svg>`,
@@ -50,6 +50,7 @@ export class Hud {
   private skillTip = el('div', 'btn-tip stroke', 'Press SKILL!');
   private fpsEl = el('div', 'fps');
   private panel: HTMLElement | null = null;
+  private feedEl = el('div', 'feed');
   private lastCarry = -1;
   private lastBanked = -1;
   private portraits: Map<HeroId, string>;
@@ -69,13 +70,13 @@ export class Hud {
     this.root.append(top, this.board);
     world.players.forEach((p) => {
       const r = el('div', 'row' + (p.id === localId ? ' me' : ''));
-      r.innerHTML = `<div class="face" style="background-image:url(${portraits.get(p.hero)})"></div><div class="nm">${p.name}</div><div class="bk"><i class="coin-ico"></i><span>0</span></div>`;
+      r.innerHTML = `<div class="rk"></div><div class="face" style="background-image:url(${portraits.get(p.hero)});border-color:${PLAYER_COLORS[p.id]}"></div><div class="nm">${p.id === localId ? 'You' : p.name}</div><div class="bk"><i class="coin-ico"></i><span>0</span></div>`;
       this.rows.push(r);
       this.board.append(r);
     });
     const pause = el('button', 'pause-btn tap', 'II');
     pause.addEventListener('click', () => this.onPause?.());
-    this.root.append(pause);
+    this.root.append(pause, this.feedEl);
 
     const mine = el('div', 'mine');
     mine.append(this.carryPill, this.bankPill);
@@ -198,9 +199,15 @@ export class Hud {
     const me = world.players[localId];
     const playing = world.phase === 'playing';
     const remaining = world.phase === 'countdown' ? TUNING.match.roundSeconds : world.remaining;
-    this.timer.textContent = fmt(Math.ceil(remaining));
+    const tt = fmt(Math.ceil(remaining));
+    if (this.timer.dataset.t !== tt) {
+      this.timer.dataset.t = tt;
+      this.timer.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8" fill="#fff"/><path d="M12 9v4l3 2" stroke="#4a2fd0" stroke-width="2.4" fill="none" stroke-linecap="round"/><rect x="9" y="2" width="6" height="3" rx="1.5" fill="#fff"/></svg>${tt}`;
+    }
     this.timer.classList.toggle('final', world.finale && playing);
-    this.roundEl.textContent = `ROUND ${world.round}/${TUNING.match.rounds}`;
+    const dots = Array.from({ length: TUNING.match.rounds }, (_, i) => `<i class="${i + 1 < world.round ? 'done' : i + 1 === world.round ? 'now' : ''}"></i>`).join('');
+    const rh = `<span>ROUND ${world.round}</span>${dots}`;
+    if (this.roundEl.innerHTML !== rh) this.roundEl.innerHTML = rh;
     this.finaleTag.classList.toggle('on', world.finale && playing);
 
     // scoreboard: total banked this match (+ this round), hidden during the finale
@@ -208,6 +215,8 @@ export class Hud {
     order.forEach((p, i) => {
       const r = this.rows[p.id];
       r.style.order = String(i);
+      const rk = r.querySelector('.rk')!;
+      if (rk.textContent !== String(i + 1)) rk.textContent = String(i + 1);
       const v = world.finale && playing && p.id !== localId ? '???' : String(p.bankedTotal + p.bankedRound);
       const span = r.querySelector('.bk span')!;
       if (span.textContent !== v) span.textContent = v;
@@ -321,6 +330,15 @@ export class Hud {
     setTimeout(() => b.remove(), 1300);
   }
 
+  /** Small event line top-right: "Rocket stole 6 from Zara". */
+  feed(html: string) {
+    const f = el('div', 'fd', html);
+    this.feedEl.prepend(f);
+    while (this.feedEl.children.length > 4) this.feedEl.lastElementChild!.remove();
+    setTimeout(() => f.classList.add('out'), 3200);
+    setTimeout(() => f.remove(), 3700);
+  }
+
   countdown(n: number | 'GO!') {
     const c = el('div', 'countdown stroke', String(n));
     this.root.append(c);
@@ -351,7 +369,22 @@ export class Hud {
 
   // ---------------------------------------------------------------- panels
 
+  /** Pin the podium labels under the 3D podiums. */
+  placePodium(points: { x: number; y: number }[]) {
+    const els = this.root.querySelectorAll<HTMLElement>('.pn');
+    els.forEach((e, i) => {
+      const p = points[i];
+      if (!p) return;
+      e.style.left = `${p.x}px`;
+      e.style.top = `${p.y}px`;
+    });
+  }
+
+  /** True behind the landing page: the game HUD stays hidden, only panels show. */
+  attract = false;
+
   closePanel() {
+    if (!this.attract) this.root.classList.remove('menu');
     this.panel?.remove();
     this.panel = null;
   }
@@ -393,16 +426,26 @@ export class Hud {
   showResults(
     world: World,
     localId: number,
-    opts: { unlocked: HeroId | null; heroes: HeroId[]; locked: Record<string, string>; selected: HeroId; coins: number; onRematch: (h: HeroId) => void },
+    opts: {
+      podium: { name: string; place: number }[];
+      unlocked: HeroId | null;
+      coinsWon: number;
+      xpWon: number;
+      level: number;
+      levelUp: boolean;
+      xpFrac: number;
+      trial: HeroId | null;
+      onRematch: () => void;
+      onHome: () => void;
+    },
   ) {
     const p = el('div', 'panel results');
     const ranking = world.ranking();
     const rank = ranking.indexOf(localId) + 1;
-    const title = rank === 1 ? 'YOU WIN!' : rank === 2 ? '2nd place!' : rank === 3 ? '3rd place!' : `${rank}th place`;
-    p.append(el('h1', 'stroke', title));
+    const title = rank === 1 ? 'YOU WIN!' : rank === 2 ? '2nd PLACE!' : rank === 3 ? '3rd PLACE!' : `${rank}th place`;
+    p.append(el('h1', 'stroke' + (rank === 1 ? ' gold' : ''), title));
     p.append(this.standings(world.players, localId, (x) => x.bankedTotal, (x) => `${x.roundsWon} round${x.roundsWon === 1 ? '' : 's'}`));
 
-    // awards
     const by = (f: (x: Player) => number) => [...world.players].sort((a, b) => f(b) - f(a))[0];
     const thief = by((x) => x.stats.stolen);
     const banker = by((x) => x.stats.bestBank);
@@ -410,59 +453,48 @@ export class Hud {
     const aw = el('div', 'awards');
     const nm = (x: Player) => (x.id === localId ? 'You' : x.name);
     if (thief.stats.stolen > 0) aw.append(el('div', 'award', `<b>Top Thief</b><span>${nm(thief)} · ${thief.stats.stolen} stolen</span>`));
-    if (banker.stats.bestBank > 0) aw.append(el('div', 'award', `<b>Big Banker</b><span>${nm(banker)} · ${banker.stats.bestBank} in one go</span>`));
+    if (banker.stats.bestBank > 0) aw.append(el('div', 'award', `<b>Big Banker</b><span>${nm(banker)} · ${banker.stats.bestBank} at once</span>`));
     if (oops.stats.falls > 0) aw.append(el('div', 'award', `<b>Butterfingers</b><span>${nm(oops)} · fell ${oops.stats.falls}×</span>`));
     p.append(aw);
 
-    if (opts.unlocked) p.append(el('h2', 'stroke', `NEW HERO UNLOCKED: ${HEROES[opts.unlocked].name.toUpperCase()}!`));
-    else p.append(el('h2', 'stroke', 'Pick your hero'));
-    let sel = opts.selected;
-    const cards = el('div', 'heroes');
-    for (const id of opts.heroes) {
-      const h = HEROES[id];
-      const locked = opts.locked[id];
-      const c = el('div', 'hcard tap' + (id === sel ? ' sel' : '') + (locked ? ' locked' : ''));
-      c.innerHTML = `<div class="pic" style="background-image:url(${this.portraits.get(id)})"></div><b>${h.name}</b><i>${h.abilityName}</i>${locked ? `<div class="lock">${locked}</div>` : ''}${opts.unlocked === id ? '<div class="new">NEW!</div>' : ''}`;
-      c.title = h.abilityText;
-      if (!locked)
-        c.addEventListener('click', () => {
-          sel = id;
-          cards.querySelectorAll('.hcard').forEach((x) => x.classList.remove('sel'));
-          c.classList.add('sel');
-        });
-      cards.append(c);
-    }
-    p.append(cards);
+    const rw = el('div', 'rewards');
+    rw.innerHTML = `<div class="rw-coins stroke"><i class="coin-ico"></i>+${opts.coinsWon}</div>
+      <div class="rw-xp"><span class="lv">${opts.level}</span><span class="bar"><i style="width:${Math.round(opts.xpFrac * 100)}%"></i></span><b class="stroke">+${opts.xpWon} XP</b></div>`;
+    p.append(rw);
+    if (opts.levelUp) p.append(el('div', 'unlock stroke', `LEVEL UP! You are level ${opts.level}`));
+    if (opts.unlocked) p.append(el('div', 'unlock stroke', `<img src="${this.portraits.get(opts.unlocked)}"> NEW HERO: ${HEROES[opts.unlocked].name.toUpperCase()}!`));
+    else if (opts.trial) p.append(el('div', 'sub', `That was a free trial of ${HEROES[opts.trial].name}. Keep playing to unlock!`));
+
     const row = el('div', 'btn-row');
+    const home = el('button', 'big-btn alt tap', 'HOME');
+    home.addEventListener('click', opts.onHome);
     const re = el('button', 'big-btn tap', 'REMATCH');
-    re.addEventListener('click', () => opts.onRematch(sel));
-    row.append(re);
-    row.append(el('div', 'reward stroke', `<i class="coin-ico"></i> ${opts.coins}`));
+    re.addEventListener('click', opts.onRematch);
+    row.append(home, re);
     p.append(row);
-    this.open(p);
+    const v = this.open(p);
+    v.classList.add('side');
+    // names under the 3D podium (2nd · 1st · 3rd)
+    const names = el('div', 'podium-names');
+    names.innerHTML = opts.podium.map((x) => `<div class="pn p${x.place}"><b class="stroke">${x.place}</b><span>${x.name}</span></div>`).join('');
+    v.prepend(names);
+    this.root.classList.add('menu');
     re.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.code === 'Enter') {
+        window.removeEventListener('keydown', key);
+        opts.onRematch();
+      }
+    };
+    window.addEventListener('keydown', key);
   }
 
   showPause(
-    state: { sound: boolean; shake: boolean; quality: string; hero: HeroId; heroes: HeroId[]; unlocked: HeroId[] },
-    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; hero: (h: HeroId) => void },
+    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean },
+    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void },
   ) {
     const p = el('div', 'panel');
-    p.append(el('h1', 'stroke', 'Paused'));
-    // hero switch: picking one restarts the match with that hero; locked heroes play as a free trial
-    p.append(el('h2', 'stroke', 'Change hero'));
-    const cards = el('div', 'heroes');
-    for (const id of state.heroes) {
-      const h = HEROES[id];
-      const locked = !state.unlocked.includes(id);
-      const c = el('div', 'hcard tap' + (id === state.hero ? ' sel' : ''));
-      c.innerHTML = `<div class="pic" style="background-image:url(${this.portraits.get(id)})"></div><b>${h.name}</b><i>${h.abilityName}</i>${locked ? '<div class="new">TRY</div>' : ''}`;
-      c.title = h.abilityText;
-      if (id !== state.hero) c.addEventListener('click', () => on.hero(id));
-      cards.append(c);
-    }
-    p.append(cards);
-    p.append(el('div', 'sub', 'Picking a hero starts a new match. <span style="opacity:.75">TRY = free trial match until you unlock it.</span>'));
+    p.append(el('h1', 'stroke', state.inMatch ? 'Paused' : 'Settings'));
     const t = (label: string, val: string, onClick: () => void, isOn: boolean) => {
       const r = el('div', 'toggle', `<span>${label}</span>`);
       const b = el('button', isOn ? 'on' : '', val);
@@ -474,11 +506,16 @@ export class Hud {
     t('Screen shake', state.shake ? 'ON' : 'OFF', () => on.toggle('shake'), state.shake);
     t('Graphics', state.quality.toUpperCase(), () => on.quality(), true);
     const row = el('div', 'btn-row');
-    const b = el('button', 'big-btn tap', 'RESUME');
+    if (state.inMatch) {
+      const h = el('button', 'big-btn alt tap', 'QUIT');
+      h.addEventListener('click', on.home);
+      row.append(h);
+    }
+    const b = el('button', 'big-btn tap', state.inMatch ? 'RESUME' : 'DONE');
     b.addEventListener('click', on.resume);
     row.append(b);
     p.append(row);
-    p.append(el('div', 'sub', this.touch ? '' : 'Move: WASD · Dash: Space · Grab: J / click · Skill: K / right-click'));
+    if (state.inMatch) p.append(el('div', 'sub', this.touch ? '' : 'Move: WASD · Dash: Space · Grab: J / click · Skill: K / right-click'));
     this.open(p);
   }
 }

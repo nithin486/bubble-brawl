@@ -17,7 +17,9 @@ import { InputManager } from './input.ts';
 import { Hud, PLAYER_COLORS } from './ui/hud.ts';
 import { Sfx } from './audio.ts';
 import { track } from './analytics.ts';
-import { saveProfile, type Profile } from './save.ts';
+import { saveProfile, levelOf, type Profile } from './save.ts';
+import { Home } from './ui/home.ts';
+import { Showcase } from './render/showcase.ts';
 
 const BOT_NAMES = ['Chintu', 'Golu', 'Mango', 'Rocket', 'Bunty', 'Zara', 'Pixel', 'Tiki', 'Momo', 'Laddoo', 'Noodle', 'Bolt', 'Pappu', 'Rani', 'Jelly'];
 const LOCAL = 0;
@@ -73,6 +75,11 @@ export class Game {
   private autoQuality: boolean;
   private v = new THREE.Vector3();
   private lead = new THREE.Vector3();
+  /** 'home' = landing page with bots playing behind it; 'match' = you are playing. */
+  private mode: 'home' | 'match' = 'home';
+  private home: Home | null = null;
+  private showcase: Showcase;
+  private trial = false;
 
   constructor(stage: Stage, assets: Assets, portraits: Map<HeroId, string>, profile: Profile, sfx: Sfx) {
     this.stage = stage;
@@ -92,37 +99,89 @@ export class Game {
       if (e.code === 'Escape' || e.code === 'KeyP') this.togglePause();
     });
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && this.world?.phase === 'playing') this.setPaused(true);
+      if (document.hidden && this.mode === 'match' && this.world?.phase === 'playing') this.setPaused(true);
     });
     this.rig = new CameraRig(stage.camera);
     this.rig.shakeEnabled = profile.shake;
     this.sfx.muted = !profile.sound;
     this.fx = new Fx(stage.scene, this.glowTex);
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
-    this.startMatch(profile.hero);
+    this.showcase = new Showcase(assets);
+    if (AUTOPLAY || PARAMS.has('play')) {
+      this.mode = 'match';
+      this.startMatch(profile.hero);
+    }
+    else this.goHome();
     requestAnimationFrame(this.frame);
     if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
   }
 
   // ---------------------------------------------------------------- setup
 
-  private startMatch(hero: HeroId) {
+  /** Landing page: bots play an attract-mode match behind the menu. */
+  private goHome() {
+    this.mode = 'home';
+    this.paused = false;
+    this.startMatch(this.profile.hero, true);
+    const lv = levelOf(this.profile.xp);
+    this.home?.destroy();
+    this.home = new Home({
+      coins: this.profile.coins,
+      level: lv.level,
+      xpFrac: lv.frac,
+      hero: this.profile.hero,
+      unlocked: this.profile.unlocked,
+      lockText: (h) => {
+        const u = UNLOCKS.find((x) => x.hero === h);
+        const n = u ? u.afterMatches - this.profile.matches : 0;
+        return `Unlocks after ${n} more match${n === 1 ? '' : 'es'}`;
+      },
+      touch: this.touch,
+    });
+    this.home.onHero = (h, locked) => {
+      this.showcase.set([{ hero: h, anim: locked ? 'Idle' : 'Cheer', locked, color: HEROES[h].color, height: 0.45 }]);
+      this.showcase.screenX = 0;
+      this.showcase.screenY = 0.13;
+      this.sfx.click();
+    };
+    this.home.onHero(this.home.hero, !this.profile.unlocked.includes(this.home.hero));
+    this.home.onSettings = () => this.setPaused(true);
+    this.home.onPlay = (h) => {
+      this.sfx.unlock();
+      this.sfx.click();
+      const trial = !this.profile.unlocked.includes(h);
+      track('play_click', { hero: h, trial });
+      if (!trial) {
+        this.profile.hero = h;
+        saveProfile(this.profile);
+      }
+      this.home?.destroy();
+      this.home = null;
+      this.showcase.clear();
+      this.mode = 'match';
+      this.trial = trial;
+      this.startMatch(h);
+    };
+  }
+
+  private startMatch(hero: HeroId, attract = false) {
     const rng = new Rng((Math.random() * 1e9) | 0);
     const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
     const botHeroes: HeroId[] = HERO_IDS;
-    const setups = [{ name: 'You', hero, isBot: false }];
+    const setups = [{ name: attract ? names[0] : 'You', hero, isBot: attract }];
     const off = rng.int(0, botHeroes.length - 1);
     // spread bots evenly over the roster so every match shows every hero
     for (let i = 1; i < TUNING.match.playersPerMatch; i++) setups.push({ name: names[i], hero: botHeroes[(off + i) % botHeroes.length], isBot: true });
-    this.world = new World(setups, { firstMatch: this.firstMatch });
-    if (this.firstMatch) this.world.phaseT = 0.6; // no countdown wait in the very first round
+    this.world = new World(setups, { firstMatch: this.firstMatch && !attract });
+    if (this.firstMatch || attract) this.world.phaseT = 0.6; // no countdown wait in the very first round
     this.brains = this.world.players.filter((p) => p.isBot).map((p) => new BotBrain(p.id, new Rng(rng.int(1, 1e9)), LOCAL));
-    this.autoBrain = AUTOPLAY ? new BotBrain(LOCAL, new Rng(5), LOCAL) : null;
+    this.autoBrain = AUTOPLAY || attract ? new BotBrain(LOCAL, new Rng(5), LOCAL) : null;
+    this.sfx.muted = attract || !this.profile.sound;
 
     // views
     for (const h of this.heroes) this.stage.scene.remove(h.root);
     this.heroes = this.world.players.map((p) => {
-      const hv = new HeroView(this.assets.heroes.get(p.hero)!, p, p.id === LOCAL, PLAYER_COLORS[p.id], this.glowTex);
+      const hv = new HeroView(this.assets.heroes.get(p.hero)!, p, p.id === LOCAL && !attract, PLAYER_COLORS[p.id], this.glowTex);
       this.stage.scene.add(hv.root);
       return hv;
     });
@@ -135,16 +194,18 @@ export class Game {
     this.hud?.root.remove();
     this.hud = new Hud(this.world, LOCAL, this.portraits, this.touch, this.input);
     this.hud.onPause = () => this.togglePause();
+    this.hud.root.classList.toggle('menu', attract);
+    this.hud.attract = attract;
     this.rig.zoomTarget = 0;
     const me = this.world.players[LOCAL];
     this.rig.snap(this.v.set(me.x, 0, me.z));
-    this.tut = this.firstMatch ? 'move' : 'done';
+    this.tut = this.firstMatch && !attract ? 'move' : 'done';
     this.tutT = 0;
     this.movedDist = 0;
     this.roundStats = { stolen: 0, steals: 0 };
     this.matchStart = performance.now();
-    this.input.enabled = true;
-    track('match_start', { hero, first: this.firstMatch });
+    this.input.enabled = !attract;
+    if (!attract) track('match_start', { hero, first: this.firstMatch, trial: this.trial });
   }
 
   // ---------------------------------------------------------------- loop
@@ -158,6 +219,7 @@ export class Game {
     this.monitorFps(dt);
     if (this.paused) {
       this.stage.render();
+      this.showcase.render(this.stage.renderer);
       return;
     }
 
@@ -190,6 +252,7 @@ export class Game {
     for (const h of this.heroes) {
       if (h.update(dt, this.time, frozen)) this.fx.dust(h.player.x, h.player.z);
     }
+    this.island.focus = this.mode === 'match' ? this.v.set(this.world.players[LOCAL].x, 0, this.world.players[LOCAL].z).clone() : null;
     this.island.update(dt, this.time);
     this.coins.update(this.world, dt, this.time);
     this.bank.update(dt, this.time);
@@ -201,14 +264,27 @@ export class Game {
       focus = this.v.set(w.x, 0, w.z);
     }
     this.lead.set(me.vx, 0, me.vz);
-    this.rig.update(dt, focus, this.lead);
+    if (this.mode === 'home') {
+      // slow orbit over the island while bots play
+      const a = this.time * 0.07;
+      const cam = this.stage.camera;
+      cam.position.set(Math.sin(a) * 23, 15, Math.cos(a) * 23);
+      cam.lookAt(0, -2.5, 0);
+      focus = this.v.set(0, 0, 0);
+      if (this.world.phase === 'matchEnd') this.startMatch(this.profile.hero, true);
+    } else this.rig.update(dt, focus, this.lead);
     // keep the shadow camera on the action
     this.stage.sun.position.set(focus.x - 12, 26, focus.z + 14);
     this.stage.sun.target.position.set(focus.x, 0, focus.z);
     this.hud.update(this.world, this.stage.camera, LOCAL, this.time);
-    this.tutorial(dt);
-    this.bankTicks(dt);
+    if (this.mode === 'match') {
+      this.tutorial(dt);
+      this.bankTicks(dt);
+    }
+    this.showcase.update(dt);
     this.stage.render();
+    this.showcase.render(this.stage.renderer);
+    if (this.showcase.active && this.mode === 'match') this.hud.placePodium(this.showcase.labelPoints());
   };
 
   private monitorFps(dt: number) {
@@ -236,7 +312,16 @@ export class Game {
     return new THREE.Vector3(p.x, p.y + y, p.z);
   }
 
+  private who(id: number) {
+    return id === LOCAL ? '<span class="me">You</span>' : `<b>${this.world.players[id].name}</b>`;
+  }
+
   private onEvent(e: SimEvent) {
+    // attract mode behind the landing page: animations and effects only, no HUD moments
+    if (this.mode === 'home' && ['countdown', 'roundStart', 'roundEnd', 'matchEnd', 'finale', 'bankWarn', 'fall', 'stun'].includes(e.t)) {
+      if (e.t === 'bankWarn') this.bank.showNext(e.x, e.z);
+      return;
+    }
     const w = this.world;
     const cam = this.stage.camera;
     const hv = (id: number) => this.heroes[id];
@@ -266,6 +351,7 @@ export class Game {
           this.sfx.stolenFrom();
           this.hud.banner(`-${e.n} ROBBED!`, 'red', true);
         }
+        if (e.n >= 3) this.hud.feed(`${this.who(e.to)} stole ${e.n} from ${this.who(e.from)}`);
         if (e.n > 0) {
           this.hud.floater(this.pos(e.to, 2.6), cam, `+${e.n}`, 'plus');
           this.hud.floater(this.pos(e.from, 2.6), cam, `-${e.n}`, 'minus');
@@ -344,6 +430,7 @@ export class Game {
         this.fx.ring(e.x, e.z, '#7ff3ff', 3, 0.5, 1.5);
         this.fx.sparkle(e.x, 2, e.z, ['#7ff3ff', '#ffe27a'] as unknown as string, 30);
         this.hud.floater(this.v.set(e.x, 3.6, e.z), cam, `+${e.n}`, 'bank');
+        if (e.n >= 10) this.hud.feed(`${this.who(e.p)} banked ${e.n}!`);
         if (e.p === LOCAL) {
           this.sfx.bank(e.n);
           this.hud.banner(`BANKED ${e.n}!`, 'teal');
@@ -353,6 +440,7 @@ export class Game {
       }
       case 'fall':
         this.sfx.fall();
+        this.hud.feed(`${this.who(e.p)} fell off${e.lost > 0 ? ` (−${e.lost})` : ''}`);
         if (e.p === LOCAL) {
           this.hud.banner(e.lost > 0 ? `FELL! -${e.lost}` : 'FELL OFF!', 'red', true);
           this.rig.shake(0.3);
@@ -449,14 +537,19 @@ export class Game {
     this.hud.closePanel();
     this.heroes.forEach((h) => (h.celebrating = false));
     this.heroes[ranking[0]].celebrating = true;
-    this.rig.zoomTarget = 1;
     this.input.enabled = false;
     if (rank === 1) {
       this.fx.confetti(me.x, 3, me.z, 200);
       this.sfx.win();
     }
+    if (this.mode === 'home') return;
     this.profile.matches++;
-    this.profile.coins += 20 + Math.round(me.bankedTotal / 4) + (rank === 1 ? 50 : 0);
+    const coinsWon = 20 + Math.round(me.bankedTotal / 4) + (rank === 1 ? 50 : 0);
+    const xpWon = 40 + me.bankedTotal + (rank === 1 ? 60 : 0);
+    const before = levelOf(this.profile.xp);
+    this.profile.coins += coinsWon;
+    this.profile.xp += xpWon;
+    const after = levelOf(this.profile.xp);
     let unlocked: HeroId | null = null;
     for (const u of UNLOCKS) {
       if (this.profile.matches >= u.afterMatches && !this.profile.unlocked.includes(u.hero)) {
@@ -467,24 +560,45 @@ export class Game {
     this.profile.lastSeen = new Date().toISOString().slice(0, 10);
     saveProfile(this.profile);
     track('match_end', { rank, banked: me.bankedTotal, seconds: Math.round((performance.now() - this.matchStart) / 1000) });
-    const locked: Record<string, string> = {};
-    for (const u of UNLOCKS) if (!this.profile.unlocked.includes(u.hero)) locked[u.hero] = `Play ${u.afterMatches - this.profile.matches} more`;
     setTimeout(() => {
+      // 3D podium: 2nd · 1st · 3rd
+      const top = ranking.slice(0, 3).map((id) => this.world.players[id]);
+      const order = [top[1], top[0], top[2]].filter(Boolean);
+      this.showcase.set(
+        order.map((p) => ({
+          hero: p.hero,
+          anim: p === top[0] ? 'Cheer' : 'Idle',
+          color: PLAYER_COLORS[p.id],
+          height: p === top[0] ? 1.0 : p === top[1] ? 0.65 : 0.4,
+        })),
+      );
+      this.showcase.screenX = this.touch && innerWidth < 900 ? -0.5 : -0.42;
+      this.showcase.screenY = -0.12;
       this.hud.showResults(this.world, LOCAL, {
+        podium: order.map((p) => ({ name: p.id === LOCAL ? 'You' : p.name, place: ranking.indexOf(p.id) + 1 })),
         unlocked,
-        heroes: HERO_IDS,
-        locked,
-        selected: unlocked ?? this.profile.hero,
-        coins: this.profile.coins,
-        onRematch: (h) => {
+        coinsWon,
+        xpWon,
+        level: after.level,
+        levelUp: after.level > before.level,
+        xpFrac: after.frac,
+        trial: this.trial ? this.world.players[LOCAL].hero : null,
+        onRematch: () => {
           this.sfx.click();
-          track('rematch_click', { hero: h });
-          if (h !== this.profile.hero) track('hero_selected', { hero: h });
-          this.profile.hero = h;
-          saveProfile(this.profile);
+          track('rematch_click', { hero: this.world.players[LOCAL].hero });
           this.firstMatch = false;
+          this.showcase.clear();
           this.hud.closePanel();
-          this.startMatch(h);
+          this.startMatch(this.trial ? this.profile.hero : this.world.players[LOCAL].hero);
+          this.trial = false;
+        },
+        onHome: () => {
+          this.sfx.click();
+          this.firstMatch = false;
+          this.trial = false;
+          this.showcase.clear();
+          this.hud.closePanel();
+          this.goHome();
         },
       });
     }, 1600);
@@ -563,7 +677,7 @@ export class Game {
   // ---------------------------------------------------------------- pause
 
   private togglePause() {
-    if (this.world.phase === 'matchEnd') return;
+    if (this.world.phase === 'matchEnd' && this.mode === 'match') return;
     this.setPaused(!this.paused);
   }
 
@@ -575,24 +689,18 @@ export class Game {
           sound: this.profile.sound,
           shake: this.profile.shake,
           quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
-          hero: this.world.players[LOCAL].hero,
-          heroes: HERO_IDS,
-          unlocked: this.profile.unlocked,
+          inMatch: this.mode === 'match',
         },
         {
           resume: () => this.setPaused(false),
-          hero: (h) => {
+          home: () => {
             this.sfx.click();
-            track('hero_selected', { hero: h, trial: !this.profile.unlocked.includes(h), from: 'pause' });
-            if (this.profile.unlocked.includes(h)) {
-              this.profile.hero = h;
-              saveProfile(this.profile);
-            }
-            this.firstMatch = false;
+            track('quit_match', { round: this.world.round });
             this.paused = false;
             this.hud.closePanel();
-            this.last = performance.now();
-            this.startMatch(h);
+            this.firstMatch = false;
+            this.trial = false;
+            this.goHome();
           },
           toggle: (k) => {
             this.profile[k] = !this.profile[k];

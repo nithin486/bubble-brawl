@@ -1,0 +1,25 @@
+// Landing page screenshots: node tools/shot-home.mjs <outdir> [--mobile]
+import { createRequire } from 'node:module';
+const { chromium, devices } = createRequire(import.meta.url)('playwright');
+const out = process.argv[2];
+const mobile = process.argv.includes('--mobile');
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const ctx = mobile ? await browser.newContext({ ...devices['Pixel 7 landscape'] }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
+const page = await ctx.newPage();
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message));
+page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+await page.goto(process.env.URL || 'http://localhost:5173/?q=high');
+await page.waitForFunction(() => !document.getElementById('boot'), null, { timeout: 60000 });
+await page.waitForTimeout(2500);
+const tag = mobile ? 'm-' : '';
+await page.screenshot({ path: `${out}/${tag}home.png` });
+await page.click('.arrow.r');
+await page.waitForTimeout(800);
+await page.screenshot({ path: `${out}/${tag}home-locked.png` });
+await page.click('.arrow.l');
+await page.click('.play', { force: true });
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${out}/${tag}match.png` });
+console.log('errors:', errs.join('\n') || 'none');
+await browser.close();
