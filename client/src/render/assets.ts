@@ -23,11 +23,41 @@ function load(url: string, onProgress: (f: number) => void): Promise<GLTF> {
   );
 }
 
+/** Packed build (VITE_PACKED=1): every GLB inside one base64 JSON file, for hosts that don't serve .glb. */
+async function loadPacked(urls: string[], onProgress: (f: number) => void): Promise<GLTF[]> {
+  const res = await fetch('assets/pack.json');
+  const total = Number(res.headers.get('content-length')) || 0;
+  let text = '';
+  if (res.body && total) {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      got += value.length;
+      text += dec.decode(value, { stream: true });
+      onProgress(Math.min(0.95, got / total));
+    }
+    text += dec.decode();
+  } else text = await res.text();
+  const pack = JSON.parse(text) as Record<string, string>;
+  return Promise.all(
+    urls.map((u) => {
+      const bin = Uint8Array.from(atob(pack[u]), (c) => c.charCodeAt(0));
+      return loader.parseAsync(bin.buffer, '');
+    }),
+  ).then((r) => {
+    onProgress(1);
+    return r;
+  });
+}
+
 export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => void): Promise<Assets> {
   const urls = ['assets/env.glb', ...heroIds.map((h) => `assets/hero_${h}.glb`)];
   const prog = urls.map(() => 0);
   const report = () => onProgress(prog.reduce((a, b) => a + b, 0) / urls.length);
-  const results = await Promise.all(
+  const results = import.meta.env.VITE_PACKED ? await loadPacked(urls, onProgress) : await Promise.all(
     urls.map((u, i) =>
       load(u, (f) => {
         prog[i] = f;
