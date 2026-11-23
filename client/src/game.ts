@@ -683,6 +683,8 @@ export class Game {
 
   private setPaused(p: boolean) {
     this.paused = p;
+    // the landing UI sits above the HUD layer: hide it while the settings panel is open
+    this.home?.show(!p);
     if (p) {
       this.hud.showPause(
         {
@@ -690,6 +692,7 @@ export class Game {
           shake: this.profile.shake,
           quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
           inMatch: this.mode === 'match',
+          canUnlockAll: (!!import.meta.env.VITE_PACKED || PARAMS.has('dev')) && this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
         },
         {
           resume: () => this.setPaused(false),
@@ -708,6 +711,15 @@ export class Game {
             this.rig.shakeEnabled = this.profile.shake;
             saveProfile(this.profile);
             this.setPaused(true);
+          },
+          unlockAll: () => {
+            this.sfx.click();
+            this.profile.unlocked = [...HERO_IDS];
+            saveProfile(this.profile);
+            track('unlock_all_playtest');
+            this.paused = false;
+            this.hud.closePanel();
+            this.goHome();
           },
           quality: () => {
             const order: Quality[] = ['low', 'medium', 'high'];

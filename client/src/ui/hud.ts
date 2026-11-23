@@ -490,8 +490,8 @@ export class Hud {
   }
 
   showPause(
-    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean },
-    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void },
+    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; canUnlockAll: boolean },
+    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; unlockAll: () => void },
   ) {
     const p = el('div', 'panel');
     p.append(el('h1', 'stroke', state.inMatch ? 'Paused' : 'Settings'));
@@ -505,6 +505,8 @@ export class Hud {
     t('Sound', state.sound ? 'ON' : 'OFF', () => on.toggle('sound'), state.sound);
     t('Screen shake', state.shake ? 'ON' : 'OFF', () => on.toggle('shake'), state.shake);
     t('Graphics', state.quality.toUpperCase(), () => on.quality(), true);
+    // playtest builds only: skip the unlock flow
+    if (state.canUnlockAll) t('All heroes (playtest)', 'UNLOCK', () => on.unlockAll(), false);
     const row = el('div', 'btn-row');
     if (state.inMatch) {
       const h = el('button', 'big-btn alt tap', 'QUIT');
