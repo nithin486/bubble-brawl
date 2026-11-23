@@ -7,6 +7,17 @@ Grab it, steal it, bank it. A 3–8 player carry-and-bank party brawler for the 
 - What to build now: [`docs/IMPLEMENTATION_SPEC.md`](docs/IMPLEMENTATION_SPEC.md)
 - Background: [`docs/HISTORY.md`](docs/HISTORY.md)
 
+## Play
+
+**Live: https://bubble-brawl.21351cm038.workers.dev** — tap *Play with friends* → *CREATE ROOM* → send the invite link.
+
+Hosting: the Cloudflare Worker in `deploy/worker.js` serves the built game from `site/` on this branch
+(via raw.githubusercontent.com, cached by Cloudflare for ~2 minutes). To publish a new version:
+
+```bash
+npm run build:site && git add site && git commit -m "Update site" && git push
+```
+
 ## Run it
 
 ```bash
