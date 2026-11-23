@@ -25,6 +25,7 @@ export class CoinsView {
   private flying: THREE.InstancedMesh;
   private flyers: Flyer[] = [];
   private glow: THREE.InstancedMesh;
+  private golden: THREE.InstancedMesh;
 
   constructor(env: Map<string, THREE.Object3D>, scene: THREE.Scene, glowTex: THREE.Texture) {
     const { geo } = bakePiece(env.get('coin')!);
@@ -54,7 +55,15 @@ export class CoinsView {
     this.glow.count = 0;
     this.glow.frustumCulled = false;
     this.glow.renderOrder = 1;
-    scene.add(this.loose, this.flying, this.glow);
+    // golden jackpot coins: bigger, brighter, rarer
+    this.golden = new THREE.InstancedMesh(
+      geo,
+      new THREE.MeshStandardMaterial({ color: '#fff2a0', emissive: '#ffb000', emissiveIntensity: 1.1, metalness: 0.8, roughness: 0.2 }),
+      8,
+    );
+    this.golden.count = 0;
+    this.golden.frustumCulled = false;
+    scene.add(this.loose, this.flying, this.glow, this.golden);
   }
 
   fly(from: THREE.Vector3, to: () => THREE.Vector3, n: number, opts: { dur?: number; arc?: number; spread?: number; onEach?: () => void } = {}) {
@@ -70,8 +79,20 @@ export class CoinsView {
   update(world: World, dt: number, time: number) {
     let n = 0;
     let g = 0;
+    let gold = 0;
     for (const c of world.coins) {
       if (c.delay > 0 || n >= 320) continue;
+      if (c.v > 1 && gold < 8) {
+        E.set(0, time * 4, 0);
+        Q.setFromEuler(E);
+        P.set(c.x, c.y + (c.grounded ? 0.45 + Math.sin(time * 4) * 0.12 : 0), c.z);
+        S.setScalar(COIN_SCALE * 1.9);
+        this.golden.setMatrixAt(gold++, M.compose(P, Q, S));
+        P.set(c.x, 0.05, c.z);
+        S.setScalar(3.2 + Math.sin(time * 6) * 0.4);
+        this.glow.setMatrixAt(g++, M.compose(P, Q.identity(), S));
+        continue;
+      }
       const spin = time * 3 + c.id * 0.7;
       const bob = c.grounded ? 0.12 + Math.sin(time * 3 + c.id) * 0.08 : 0;
       E.set(0, spin, 0);
@@ -87,6 +108,8 @@ export class CoinsView {
       }
     }
     this.loose.count = n;
+    this.golden.count = gold;
+    this.golden.instanceMatrix.needsUpdate = true;
     this.loose.instanceMatrix.needsUpdate = true;
     this.glow.count = g;
     this.glow.instanceMatrix.needsUpdate = true;

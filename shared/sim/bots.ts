@@ -133,6 +133,14 @@ export class BotBrain {
     if (!w.arena.safe(me.x, me.z)) {
       return { mode: 'flee', tx: me.x * 0.3, tz: me.z * 0.3, dash: me.dashCd <= 0, grab: false, skill: false };
     }
+    // a rival's bubble bomb is about to go off next to me → run
+    const bomb = w.bombs.find((bb) => bb.owner !== me.id && Math.hypot(bb.x - me.x, bb.z - me.z) < TUNING.powerups.bomb.radius + 0.6);
+    if (bomb) {
+      const dx = me.x - bomb.x || 0.1;
+      const dz = me.z - bomb.z;
+      const d = Math.hypot(dx, dz);
+      return { mode: 'flee', tx: me.x + (dx / d) * 4, tz: me.z + (dz / d) * 4, dash: me.dashCd <= 0 && d < 2.5, grab: false, skill: false };
+    }
 
     let skill = false;
     if (me.skillCd <= 0 && me.state === 'normal') skill = this.wantSkill(w, me, rivals.filter(canTarget));
@@ -183,6 +191,10 @@ export class BotBrain {
       }
     }
 
+    // power bubbles are worth a short detour
+    const pu = w.powerups.filter((u) => u.age > 0.6).sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z))[0];
+    if (pu && Math.hypot(pu.x - me.x, pu.z - me.z) < (easy ? 4 : 7)) return { mode: 'collect', tx: pu.x, tz: pu.z, dash: false, grab: false, skill };
+
     // 1. collect: go to the best cluster of loose coins
     const target = this.bestCoinSpot(w, me);
     if (target) return { mode: 'collect', tx: target.x, tz: target.z, dash: false, grab: false, skill };
@@ -203,7 +215,7 @@ export class BotBrain {
       if (c.y > 4 || (c.blockId === me.id && c.blockT > 0.3)) continue;
       if (!w.arena.safe(c.x, c.z)) continue;
       let n = 0;
-      for (const o of coins) if ((o.x - c.x) ** 2 + (o.z - c.z) ** 2 < 4) n++;
+      for (const o of coins) if ((o.x - c.x) ** 2 + (o.z - c.z) ** 2 < 4) n += o.v;
       const d = len(c.x - me.x, c.z - me.z);
       let crowd = 0;
       for (const p of w.players) if (p !== me && (p.x - c.x) ** 2 + (p.z - c.z) ** 2 < 4) crowd++;

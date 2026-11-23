@@ -5,7 +5,7 @@ import { HEROES, type HeroId } from '../config/heroes.ts';
 import { Arena } from './arena.ts';
 import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng } from './math.ts';
 import { OBSTACLES, SPOKES } from './layout.ts';
-import { NO_INPUT, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
+import { NO_INPUT, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
 
 const T = TUNING;
 
@@ -28,6 +28,13 @@ export class World {
   pads: BouncePad[] = [];
   waveT = 0;
   finale = false;
+  powerups: PowerUp[] = [];
+  bombs: Bomb[] = [];
+  private powerT = 0;
+  private jackpotT = 0;
+  private jackpotWarned = false;
+  private jackpotFired = false;
+  private nextId = 1;
   events: SimEvent[] = [];
   rng: Rng;
   /** True for the player's very first match: bots go easy in round 1. */
@@ -114,6 +121,12 @@ export class World {
       pl.facing = facingOf(-pl.x, -pl.z);
     });
     this.waveT = 0;
+    this.powerups = [];
+    this.bombs = [];
+    this.powerT = 0;
+    this.jackpotT = 0;
+    this.jackpotWarned = false;
+    this.jackpotFired = false;
     this.spawnWave(T.coins.firstWaveSize, true);
   }
 
@@ -180,6 +193,9 @@ export class World {
     this.tickFinale();
     this.tickBank(dt);
     this.tickWaves(dt);
+    this.tickPowerups(dt);
+    this.tickJackpot(dt);
+    this.tickBombs(dt);
     for (const p of this.players) this.tickPlayer(p, inputs[p.id] ?? NO_INPUT, dt);
     this.separate();
     this.tickCoins(dt);
@@ -190,6 +206,7 @@ export class World {
   // ------------------------------------------------------------------ players
 
   private speedOf(p: Player) {
+    if (p.speedT > 0) return T.hero.walkSpeed * T.powerups.speed.mult; // speed boots ignore the carry slowdown
     const slow = Math.max(T.hero.carrySlowFloor, 1 - p.carried * T.hero.carrySlowPerCoin);
     return T.hero.walkSpeed * slow;
   }
@@ -201,6 +218,11 @@ export class World {
     p.invuln = Math.max(0, p.invuln - dt);
     p.stickyT = Math.max(0, p.stickyT - dt);
     p.padCd = Math.max(0, p.padCd - dt);
+    p.magnetT = Math.max(0, p.magnetT - dt);
+    p.speedT = Math.max(0, p.speedT - dt);
+    p.shieldT = Math.max(0, p.shieldT - dt);
+    p.comboT = Math.max(0, p.comboT - dt);
+    if (p.comboT <= 0) p.combo = 0;
 
     switch (p.state) {
       case 'falling':
@@ -365,10 +387,36 @@ export class World {
       if (c.delay > 0 || c.y > 1.2 || c.anyT > 0) continue;
       if (c.blockId === p.id && c.blockT > 0) continue;
       if ((c.x - p.x) ** 2 + (c.z - p.z) ** 2 < r2) {
-        p.carried++;
+        p.carried += c.v;
+        p.combo = p.comboT > 0 ? p.combo + 1 : 1;
+        p.comboT = T.combo.window;
         this.coins.splice(i, 1);
-        this.events.push({ t: 'pickup', p: p.id, x: c.x, z: c.z });
+        this.events.push({ t: 'pickup', p: p.id, x: c.x, z: c.z, v: c.v, combo: p.combo });
       }
+    }
+
+    // magnet: loose coins nearby slide toward you
+    if (p.magnetT > 0) {
+      const M = T.powerups.magnet;
+      for (const c of this.coins) {
+        if (!c.grounded || c.anyT > 0) continue;
+        const dx = p.x - c.x;
+        const dz = p.z - c.z;
+        const d = Math.hypot(dx, dz);
+        if (d > M.radius || d < 0.05) continue;
+        const step = Math.min(d, M.pull * dt * (1.3 - d / M.radius));
+        c.x += (dx / d) * step;
+        c.z += (dz / d) * step;
+      }
+    }
+
+    // power bubbles
+    const pr2 = T.powerups.pickupRadius ** 2;
+    for (let i = this.powerups.length - 1; i >= 0; i--) {
+      const u = this.powerups[i];
+      if (u.age < 0.6 || (u.x - p.x) ** 2 + (u.z - p.z) ** 2 > pr2) continue;
+      this.powerups.splice(i, 1);
+      this.givePower(p, u.kind, u.x, u.z);
     }
 
     // --- banking
@@ -445,6 +493,15 @@ export class World {
       this.events.push({ t: 'grab', p: p.id, hit: false });
       return;
     }
+    {
+      const dx0 = target.x - p.x;
+      const dz0 = target.z - p.z;
+      const d0 = Math.hypot(dx0, dz0) || 1;
+      if (this.shielded(target, dx0 / d0, dz0 / d0)) {
+        this.events.push({ t: 'grab', p: p.id, hit: false });
+        return;
+      }
+    }
     const sticky = p.stickyT > 0;
     const want = sticky ? T.abilities.stickyFingers.steal : T.grab.steal;
     const n = Math.min(target.carried, want);
@@ -497,7 +554,7 @@ export class World {
         const dx = o.x - p.x;
         const dz = o.z - p.z;
         const d = len(dx, dz) || 1;
-        this.hitPlayer(o, p, ab, dx / d, dz / d, c.knockback, 0);
+        if (!this.hitPlayer(o, p, ab, dx / d, dz / d, c.knockback, 0)) continue;
         o.state = 'stunned';
         o.stateT = c.stun;
         this.events.push({ t: 'stun', p: o.id });
@@ -509,7 +566,129 @@ export class World {
     this.events.push({ t: 'skillFire', p: p.id, ability: ab, x: p.x, z: p.z, facing: p.facing, hits });
   }
 
-  private hitPlayer(o: Player, by: Player, kind: 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers', nx: number, nz: number, knock: number, extra: number) {
+  /** Bubble Shield soaks one hit. Returns true if it did. */
+  private shielded(o: Player, nx: number, nz: number) {
+    if (o.shieldT <= 0) return false;
+    o.shieldT = 0;
+    this.knock(o, nx, nz, 1.2);
+    this.events.push({ t: 'shieldBlock', p: o.id });
+    return true;
+  }
+
+  private givePower(p: Player, kind: PowerKind, x: number, z: number) {
+    const P = T.powerups;
+    if (kind === 'magnet') p.magnetT = P.magnet.seconds;
+    else if (kind === 'speed') p.speedT = P.speed.seconds;
+    else if (kind === 'shield') p.shieldT = P.shield.seconds;
+    else {
+      const b: Bomb = { id: this.nextId++, owner: p.id, x: p.x, z: p.z, fuse: P.bomb.fuse };
+      this.bombs.push(b);
+      this.events.push({ t: 'bombPlant', id: b.id, owner: p.id, x: b.x, z: b.z });
+    }
+    this.events.push({ t: 'power', p: p.id, kind, x, z });
+  }
+
+  private tickPowerups(dt: number) {
+    for (const u of this.powerups) u.age += dt;
+    // power bubbles on crumbling tiles pop
+    this.powerups = this.powerups.filter((u) => this.arena.safe(u.x, u.z));
+    this.powerT += dt;
+    const P = T.powerups;
+    const due = this.powerT >= (this.roundTime < P.first + 0.5 ? P.first : P.every);
+    if (!due) return;
+    this.powerT = 0;
+    if (this.powerups.length >= P.max) return;
+    const w = P.weights;
+    const total = w.magnet + w.speed + w.shield + w.bomb;
+    let r = this.rng.next() * total;
+    let kind: PowerKind = 'bomb';
+    for (const k of ['magnet', 'speed', 'shield', 'bomb'] as PowerKind[]) {
+      r -= w[k];
+      if (r <= 0) {
+        kind = k;
+        break;
+      }
+    }
+    for (let tries = 0; tries < 30; tries++) {
+      const a = this.rng.next() * Math.PI * 2;
+      const d = 2.5 + this.rng.next() * (Math.min(this.arena.safeRadius, 12) - 4);
+      const x = Math.sin(a) * d;
+      const z = Math.cos(a) * d;
+      const nearBank = (x - this.bank.x) ** 2 + (z - this.bank.z) ** 2 < 9;
+      if (!this.arena.safe(x, z) || !this.clear(x, z, 0.8) || nearBank) continue;
+      const u: PowerUp = { id: this.nextId++, kind, x, z, age: 0 };
+      this.powerups.push(u);
+      this.events.push({ t: 'powerSpawn', id: u.id, kind, x, z });
+      return;
+    }
+  }
+
+  private tickBombs(dt: number) {
+    const B = T.powerups.bomb;
+    for (let i = this.bombs.length - 1; i >= 0; i--) {
+      const b = this.bombs[i];
+      b.fuse -= dt;
+      if (b.fuse > 0) continue;
+      this.bombs.splice(i, 1);
+      let hits = 0;
+      const owner = this.players[b.owner];
+      for (const o of this.players) {
+        if (o === owner || !targetable(o)) continue;
+        const dx = o.x - b.x;
+        const dz = o.z - b.z;
+        const d = Math.hypot(dx, dz);
+        if (d > B.radius + T.hero.radius) continue;
+        hits++;
+        const nx = d > 0.01 ? dx / d : 1;
+        const nz = d > 0.01 ? dz / d : 0;
+        this.hitPlayer(o, owner, 'bomb', nx, nz, B.knockback * (1 - (d / B.radius) * 0.4), B.extraDrop);
+      }
+      this.events.push({ t: 'bombBoom', owner: b.owner, x: b.x, z: b.z, hits });
+    }
+  }
+
+  /** The Wishing Well erupts a fountain of coins (and one golden coin) every so often. */
+  private tickJackpot(dt: number) {
+    const J = T.jackpot;
+    this.jackpotT += dt;
+    const next = this.jackpotFired ? J.every : J.first;
+    if (!this.jackpotWarned && this.jackpotT >= next - J.warn) {
+      this.jackpotWarned = true;
+      this.events.push({ t: 'jackpotWarn' });
+    }
+    if (this.jackpotT < next) return;
+    this.jackpotT = 0;
+    this.jackpotWarned = false;
+    this.jackpotFired = true;
+    const n = Math.round(J.coins * (this.finale ? J.finaleMult : 1));
+    for (let i = 0; i <= n; i++) {
+      const golden = i === n;
+      const a = this.rng.next() * Math.PI * 2;
+      const d = J.minDist + this.rng.next() * (J.maxDist - J.minDist);
+      const flight = 0.9 + this.rng.next() * 0.4;
+      const tx = Math.sin(a) * d;
+      const tz = Math.cos(a) * d;
+      this.coins.push({
+        id: this.nextCoinId++,
+        x: 0,
+        z: 0,
+        y: 2.2,
+        vx: tx / flight,
+        vz: tz / flight,
+        vy: 11 * (flight / 1.1),
+        grounded: false,
+        delay: i * 0.04,
+        blockId: -1,
+        blockT: 0,
+        anyT: 0.2,
+        v: golden ? J.goldenValue : 1,
+      });
+    }
+    this.events.push({ t: 'jackpot', n });
+  }
+
+  private hitPlayer(o: Player, by: Player, kind: 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers' | 'bomb', nx: number, nz: number, knock: number, extra: number) {
+    if (this.shielded(o, nx, nz)) return false;
     const drop = o.carried > 0 ? Math.min(o.carried, clamp(Math.round(o.carried * T.hit.dropFraction), T.hit.dropMin, T.hit.dropMax) + extra) : 0;
     o.carried -= drop;
     this.scatter(o, drop);
@@ -520,6 +699,7 @@ export class World {
     o.cast = null;
     by.stats.hitsLanded++;
     this.events.push({ t: 'hit', victim: o.id, by: by.id, kind, drop, x: o.x, z: o.z });
+    return true;
   }
 
   /** Push a player `dist` metres along (nx,nz) using decaying velocity. */
@@ -556,6 +736,7 @@ export class World {
         blockId: o.id,
         blockT: T.hit.ownPickupDelay,
         anyT: T.hit.otherPickupDelay,
+        v: 1,
       });
     }
   }
@@ -685,6 +866,7 @@ export class World {
           blockId: -1,
           blockT: 0,
           anyT: 0,
+          v: 1,
         });
       }
       n -= size;
@@ -829,6 +1011,11 @@ function newPlayer(id: number, s: PlayerSetup): Player {
     dashDz: 1,
     padCd: 0,
     stats: { steals: 0, stolen: 0, lostToSteals: 0, hitsLanded: 0, falls: 0, banks: 0, bestBank: 0 },
+    magnetT: 0,
+    speedT: 0,
+    shieldT: 0,
+    combo: 0,
+    comboT: 0,
   };
 }
 
@@ -847,5 +1034,7 @@ function resetForRound(p: Player) {
   p.bankT = 0;
   p.launch = null;
   p.padCd = 0;
+  p.magnetT = p.speedT = p.shieldT = 0;
+  p.combo = p.comboT = 0;
 }
 

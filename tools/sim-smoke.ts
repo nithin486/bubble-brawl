@@ -71,3 +71,8 @@ for (let s = 1; s <= N; s++) {
 console.log(`first-match round-1 win rate for an average-bot "player": ${r1wins}/${N}`);
 console.log(`avg banked per player per round: ${(bankedSum / N / 6 / TUNING.match.rounds).toFixed(1)}`);
 console.log(`bots pushing but not moving (stuck): ${(stuckSum / N).toFixed(1)}% of moving frames`);
+{
+  // feature check: power-ups, jackpots and bombs actually happen in a match
+  const { counts } = playMatch(99, false);
+  console.log('power spawns', counts.powerSpawn, '| picked', counts.power, '| bombs', counts.bombBoom, '| shield blocks', counts.shieldBlock ?? 0, '| jackpots', counts.jackpot);
+}

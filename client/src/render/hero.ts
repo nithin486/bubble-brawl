@@ -26,6 +26,10 @@ export class HeroView {
   private stars: THREE.Group;
   private shadowBlob: THREE.Mesh;
   private dustT = 0;
+  private jumpT = 0;
+  private jumpDur = 0;
+  private jumpH = 0;
+  private tumble = 0;
   readonly player: Player;
   readonly isLocal: boolean;
   celebrating = false;
@@ -151,12 +155,35 @@ export class HeroView {
     this.squash = amount;
   }
 
+  /** Visual hop (Ground Slam wind-up): the sim position stays on the ground. */
+  jump(height: number, dur: number) {
+    this.jumpH = height;
+    this.jumpDur = dur;
+    this.jumpT = dur;
+  }
+
+  /** Spin the model when knocked hard. */
+  knockSpin(turns: number) {
+    this.tumble = turns * Math.PI * 2;
+  }
+
   /** Returns true when a footstep puff should spawn. */
   update(dt: number, now: number, hitStop: boolean): boolean {
     const p = this.player;
     this.root.position.set(p.x, p.y, p.z);
+    if (this.jumpT > 0) {
+      this.jumpT = Math.max(0, this.jumpT - dt);
+      const k = 1 - this.jumpT / this.jumpDur;
+      this.root.position.y += Math.sin(k * Math.PI) * this.jumpH * (k < 0.6 ? 1 : 1 - (k - 0.6) * 1.2);
+      if (this.jumpT === 0) this.bump(0.5);
+    }
     // smooth turning
     this.yaw += angleDiff(this.yaw, p.facing) * Math.min(1, dt * 18);
+    if (Math.abs(this.tumble) > 0.01) {
+      const step = Math.sign(this.tumble) * Math.min(Math.abs(this.tumble), dt * 22);
+      this.tumble -= step;
+      this.yaw += step;
+    }
     this.model.rotation.y = this.yaw;
 
     let footstep = false;

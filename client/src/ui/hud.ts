@@ -5,6 +5,8 @@ import type { Player } from '../../../shared/sim/types.ts';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import { HEROES, type HeroId } from '../../../shared/config/heroes.ts';
 import type { InputManager } from '../input.ts';
+import { powerIconCanvas, POWER_INFO } from '../render/powerups.ts';
+import type { PowerKind } from '../../../shared/sim/types.ts';
 
 export const ICONS = {
   grab: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V3.5a1.5 1.5 0 0 1 3 0V10h.5V4.5a1.5 1.5 0 0 1 3 0V11h.5V7.5a1.5 1.5 0 0 1 3 0V14c0 4.4-3.1 8-7.5 8-3 0-4.8-1.3-6.3-3.6L3.8 14.6a1.5 1.5 0 0 1 2.4-1.8L7 13.8z"/></svg>`,
@@ -51,6 +53,11 @@ export class Hud {
   private fpsEl = el('div', 'fps');
   private panel: HTMLElement | null = null;
   private feedEl = el('div', 'feed');
+  private comboEl = el('div', 'combo stroke');
+  private powersEl = el('div', 'powers');
+  private powerChips = new Map<PowerKind, HTMLElement>();
+  private flashEl = el('div', 'flash');
+  private lastCombo = 0;
   private lastCarry = -1;
   private lastBanked = -1;
   private portraits: Map<HeroId, string>;
@@ -80,7 +87,12 @@ export class Hud {
 
     const mine = el('div', 'mine');
     mine.append(this.carryPill, this.bankPill);
-    this.root.append(mine);
+    this.root.append(mine, this.comboEl, this.powersEl, this.flashEl);
+    for (const k of ['magnet', 'speed', 'shield'] as PowerKind[]) {
+      const c = el('div', 'pchip', `<img src="${powerIconCanvas(k, 96).toDataURL()}"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="#ffffff40" stroke-width="4"/><circle class="t" cx="20" cy="20" r="17" fill="none" stroke="${POWER_INFO[k].color}" stroke-width="4" stroke-dasharray="106.8" transform="rotate(-90 20 20)"/></svg>`);
+      this.powerChips.set(k, c);
+      this.powersEl.append(c);
+    }
     this.root.append(this.promptEl);
 
     // name tags
@@ -234,6 +246,24 @@ export class Hud {
       this.lastBanked = banked;
     }
 
+    // combo counter
+    if (me.combo !== this.lastCombo) {
+      if (me.combo >= 3) {
+        this.comboEl.innerHTML = `COMBO <b>x${me.combo}</b>`;
+        this.comboEl.classList.add('on');
+        this.bumpEl(this.comboEl);
+      } else this.comboEl.classList.remove('on');
+      this.lastCombo = me.combo;
+    }
+    // active power-ups with time rings
+    const P = TUNING.powerups;
+    const times: Record<string, [number, number]> = { magnet: [me.magnetT, P.magnet.seconds], speed: [me.speedT, P.speed.seconds], shield: [me.shieldT, P.shield.seconds] };
+    for (const [k, c] of this.powerChips) {
+      const [t, max] = times[k];
+      c.classList.toggle('on', t > 0);
+      if (t > 0) (c.querySelector('.t') as SVGCircleElement).style.strokeDashoffset = String(106.8 * (1 - t / max));
+    }
+
     // tags above heads
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -337,6 +367,24 @@ export class Hud {
     while (this.feedEl.children.length > 4) this.feedEl.lastElementChild!.remove();
     setTimeout(() => f.classList.add('out'), 3200);
     setTimeout(() => f.remove(), 3700);
+  }
+
+  /** Full-screen colour flash for big moments. */
+  flash(color: string, strength = 0.55) {
+    this.flashEl.style.background = `radial-gradient(circle, transparent 30%, ${color})`;
+    this.flashEl.style.transition = 'none';
+    this.flashEl.style.opacity = String(strength);
+    void this.flashEl.offsetWidth;
+    this.flashEl.style.transition = 'opacity .45s ease-out';
+    this.flashEl.style.opacity = '0';
+  }
+
+  /** Huge ability name in the hero's colour. */
+  skillBanner(text: string, color: string) {
+    const b = el('div', 'skillname stroke', text);
+    b.style.color = color;
+    this.root.append(b);
+    setTimeout(() => b.remove(), 1000);
   }
 
   countdown(n: number | 'GO!') {

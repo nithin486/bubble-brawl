@@ -20,6 +20,7 @@ import { track } from './analytics.ts';
 import { saveProfile, levelOf, type Profile } from './save.ts';
 import { Home } from './ui/home.ts';
 import { Showcase } from './render/showcase.ts';
+import { PowerView, POWER_INFO } from './render/powerups.ts';
 
 const BOT_NAMES = ['Chintu', 'Golu', 'Mango', 'Rocket', 'Bunty', 'Zara', 'Pixel', 'Tiki', 'Momo', 'Laddoo', 'Noodle', 'Bolt', 'Pappu', 'Rani', 'Jelly'];
 const LOCAL = 0;
@@ -80,6 +81,11 @@ export class Game {
   private home: Home | null = null;
   private showcase: Showcase;
   private trial = false;
+  private powers: PowerView | null = null;
+  private wellWarnT = 0;
+  private slowT = 0;
+  private slowScale = 1;
+  private trailT = 0;
 
   constructor(stage: Stage, assets: Assets, portraits: Map<HeroId, string>, profile: Profile, sfx: Sfx) {
     this.stage = stage;
@@ -191,6 +197,10 @@ export class Game {
       this.stage.scene.remove(this.bank.group);
     }
     this.bank = new BankView(this.world, this.assets.env, this.stage.scene, this.glowTex);
+    if (!this.powers) this.powers = new PowerView(this.world, this.stage.scene, this.glowTex);
+    else this.powers.setWorld(this.world);
+    this.slowT = 0;
+    this.wellWarnT = 0;
     this.hud?.root.remove();
     this.hud = new Hud(this.world, LOCAL, this.portraits, this.touch, this.input);
     this.hud.onPause = () => this.togglePause();
@@ -227,7 +237,12 @@ export class Game {
     const step = TUNING.sim.dt;
     if (this.hitStop > 0) this.hitStop -= dt;
     else {
-      this.acc += dt * SPEED;
+      let scale = SPEED;
+      if (this.slowT > 0) {
+        this.slowT -= dt;
+        scale *= this.slowScale;
+      }
+      this.acc += dt * scale;
       let n = 0;
       while (this.acc >= step && n < 6 * SPEED) {
         this.acc -= step;
@@ -249,9 +264,25 @@ export class Game {
 
     // views
     const frozen = this.hitStop > 0;
+    const adt = this.slowT > 0 ? dt * this.slowScale : dt;
     for (const h of this.heroes) {
-      if (h.update(dt, this.time, frozen)) this.fx.dust(h.player.x, h.player.z);
+      if (h.update(adt, this.time, frozen)) this.fx.dust(h.player.x, h.player.z);
     }
+    this.powers?.update(this.time);
+    // trails: speed boots (yellow streaks), sticky fingers (pink sparkles), magnet (red bits)
+    this.trailT -= dt;
+    if (this.trailT <= 0) {
+      this.trailT = 0.05;
+      for (const p of this.world.players) {
+        if (p.state === 'falling') continue;
+        if (p.speedT > 0 && Math.hypot(p.vx, p.vz) > 2) this.fx.emit(p.x, 0.5, p.z, { n: 2, color: ['#ffd23f', '#fff6b0'], speed: 0.3, up: 0.5, life: 0.4, size: 0.45 });
+        if (p.stickyT > 0) this.fx.emit(p.x, 1.1, p.z, { n: 2, color: ['#ff5fd2', '#ffb3ec'], speed: 0.8, up: 1.2, life: 0.5, size: 0.3, spread: 0.7 });
+        if (p.magnetT > 0) this.fx.emit(p.x, 0.4, p.z, { n: 1, color: ['#ff5f7a'], speed: 3.5, up: 0.2, life: 0.4, size: 0.25 });
+      }
+      // the well bubbles before a jackpot
+      if (this.wellWarnT > 0) this.fx.emit(0, 1.6, 0, { n: 4, color: ['#7ff3ff', '#ffffff', '#ffe27a'], speed: 1.2, up: 5, life: 0.7, size: 0.4, gravity: 6, spread: 0.8 });
+    }
+    if (this.wellWarnT > 0) this.wellWarnT -= dt;
     this.island.focus = this.mode === 'match' ? this.v.set(this.world.players[LOCAL].x, 0, this.world.players[LOCAL].z).clone() : null;
     this.island.update(dt, this.time);
     this.coins.update(this.world, dt, this.time);
@@ -312,6 +343,12 @@ export class Game {
     return new THREE.Vector3(p.x, p.y + y, p.z);
   }
 
+  /** Brief slow motion for big moments (offline only — the sim just runs slower). */
+  private slowMo(scale: number, dur: number) {
+    this.slowScale = scale;
+    this.slowT = dur;
+  }
+
   private who(id: number) {
     return id === LOCAL ? '<span class="me">You</span>' : `<b>${this.world.players[id].name}</b>`;
   }
@@ -327,8 +364,16 @@ export class Game {
     const hv = (id: number) => this.heroes[id];
     switch (e.t) {
       case 'pickup':
-        if (e.p === LOCAL) this.sfx.pickup();
-        this.fx.sparkle(e.x, 0.6, e.z, '#ffe27a', 5);
+        if (e.p === LOCAL) {
+          if (e.v > 1) {
+            this.sfx.golden();
+            this.hud.banner(`GOLDEN COIN +${e.v}!`, 'gold', true);
+            this.hud.floater(this.pos(e.p, 2.6), cam, `+${e.v}`, 'plus');
+          } else this.sfx.pickup();
+          if (e.combo > 0 && e.combo % 5 === 0) this.hud.floater(this.pos(e.p, 2.8), cam, `COMBO x${e.combo}!`, 'bank');
+        }
+        this.fx.sparkle(e.x, 0.6, e.z, e.v > 1 ? '#fff27a' : '#ffe27a', e.v > 1 ? 30 : 5);
+        if (e.v > 1) this.fx.pillar(e.x, e.z, '#ffd84a', 6, 0.7, 0.6);
         break;
       case 'grab':
         hv(e.p).oneShot(hv(e.p).grabAnim, this.time, 1.9, 0.45);
@@ -342,6 +387,11 @@ export class Game {
       case 'steal': {
         const from = this.pos(e.from);
         if (e.n > 0) this.coins.fly(from, () => this.pos(e.to, 1.0), e.n, { dur: 0.4, arc: 1.4 });
+        if (e.sticky) {
+          this.fx.beam(this.pos(e.to, 1.1), from, '#ff5fd2', 0.45);
+          if (e.to === LOCAL || e.from === LOCAL) this.slowMo(0.35, 0.25);
+          if (e.to === LOCAL) this.rig.punch(5);
+        }
         if (e.to === LOCAL) {
           this.sfx.steal();
           this.hud.banner(e.n > 0 ? `STOLEN ${e.n}!` : 'SHOVED!', e.sticky ? 'pink' : 'gold');
@@ -359,17 +409,25 @@ export class Game {
         break;
       }
       case 'hit': {
+        const big = e.kind !== 'grab';
         hv(e.victim).flash();
-        hv(e.victim).bump(0.25);
+        hv(e.victim).bump(big ? 0.4 : 0.25);
+        if (big) hv(e.victim).knockSpin(e.kind === 'bomb' ? 2 : 1);
         if (w.players[e.victim].state !== 'stunned') hv(e.victim).oneShot(Math.random() < 0.5 ? 'Hit_A' : 'Hit_B', this.time, 1.6, 0.4);
-        this.hitStop = Math.max(this.hitStop, 0.06);
+        this.hitStop = Math.max(this.hitStop, big ? 0.09 : 0.06);
         if (e.drop > 0) {
           this.fx.coinBurst(e.x, 1.1, e.z, 6 + e.drop * 2);
           this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.drop}`, 'minus');
         }
-        this.fx.emit(e.x, 1.1, e.z, { n: 10, color: ['#ffffff', '#fff2a8'], speed: 6, up: 2, life: 0.25, size: 0.4 });
+        this.fx.emit(e.x, 1.1, e.z, { n: big ? 22 : 10, color: ['#ffffff', '#fff2a8'], speed: big ? 9 : 6, up: 2, life: 0.3, size: big ? 0.6 : 0.4 });
+        if (big) this.fx.dust(e.x, e.z, true);
         if (e.kind !== 'grab') this.sfx.hit();
-        if (e.victim === LOCAL) this.rig.shake(0.35);
+        if (e.victim === LOCAL) {
+          this.rig.shake(big ? 0.5 : 0.35);
+          if (big) this.hud.flash('#ff3a5a', 0.45);
+        }
+        // the local player landing a big hit gets a beat of slow motion
+        if (big && (e.by === LOCAL || e.victim === LOCAL)) this.slowMo(0.32, 0.3);
         break;
       }
       case 'dash':
@@ -380,39 +438,130 @@ export class Game {
         break;
       case 'skill': {
         const h = hv(e.p);
+        const P = w.players[e.p];
         h.oneShot(h.abilityAnim, this.time, e.ability === 'groundSlam' ? 1.5 : 1.4, 0.7);
+        const color = HEROES[P.hero].color;
+        // wind-up: glow gathers under the caster
+        this.fx.ring(P.x, P.z, color, 0.4, 0.3, 2.2);
+        this.fx.sparkle(P.x, 1.2, P.z, color, 18);
+        if (e.ability === 'groundSlam') {
+          h.jump(1.5, TUNING.abilities.groundSlam.castDelay);
+          this.sfx.whoosh();
+        } else this.sfx.charge();
         if (e.ability === 'stickyFingers') {
           this.sfx.sticky();
-          this.fx.sparkle(w.players[e.p].x, 1.2, w.players[e.p].z, '#ff5fd2', 20);
+          this.fx.dome(P.x, P.z, '#ff5fd2', 1.6, 0.4);
+          this.fx.emit(P.x, 1.2, P.z, { n: 30, color: ['#ff5fd2', '#ffb3ec', '#ffffff'], speed: 3, up: 3, life: 0.7, size: 0.35, spread: 0.8 });
         }
         if (e.p === LOCAL) {
           track('skill_used', { ability: e.ability });
           this.skillHintT = 0;
           this.hud.hintButton(null);
-          if (e.ability === 'stickyFingers') this.hud.banner('STICKY FINGERS!', 'pink', true);
+          this.hud.skillBanner(HEROES[P.hero].abilityName.toUpperCase() + '!', color);
+          this.rig.punch(3);
         }
         break;
       }
-      case 'skillFire':
+      case 'skillFire': {
+        const local = e.p === LOCAL;
         if (e.ability === 'rattleBurst') {
           const c = TUNING.abilities.rattleBurst;
-          this.fx.ring(e.x, e.z, '#e8f6ff', c.radius, 0.35);
-          this.fx.ring(e.x, e.z, '#7fe3ff', c.radius * 1.15, 0.5);
-          this.fx.emit(e.x, 1, e.z, { n: 30, color: ['#f4f0e6', '#d8d0c0'], speed: 9, up: 3, life: 0.4, size: 0.35, gravity: 8 });
+          this.fx.dome(e.x, e.z, '#cfefff', c.radius + 0.4, 0.45);
+          this.fx.ring(e.x, e.z, '#ffffff', c.radius, 0.3);
+          this.fx.ring(e.x, e.z, '#7fe3ff', c.radius * 1.25, 0.55);
+          this.fx.debris(e.x, 1.1, e.z, 22, ['#f4efe2', '#e2d8c2', '#cdbf9f'], 11, 7, 1.1);
+          this.fx.emit(e.x, 1, e.z, { n: 40, color: ['#ffffff', '#bfefff'], speed: 12, up: 2, life: 0.35, size: 0.5 });
+          this.fx.crack(e.x, e.z, 5);
           this.sfx.burst();
-          if (e.p === LOCAL) this.rig.shake(0.25);
+          this.rig.shake(local ? 0.45 : 0.15);
+          if (local) {
+            this.rig.punch(7);
+            this.hud.flash('#7fe3ff', 0.5);
+          }
         } else if (e.ability === 'groundSlam') {
           const c = TUNING.abilities.groundSlam;
           this.fx.cone(e.x, e.z, e.facing, c.range, c.coneDeg, '#ffb03a');
-          const fx = e.x + Math.sin(e.facing) * 1.2;
-          const fz = e.z + Math.cos(e.facing) * 1.2;
-          this.fx.emit(fx, 0.3, fz, { n: 26, color: ['#b48a5a', '#e0c08a', '#ffffff'], speed: 6, up: 7, life: 0.6, size: 0.4, gravity: 18 });
+          const fx = e.x + Math.sin(e.facing) * 1.6;
+          const fz = e.z + Math.cos(e.facing) * 1.6;
+          this.fx.crack(fx, fz, 5.5, e.facing);
+          this.fx.crack(e.x, e.z, 3);
+          this.fx.debris(fx, 0.3, fz, 26, ['#9a8a7a', '#b49a72', '#7d6b5a', '#6fbb40'], 7, 12, 1.4);
+          this.fx.emit(fx, 0.3, fz, { n: 34, color: ['#b48a5a', '#e0c08a', '#ffffff'], speed: 7, up: 8, life: 0.7, size: 0.5, gravity: 18 });
           this.fx.dust(fx, fz, true);
+          this.fx.dust(e.x, e.z, true);
+          this.fx.ring(fx, fz, '#ffcf6a', 3.2, 0.45, 0.5);
           this.sfx.slam();
-          this.rig.shake(e.p === LOCAL ? 0.45 : 0.15);
+          this.rig.shake(local ? 0.7 : 0.2);
+          if (local) {
+            this.rig.punch(8);
+            this.hud.flash('#ffb03a', 0.5);
+          }
         }
-        if (e.p === LOCAL && e.hits >= 2) this.hud.banner(e.ability === 'groundSlam' ? `STUNNED ×${e.hits}!` : `MULTI HIT ×${e.hits}!`, 'gold');
-        else if (e.p === LOCAL && e.hits === 1 && e.ability === 'groundSlam') this.hud.banner('STUNNED!', 'gold', true);
+        if (local && e.hits >= 2) this.hud.banner(e.ability === 'groundSlam' ? `STUNNED ×${e.hits}!` : `MULTI HIT ×${e.hits}!`, 'gold');
+        else if (local && e.hits === 1 && e.ability === 'groundSlam') this.hud.banner('STUNNED!', 'gold', true);
+        break;
+      }
+      case 'powerSpawn':
+        this.fx.pillar(e.x, e.z, POWER_INFO[e.kind].color, 7, 0.8, 0.7);
+        this.fx.sparkle(e.x, 1, e.z, POWER_INFO[e.kind].color, 16);
+        this.sfx.pop();
+        break;
+      case 'power': {
+        const info = POWER_INFO[e.kind];
+        this.fx.ring(e.x, e.z, info.color, 2.2, 0.4);
+        this.fx.emit(e.x, 1, e.z, { n: 26, color: [info.color, '#ffffff'], speed: 5, up: 4, life: 0.6, size: 0.4 });
+        this.sfx.pop();
+        if (e.p === LOCAL) {
+          this.sfx.power();
+          this.hud.banner(info.name + '!', 'teal', true);
+          this.hud.flash(info.color, 0.3);
+        } else this.hud.feed(`${this.who(e.p)} got <b>${info.name}</b>`);
+        break;
+      }
+      case 'shieldBlock':
+        this.fx.dome(w.players[e.p].x, w.players[e.p].z, '#5ff0ff', 1.8, 0.35);
+        this.fx.emit(w.players[e.p].x, 1, w.players[e.p].z, { n: 24, color: ['#5ff0ff', '#ffffff'], speed: 6, up: 3, life: 0.4, size: 0.4 });
+        this.sfx.shieldBlock();
+        if (e.p === LOCAL) this.hud.banner('BLOCKED!', 'teal', true);
+        break;
+      case 'bombPlant':
+        this.sfx.fuse();
+        if (e.owner === LOCAL) this.hud.banner('BOMB PLANTED! Run!', 'gold', true);
+        break;
+      case 'bombBoom': {
+        const R = TUNING.powerups.bomb.radius;
+        this.fx.dome(e.x, e.z, '#ffb03a', R, 0.4);
+        this.fx.ring(e.x, e.z, '#fff0a0', R * 1.2, 0.5);
+        this.fx.emit(e.x, 0.8, e.z, { n: 60, color: ['#ffd23f', '#ff8a3d', '#ff4a3d', '#ffffff'], speed: 10, up: 7, life: 0.6, size: 0.8, gravity: 4 });
+        this.fx.emit(e.x, 1.2, e.z, { n: 20, color: ['#5a4a6a', '#3a3048'], speed: 3, up: 5, life: 1.2, size: 1.4, drag: 3 });
+        this.fx.debris(e.x, 0.6, e.z, 16, ['#2a2440', '#ff8a3d', '#8a8aa0'], 9, 9, 0.9);
+        this.fx.crack(e.x, e.z, 5);
+        this.sfx.boom();
+        const d = Math.hypot(w.players[LOCAL].x - e.x, w.players[LOCAL].z - e.z);
+        this.rig.shake(d < 8 ? 0.7 : 0.25);
+        if (d < 8) this.hud.flash('#ffb03a', 0.45);
+        if (e.owner === LOCAL && e.hits > 0) {
+          this.hud.banner(e.hits > 1 ? `BOOM ×${e.hits}!` : 'BOOM!', 'gold');
+          this.slowMo(0.3, 0.35);
+        }
+        break;
+      }
+      case 'jackpotWarn':
+        this.wellWarnT = TUNING.jackpot.warn;
+        this.sfx.jackpotWarn();
+        if (this.mode === 'match') this.hud.banner('WISHING WELL IS BUBBLING…', 'teal', true);
+        break;
+      case 'jackpot':
+        this.wellWarnT = 0;
+        this.fx.pillar(0, 0, '#ffd84a', 14, 1.2, 1.3);
+        this.fx.dome(0, 0, '#ffe27a', 3, 0.5);
+        this.fx.emit(0, 2.2, 0, { n: 60, color: ['#7ff3ff', '#ffffff', '#ffe27a'], speed: 4, up: 12, life: 1, size: 0.5, gravity: 14 });
+        this.sfx.jackpot();
+        this.rig.shake(0.2);
+        if (this.mode === 'match') {
+          this.hud.skillBanner('JACKPOT!', '#ffd84a');
+          this.hud.feed(`The well erupted <b>${e.n + 1} coins</b> + a golden one!`);
+        }
         break;
       case 'stun':
         if (e.p === LOCAL) {

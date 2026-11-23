@@ -133,6 +133,32 @@ export const TUNING = {
     },
   },
 
+  powerups: {
+    first: 7,
+    every: 11,
+    max: 2,
+    pickupRadius: 1.15,
+    /** Relative chance of each power bubble. */
+    weights: { magnet: 3, speed: 3, shield: 2, bomb: 3 },
+    magnet: { seconds: 6, radius: 4.8, pull: 11 },
+    speed: { seconds: 5, mult: 1.45 },
+    shield: { seconds: 10 },
+    bomb: { fuse: 1.3, radius: 3.6, knockback: 5.5, extraDrop: 1 },
+  },
+
+  jackpot: {
+    first: 16,
+    every: 24,
+    warn: 2.5,
+    coins: 16,
+    goldenValue: 5,
+    finaleMult: 1.5,
+    minDist: 2.2,
+    maxDist: 6.5,
+  },
+
+  combo: { window: 0.9 },
+
   layout: {
     wellRadius: 1.15,
     /** Collision radius per obstacle kind (see shared/sim/layout.ts). */

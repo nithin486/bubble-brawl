@@ -76,6 +76,9 @@ export class IslandView {
   focus: THREE.Vector3 | null = null;
   private falls = new Map<number, FallAnim>();
   private clouds: THREE.Object3D[] = [];
+  private spinners: THREE.Object3D[] = [];
+  private waterMats: THREE.ShaderMaterial[] = [];
+  private bubbles: THREE.Sprite[] = [];
   private lastStates: number[] = [];
   private world: World;
   private tileIndex = new Map<number, number>();
@@ -171,6 +174,8 @@ export class IslandView {
     for (const o of OBSTACLES) this.buildProp(o, env);
     this.buildPads(env);
     this.buildBackdrop(env);
+    this.buildWaterfalls();
+    this.buildBubbles();
     scene.add(this.group);
   }
 
@@ -376,8 +381,83 @@ export class IslandView {
     o.rotation.y = ry;
     o.traverse((m) => {
       if ((m as THREE.Mesh).isMesh) m.castShadow = false;
+      if (/windmill_top_fan|lumbermill_saw/.test(m.name)) this.spinners.push(m);
     });
     this.group.add(o);
+  }
+
+  /** Water gushing out of the island's rocky underside on the sides the camera sees. */
+  private buildWaterfalls() {
+    const angles = [-0.9, -0.25, 0.5, 1.25, 2.6, -2.5];
+    for (const a of angles) {
+      const mat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        uniforms: { time: { value: 0 } },
+        vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+        fragmentShader: `varying vec2 vUv; uniform float time;
+          float h(float x){ return fract(sin(x*91.7)*437.5); }
+          void main(){
+            float y = vUv.y*7.0 + time*3.2;
+            float stripe = smoothstep(0.55, 1.0, sin((vUv.x*13.0 + h(floor(y))*6.0)) * 0.5 + 0.5);
+            vec3 c = mix(vec3(0.35,0.75,1.0), vec3(0.95,1.0,1.0), stripe*0.8 + (1.0-vUv.y)*0.0);
+            float edge = smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x);
+            float fade = smoothstep(0.0, 0.5, vUv.y);
+            gl_FragColor = vec4(c, 0.78 * edge * fade);
+          }`,
+      });
+      this.waterMats.push(mat);
+      const R = 12.9;
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 22, 1, 1), mat);
+      sheet.position.set(Math.sin(a) * (R + 0.15), -12.5, Math.cos(a) * (R + 0.15));
+      sheet.rotation.y = a;
+      this.group.add(sheet);
+      // foam where it bursts out of the rock
+      const foam = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 8), new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#bfefff', emissiveIntensity: 0.5, roughness: 1 }));
+      foam.scale.set(1.3, 0.6, 0.8);
+      foam.position.set(Math.sin(a) * (R + 0.2), -1.6, Math.cos(a) * (R + 0.2));
+      foam.userData.foam = true;
+      this.spinners.push(foam);
+      this.group.add(foam);
+    }
+  }
+
+  /** Iridescent bubbles drifting up around the arena — it's Bubble Brawl after all. */
+  private buildBubbles() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d')!;
+    const grd = g.createRadialGradient(32, 32, 20, 32, 32, 31);
+    grd.addColorStop(0, 'rgba(180,240,255,0.05)');
+    grd.addColorStop(0.8, 'rgba(200,180,255,0.5)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.beginPath();
+    g.arc(32, 32, 31, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.9)';
+    g.beginPath();
+    g.ellipse(22, 20, 7, 4, -0.7, 0, Math.PI * 2);
+    g.fill();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    for (let k = 0; k < 36; k++) {
+      const s = new THREE.Sprite(mat);
+      this.resetBubble(s, true);
+      this.bubbles.push(s);
+      this.group.add(s);
+    }
+  }
+
+  private resetBubble(s: THREE.Sprite, anyY: boolean) {
+    const a = Math.random() * Math.PI * 2;
+    const d = 6 + Math.random() * 22;
+    s.position.set(Math.sin(a) * d, anyY ? -8 + Math.random() * 18 : -10, Math.cos(a) * d);
+    s.scale.setScalar(0.25 + Math.random() * 0.6);
+    s.userData.v = 0.6 + Math.random() * 0.8;
+    s.userData.ph = Math.random() * 6;
   }
 
   update(dt: number, time: number) {
@@ -461,6 +541,16 @@ export class IslandView {
       else g.position.y = tile?.state === 1 ? Math.sin(time * 40) * 0.05 : 0;
       this.padMats[i].opacity = 0.75 + 0.25 * Math.sin(time * 5 + i);
     });
+    for (const sp of this.spinners) {
+      if (sp.userData.foam) sp.scale.set(1.3 + Math.sin(time * 9 + sp.position.x) * 0.12, 0.6 + Math.sin(time * 7) * 0.08, 0.8);
+      else sp.rotation.z += dt * 1.6;
+    }
+    for (const m of this.waterMats) m.uniforms.time.value = time;
+    for (const b of this.bubbles) {
+      b.position.y += b.userData.v * dt;
+      b.position.x += Math.sin(time * 1.3 + b.userData.ph) * dt * 0.3;
+      if (b.position.y > 12) this.resetBubble(b, false);
+    }
     for (const c of this.clouds) {
       c.rotation.y += dt * 0.02;
       c.position.x += dt * c.userData.speed;

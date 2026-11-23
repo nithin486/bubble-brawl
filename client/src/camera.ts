@@ -13,6 +13,15 @@ export class CameraRig {
   /** 0 = gameplay; 1 = close-up (results / celebration) */
   private zoom = 0;
   zoomTarget = 0;
+  private punchT = 0;
+  private punchAmt = 0;
+  private baseFov = 0;
+
+  /** Quick zoom-in kick for big moments. */
+  punch(amount: number) {
+    this.punchAmt = amount;
+    this.punchT = 0.35;
+  }
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
@@ -55,5 +64,17 @@ export class CameraRig {
       look.x += (Math.random() - 0.5) * a * 0.5;
     }
     this.camera.lookAt(look);
+    // FOV kick: punch in fast, ease back out
+    if (!this.baseFov || this.punchT <= 0) this.baseFov = this.camera.fov;
+    if (this.punchT > 0) {
+      this.punchT = Math.max(0, this.punchT - dt);
+      const k = this.punchT / 0.35;
+      this.camera.fov = this.baseFov - this.punchAmt * Math.sin(k * Math.PI * 0.5) ** 0.5 * k;
+      this.camera.updateProjectionMatrix();
+      if (this.punchT === 0) {
+        this.camera.fov = this.baseFov;
+        this.camera.updateProjectionMatrix();
+      }
+    }
   }
 }

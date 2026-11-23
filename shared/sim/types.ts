@@ -58,6 +58,11 @@ export interface Player {
   dashDz: number;
   padCd: number;
   stats: PlayerStats;
+  magnetT: number;
+  speedT: number;
+  shieldT: number;
+  combo: number;
+  comboT: number;
 }
 
 export interface Coin {
@@ -73,6 +78,25 @@ export interface Coin {
   blockId: number; // player who cannot pick it up yet
   blockT: number;
   anyT: number; // nobody can pick it up yet
+  v: number; // value: 1, or more for a golden coin
+}
+
+export type PowerKind = 'magnet' | 'speed' | 'shield' | 'bomb';
+
+export interface PowerUp {
+  id: number;
+  kind: PowerKind;
+  x: number;
+  z: number;
+  age: number;
+}
+
+export interface Bomb {
+  id: number;
+  owner: number;
+  x: number;
+  z: number;
+  fuse: number;
 }
 
 export interface Bank {
@@ -91,9 +115,16 @@ export interface BouncePad {
 }
 
 export type SimEvent =
-  | { t: 'pickup'; p: number; x: number; z: number }
+  | { t: 'pickup'; p: number; x: number; z: number; v: number; combo: number }
+  | { t: 'powerSpawn'; id: number; kind: PowerKind; x: number; z: number }
+  | { t: 'power'; p: number; kind: PowerKind; x: number; z: number }
+  | { t: 'shieldBlock'; p: number }
+  | { t: 'bombPlant'; id: number; owner: number; x: number; z: number }
+  | { t: 'bombBoom'; owner: number; x: number; z: number; hits: number }
+  | { t: 'jackpotWarn' }
+  | { t: 'jackpot'; n: number }
   | { t: 'steal'; from: number; to: number; n: number; sticky: boolean }
-  | { t: 'hit'; victim: number; by: number; kind: 'grab' | AbilityId; drop: number; x: number; z: number }
+  | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | AbilityId; drop: number; x: number; z: number }
   | { t: 'grab'; p: number; hit: boolean }
   | { t: 'dash'; p: number }
   | { t: 'skill'; p: number; ability: AbilityId }

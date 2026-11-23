@@ -144,6 +144,43 @@ export class Sfx {
   lose() {
     [392, 349, 330, 262].forEach((f, i) => this.tone(f, 0.25, { type: 'triangle', vol: 0.12, delay: i * 0.15 }));
   }
+  power() {
+    [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.14, { type: 'triangle', vol: 0.12, delay: i * 0.05 }));
+    this.noise(0.25, { freq: 4000, sweep: 9000, vol: 0.08, q: 0.8 });
+  }
+  pop() {
+    this.tone(600, 0.08, { type: 'sine', vol: 0.25, slide: 2.5 });
+  }
+  shieldBlock() {
+    this.tone(1400, 0.3, { type: 'sine', vol: 0.18, slide: 0.6 });
+    this.tone(2100, 0.25, { type: 'triangle', vol: 0.1, slide: 0.7, delay: 0.02 });
+  }
+  fuse() {
+    this.noise(0.12, { freq: 5000, vol: 0.06, q: 2 });
+  }
+  boom() {
+    this.tone(55, 0.8, { type: 'sine', vol: 0.8, slide: 0.4 });
+    this.noise(0.8, { freq: 900, sweep: 120, vol: 0.6, q: 0.5 });
+    this.noise(0.3, { freq: 3000, vol: 0.25, q: 0.7 });
+  }
+  jackpotWarn() {
+    this.noise(1.6, { freq: 90, sweep: 220, vol: 0.35, q: 0.4 });
+    [392, 494, 587].forEach((f, i) => this.tone(f, 0.25, { type: 'square', vol: 0.06, delay: 0.4 + i * 0.35 }));
+  }
+  jackpot() {
+    this.tone(70, 0.6, { type: 'sine', vol: 0.5, slide: 0.6 });
+    [1046, 1318, 1568, 2093, 2637].forEach((f, i) => this.tone(f, 0.22, { type: 'square', vol: 0.08, delay: 0.1 + i * 0.07 }));
+    this.noise(1.0, { freq: 7000, vol: 0.12, q: 0.4, delay: 0.2 });
+  }
+  golden() {
+    [1568, 2093, 2637, 3136].forEach((f, i) => this.tone(f, 0.25, { type: 'sine', vol: 0.14, delay: i * 0.06 }));
+  }
+  charge() {
+    this.tone(220, 0.3, { type: 'sawtooth', vol: 0.07, slide: 3 });
+  }
+  whoosh() {
+    this.noise(0.35, { freq: 400, sweep: 3500, vol: 0.3, q: 0.9 });
+  }
   click() {
     this.tone(1200, 0.05, { type: 'square', vol: 0.06 });
   }

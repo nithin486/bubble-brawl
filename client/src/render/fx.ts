@@ -41,6 +41,11 @@ export class Fx {
   private next = 0;
   private waves: Wave[] = [];
   private scene: THREE.Scene;
+  // chunky 3D debris (bone shards, rocks, bomb bits)
+  private chunks: THREE.InstancedMesh;
+  private ch: { p: THREE.Vector3; v: THREE.Vector3; r: THREE.Euler; w: THREE.Vector3; life: number; s: number }[] = [];
+  private timed: { obj: THREE.Object3D; t: number; dur: number; tick: (k: number) => void }[] = [];
+  private crackTex: THREE.Texture | null = null;
 
   constructor(scene: THREE.Scene, tex: THREE.Texture) {
     this.scene = scene;
@@ -63,6 +68,86 @@ export class Fx {
     pts.renderOrder = 10;
     scene.add(pts);
     window.addEventListener('resize', () => (mat.uniforms.scale.value = window.innerHeight / 2));
+    this.chunks = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.16, 0), new THREE.MeshStandardMaterial({ roughness: 0.7, flatShading: true }), 140);
+    this.chunks.count = 0;
+    this.chunks.castShadow = true;
+    this.chunks.frustumCulled = false;
+    scene.add(this.chunks);
+  }
+
+  /** Chunky debris that bounces on the ground. */
+  debris(x: number, y: number, z: number, n: number, colors: string[], speed: number, up: number, size = 1) {
+    for (let i = 0; i < n; i++) {
+      if (this.ch.length >= 140) this.ch.shift();
+      const a = Math.random() * Math.PI * 2;
+      const sp = speed * (0.5 + Math.random() * 0.6);
+      this.ch.push({
+        p: new THREE.Vector3(x, y, z),
+        v: new THREE.Vector3(Math.sin(a) * sp, up * (0.6 + Math.random() * 0.6), Math.cos(a) * sp),
+        r: new THREE.Euler(Math.random() * 6, Math.random() * 6, 0),
+        w: new THREE.Vector3(Math.random() * 12 - 6, Math.random() * 12 - 6, 0),
+        life: 1.2 + Math.random() * 0.6,
+        s: size * (0.6 + Math.random() * 0.9),
+      });
+      this.chunks.setColorAt(this.ch.length - 1, new THREE.Color(colors[i % colors.length]));
+    }
+    if (this.chunks.instanceColor) this.chunks.instanceColor.needsUpdate = true;
+  }
+
+  private timedObj(obj: THREE.Object3D, dur: number, tick: (k: number) => void) {
+    this.scene.add(obj);
+    this.timed.push({ obj, t: 0, dur, tick });
+  }
+
+  /** Expanding translucent half-dome shockwave. */
+  dome(x: number, z: number, color: string, radius: number, dur = 0.4) {
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, blending: THREE.AdditiveBlending });
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+    m.position.set(x, 0, z);
+    this.timedObj(m, dur, (k) => {
+      const e = 1 - (1 - k) ** 3;
+      m.scale.set(radius * e, radius * e * 0.7, radius * e);
+      mat.opacity = 0.55 * (1 - k);
+    });
+  }
+
+  /** Vertical light column (jackpot, power pickup). */
+  pillar(x: number, z: number, color: string, height = 8, dur = 0.9, width = 0.9) {
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(width, width * 1.3, height, 24, 1, true), mat);
+    m.position.set(x, height / 2, z);
+    this.timedObj(m, dur, (k) => {
+      m.scale.set(1 - k * 0.7, 1, 1 - k * 0.7);
+      mat.opacity = 0.6 * (1 - k);
+    });
+  }
+
+  /** Cracked-ground decal that fades out. */
+  crack(x: number, z: number, size: number, rot = Math.random() * 6) {
+    if (!this.crackTex) this.crackTex = crackTexture();
+    const mat = new THREE.MeshBasicMaterial({ map: this.crackTex, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+    m.rotation.set(-Math.PI / 2, 0, rot);
+    m.position.set(x, 0.05, z);
+    m.renderOrder = 1;
+    this.timedObj(m, 2.6, (k) => {
+      m.scale.setScalar(Math.min(1, k * 12));
+      mat.opacity = k < 0.7 ? 0.9 : 0.9 * (1 - (k - 0.7) / 0.3);
+    });
+  }
+
+  /** Glowing tendril between two points (Sticky Fingers pull). */
+  beam(a: THREE.Vector3, b: THREE.Vector3, color: string, dur = 0.35) {
+    const mid = a.clone().lerp(b, 0.5);
+    mid.y += 0.8;
+    const curve = new THREE.QuadraticBezierCurve3(a.clone(), mid, b.clone());
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, toneMapped: false, blending: THREE.AdditiveBlending, depthWrite: false });
+    const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.09, 6), mat);
+    this.timedObj(m, dur, (k) => (mat.opacity = 0.9 * (1 - k)));
+    for (let i = 0; i <= 8; i++) {
+      const p = curve.getPoint(i / 8);
+      this.emit(p.x, p.y, p.z, { n: 2, color: [color, '#ffffff'], speed: 1, up: 1, life: 0.4, size: 0.3 });
+    }
   }
 
   emit(x: number, y: number, z: number, opts: { n: number; color: THREE.ColorRepresentation | THREE.ColorRepresentation[]; speed: number; up?: number; life?: number; size?: number; gravity?: number; spread?: number; drag?: number }) {
@@ -139,6 +224,54 @@ export class Fx {
   }
 
   update(dt: number) {
+    // debris
+    const M = new THREE.Matrix4();
+    const Q = new THREE.Quaternion();
+    const S = new THREE.Vector3();
+    for (let i = this.ch.length - 1; i >= 0; i--) {
+      const c = this.ch[i];
+      c.life -= dt;
+      if (c.life <= 0) {
+        this.ch.splice(i, 1);
+        continue;
+      }
+      c.v.y -= 22 * dt;
+      c.p.addScaledVector(c.v, dt);
+      if (c.p.y < 0.08 && Math.hypot(c.p.x, c.p.z) < 14) {
+        c.p.y = 0.08;
+        c.v.y = Math.abs(c.v.y) * 0.35;
+        c.v.x *= 0.6;
+        c.v.z *= 0.6;
+        c.w.multiplyScalar(0.6);
+      }
+      c.r.x += c.w.x * dt;
+      c.r.y += c.w.y * dt;
+    }
+    this.ch.forEach((c, i) => {
+      Q.setFromEuler(c.r);
+      S.setScalar(c.s * Math.min(1, c.life * 3));
+      this.chunks.setMatrixAt(i, M.compose(c.p, Q, S));
+    });
+    this.chunks.count = this.ch.length;
+    this.chunks.instanceMatrix.needsUpdate = true;
+    for (let i = this.timed.length - 1; i >= 0; i--) {
+      const o = this.timed[i];
+      o.t += dt;
+      const k = Math.min(1, o.t / o.dur);
+      o.tick(k);
+      if (k >= 1) {
+        this.scene.remove(o.obj);
+        o.obj.traverse((m) => {
+          const mesh = m as THREE.Mesh;
+          if (mesh.isMesh) {
+            mesh.geometry.dispose();
+            (mesh.material as THREE.Material).dispose();
+          }
+        });
+        this.timed.splice(i, 1);
+      }
+    }
+
     for (let i = 0; i < MAX; i++) {
       if (this.life[i] <= 0) {
         this.alpha[i] = 0;
@@ -184,4 +317,40 @@ export class Fx {
       }
     }
   }
+}
+
+function crackTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(128, 128, 10, 128, 128, 128);
+  grd.addColorStop(0, 'rgba(60,35,20,0.55)');
+  grd.addColorStop(0.6, 'rgba(60,35,20,0.2)');
+  grd.addColorStop(1, 'rgba(60,35,20,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = 'rgba(40,20,10,0.9)';
+  g.lineCap = 'round';
+  for (let i = 0; i < 9; i++) {
+    let a = (i / 9) * Math.PI * 2 + Math.random() * 0.4;
+    let x = 128;
+    let y = 128;
+    g.lineWidth = 7;
+    g.beginPath();
+    g.moveTo(x, y);
+    for (let s = 0; s < 6; s++) {
+      a += (Math.random() - 0.5) * 0.7;
+      const len = 14 + Math.random() * 10;
+      x += Math.cos(a) * len;
+      y += Math.sin(a) * len;
+      g.lineTo(x, y);
+      g.lineWidth = Math.max(1.5, 7 - s * 1.1);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x, y);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
