@@ -10,6 +10,15 @@ const B = TUNING.bots;
 
 type Mode = 'collect' | 'bank' | 'steal' | 'flee' | 'idle';
 
+/** Who is hunting whom, shared by all bots of one world — so they don't all gang up on one target. */
+const HUNTS = new WeakMap<World, Map<number, number>>();
+function huntersOf(w: World, target: number, except: number) {
+  let n = 0;
+  const m = HUNTS.get(w);
+  if (m) for (const [bot, t] of m) if (t === target && bot !== except) n++;
+  return n;
+}
+
 /** Bot personalities: they change decisions AND what the bot says (speech bubbles). */
 export type Personality = 'greedy' | 'thief' | 'coward' | 'bully';
 const PERSONALITY: Record<Personality, { bankAdd: number; stealRange: number; stealMin: number; fleeAt: number; human: number }> = {
@@ -104,6 +113,9 @@ export class BotBrain {
         return { mx: ax * 0.6 - az * side * 0.8, mz: az * 0.6 + ax * side * 0.8, dash: true, grab: false, skill: false };
       }
     }
+    let hm = HUNTS.get(w);
+    if (!hm) HUNTS.set(w, (hm = new Map()));
+    hm.set(this.id, this.targetId);
     while (this.queue.length && this.queue[0].due <= this.clock) {
       const next = this.queue.shift()!;
       // buttons fire once; movement target persists
@@ -124,6 +136,20 @@ export class BotBrain {
       const sn = Math.sin(err);
       dx /= d;
       dz /= d;
+      // give other heroes room: crowds become a readable ring, not a pile
+      for (const o of w.players) {
+        if (o === me || o.id === this.targetId || o.state === 'falling') continue;
+        const ox = me.x - o.x;
+        const oz = me.z - o.z;
+        const od = Math.hypot(ox, oz);
+        if (od > 2.2 || od < 0.01) continue;
+        const k = (1 - od / 2.2) * 1.4;
+        dx += (ox / od) * k;
+        dz += (oz / od) * k;
+        const n = Math.hypot(dx, dz) || 1;
+        dx /= n;
+        dz /= n;
+      }
       // steer around rocks, trees and the well instead of pushing into them
       for (const o of w.obstacles) {
         const ox = o.x - me.x;
@@ -206,7 +232,25 @@ export class BotBrain {
     if (me.carried >= Math.min(B.fleeCarry, P.fleeAt) && mayBankSoon(easy, me, human, w)) {
       const threat = rivals.find((o) => len(o.x - me.x, o.z - me.z) < B.fleeRange && o.grabCd < 0.4);
       if (threat) {
-        return { mode: 'flee', tx: w.bank.x, tz: w.bank.z, dash: me.dashCd <= 0 && !easy, grab: false, skill };
+        // run AWAY into open space; only use the bank as the escape when it's quiet
+        const bankCrowd = w.players.filter((o) => o !== me && Math.hypot(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 1).length;
+        const ax = me.x - threat.x;
+        const az = me.z - threat.z;
+        const ad = Math.hypot(ax, az) || 1;
+        let tx = me.x + (ax / ad) * 5;
+        let tz = me.z + (az / ad) * 5;
+        if (bankCrowd === 0) {
+          tx = (tx + w.bank.x) / 2;
+          tz = (tz + w.bank.z) / 2;
+        }
+        // stay on the island: pull escape points inward when near the edge
+        const r = Math.hypot(tx, tz);
+        const lim = w.arena.safeRadius - 2.5;
+        if (r > lim) {
+          tx *= lim / r;
+          tz *= lim / r;
+        }
+        return { mode: 'flee', tx, tz, dash: me.dashCd <= 0 && !easy, grab: false, skill };
       }
     }
 
@@ -215,7 +259,10 @@ export class BotBrain {
     // First match, round 1: never bank past the player, so the new player wins the round.
     // These bots keep carrying instead, which makes them juicy targets to learn Grab on.
     const mayBank = !easy || me.bankedRound + w.bankValue(me.carried).total < human.bankedRound;
-    if ((me.carried >= threshold || late) && mayBank) {
+    // a busy bank is skipped unless I'm loaded or time is running out — no six-hero piles
+    const inBank = w.players.filter((o) => o !== me && Math.hypot(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 0.8).length;
+    const bankBusy = inBank >= 2 && !late && me.carried < threshold + 10;
+    if ((me.carried >= threshold || late) && mayBank && !bankBusy) {
       const d = len(w.bank.x - me.x, w.bank.z - me.z);
       const dash = !easy && d > 6 && me.dashCd <= 0 && me.carried >= threshold + 6;
       return { mode: 'bank', tx: w.bank.x + (this.rng.next() - 0.5), tz: w.bank.z + (this.rng.next() - 0.5), dash, grab: false, skill };
@@ -231,6 +278,10 @@ export class BotBrain {
         const crown = o.id === w.crownId;
         const range = (easy ? B.stealRange : P.stealRange) + (crown ? 4 : 0);
         if (d > range || o.carried < P.stealMin || (!crown && this.personality !== 'thief' && this.personality !== 'bully' && o.carried <= Math.max(2, me.carried))) continue;
+        if (huntersOf(w, o.id, this.id) >= (crown ? 2 : 1)) continue;
+        // don't dive after someone into a crowded bank
+        const oBank = Math.hypot(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 0.6;
+        if (oBank && w.players.filter((q) => q !== o && q !== me && Math.hypot(q.x - w.bank.x, q.z - w.bank.z) < TUNING.bank.radius + 1).length >= 1) continue;
         let score = (o.carried + (crown ? 8 : 0)) / (d + 1);
         if (!o.isBot && !easy) score *= P.human;
         // grudges: go after whoever robbed me
@@ -262,9 +313,25 @@ export class BotBrain {
     const target = this.bestCoinSpot(w, me);
     if (target) return { mode: 'collect', tx: target.x, tz: target.z, dash: false, grab: false, skill };
 
-    // nothing to do: drift toward the bank area
-    this.wander += 1;
-    return { mode: 'idle', tx: w.bank.x * 0.5 + Math.sin(this.wander) * 2, tz: w.bank.z * 0.5 + Math.cos(this.wander) * 2, dash: false, grab: false, skill };
+    // nothing to do: wander to a quiet spot (away from everyone else)
+    this.wander += 0.7;
+    let bx = 0;
+    let bz = 0;
+    let best = -1;
+    for (let k = 0; k < 6; k++) {
+      const a = this.wander + k * 1.05;
+      const r = 3 + ((this.id * 7 + k * 3) % 5);
+      const x = Math.sin(a) * r;
+      const z = Math.cos(a) * r;
+      if (!w.arena.safe(x, z)) continue;
+      const room = Math.min(...w.players.filter((o) => o !== me).map((o) => Math.hypot(o.x - x, o.z - z)));
+      if (room > best) {
+        best = room;
+        bx = x;
+        bz = z;
+      }
+    }
+    return { mode: 'idle', tx: bx, tz: bz, dash: false, grab: false, skill };
   }
 
   private bestCoinSpot(w: World, me: Player) {
@@ -281,8 +348,9 @@ export class BotBrain {
       for (const o of coins) if ((o.x - c.x) ** 2 + (o.z - c.z) ** 2 < 4) n += o.v;
       const d = len(c.x - me.x, c.z - me.z);
       let crowd = 0;
-      for (const p of w.players) if (p !== me && (p.x - c.x) ** 2 + (p.z - c.z) ** 2 < 4) crowd++;
-      const score = n / (d + 3) - crowd * 0.4;
+      for (const p of w.players) if (p !== me && (p.x - c.x) ** 2 + (p.z - c.z) ** 2 < 9) crowd++;
+      if (crowd >= 2) continue;
+      const score = n / (d + 3) - crowd * 0.9;
       if (score > bestScore) {
         bestScore = score;
         best = c;

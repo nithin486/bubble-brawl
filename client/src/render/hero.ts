@@ -67,10 +67,10 @@ export class HeroView {
     }
 
     // ground ring in the player's colour (local player gets a thicker, brighter ring)
-    const ringGeo = new THREE.RingGeometry(isLocal ? 0.62 : 0.66, 0.8, 40);
+    const ringGeo = new THREE.RingGeometry(isLocal ? 0.6 : 0.72, 0.8, 40);
     this.ring = new THREE.Mesh(
       ringGeo,
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: isLocal ? 0.95 : 0.7, depthWrite: false, toneMapped: false }),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: isLocal ? 0.95 : 0.45, depthWrite: false, toneMapped: false }),
     );
     this.ring.rotation.x = -Math.PI / 2;
     this.ring.position.y = 0.03;

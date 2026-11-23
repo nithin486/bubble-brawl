@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
 
+/** Height the bank bubble floats at — above heads and name tags. */
+const HOVER = 5.0;
+/** Pushed slightly away from the camera so it hangs above-and-behind whoever is banking. */
+const BACK = -1.4;
+
 /** The Bubble Bank: an iridescent bubble with a gold chest inside, plus the "next spot" beam. */
 export class BankView {
   group = new THREE.Group();
@@ -35,28 +40,26 @@ export class BankView {
           float s = pow(max(0.0, dot(reflect(-vV, vN), normalize(vec3(-0.4,0.8,0.4)))), 40.0);
           gl_FragColor = vec4(col + s, clamp(a + s, 0.0, 1.0)); }`,
     });
-    this.bubble = new THREE.Mesh(new THREE.SphereGeometry(R * 0.95, 40, 24), this.bubbleMat);
-    this.bubble.position.y = R * 0.78;
+    // The bank hovers ABOVE the players like a balloon, so heroes standing in it stay readable.
+    this.bubble = new THREE.Mesh(new THREE.SphereGeometry(1.1, 40, 24), this.bubbleMat);
+    this.bubble.position.y = HOVER;
     this.bubble.renderOrder = 5;
     this.group.add(this.bubble);
 
     this.inner = new THREE.Group();
     const chest = env.get('chest_gold')!.clone();
-    chest.scale.setScalar(0.85);
+    chest.scale.setScalar(0.55);
+    chest.position.set(0, -0.45, 0);
     const stack = env.get('coin_stack')!.clone();
-    stack.scale.setScalar(2);
-    stack.position.set(0.9, 0, 0.4);
-    const stack2 = env.get('coin_stack')!.clone();
-    stack2.scale.setScalar(1.6);
-    stack2.position.set(-0.85, 0, 0.5);
-    stack2.rotation.y = 1.4;
-    this.inner.add(chest, stack, stack2);
+    stack.scale.setScalar(1.2);
+    stack.position.set(0.55, -0.45, 0.35);
+    this.inner.add(chest, stack);
     this.group.add(this.inner);
 
     // inner glow
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#7ff3ff', transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-    glow.scale.setScalar(5.5);
-    glow.position.y = 1.2;
+    glow.scale.setScalar(4);
+    glow.position.set(0, HOVER, BACK);
     this.group.add(glow);
 
     this.ringMat = new THREE.MeshBasicMaterial({ color: '#58f0ff', transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
@@ -71,6 +74,14 @@ export class BankView {
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = 0.04;
     this.group.add(floor);
+    // soft light cone linking the floating bank to its pad (no geometry over the heroes' bodies)
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.9, R - 0.1, HOVER - 1.1, 32, 1, true),
+      new THREE.MeshBasicMaterial({ color: '#7ff3ff', transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false }),
+    );
+    shaft.position.set(0, (HOVER - 1.1) / 2, BACK / 2);
+    shaft.rotation.x = Math.atan2(-BACK / 2, HOVER - 1.1) * -1;
+    this.group.add(shaft);
     scene.add(this.group);
 
     // beam showing where the bank goes next
@@ -107,13 +118,14 @@ export class BankView {
   update(dt: number, time: number) {
     const b = this.world.bank;
     this.group.position.set(b.x, 0, b.z);
-    this.pos.set(b.x, 1.4, b.z);
+    this.pos.set(b.x, HOVER, b.z + BACK);
     this.pulse = Math.max(0, this.pulse - dt * 2.5);
     this.bubbleMat.uniforms.time.value = time;
     this.bubbleMat.uniforms.pulse.value = this.pulse;
     const s = 1 + Math.sin(time * 2.2) * 0.025 + this.pulse * 0.12;
     this.bubble.scale.set(s, s * (1 + Math.sin(time * 1.7) * 0.02), s);
-    this.inner.position.y = 0.15 + Math.sin(time * 1.5) * 0.08;
+    this.inner.position.set(0, HOVER + Math.sin(time * 1.5) * 0.12, BACK);
+    this.bubble.position.set(0, HOVER + Math.sin(time * 1.5) * 0.12, BACK);
     this.inner.rotation.y = Math.sin(time * 0.6) * 0.3;
     const anyBanking = this.world.players.some((p) => p.bankT > 0);
     this.ringMat.color.set(anyBanking ? '#ffe066' : '#58f0ff');
