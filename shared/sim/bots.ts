@@ -1,0 +1,223 @@
+// Bot brains: a small state machine per bot that produces the same Input a human does.
+// Re-thinks at TUNING.bots.thinkHz; decisions take effect after a reaction delay.
+import { TUNING } from '../config/tuning.ts';
+import { HEROES } from '../config/heroes.ts';
+import { DEG, inCone, len, Rng } from './math.ts';
+import { NO_INPUT, type Input, type Player } from './types.ts';
+import { targetable, type World } from './world.ts';
+
+const B = TUNING.bots;
+
+type Mode = 'collect' | 'bank' | 'steal' | 'flee' | 'idle';
+
+interface Intent {
+  mode: Mode;
+  tx: number;
+  tz: number;
+  dash: boolean;
+  grab: boolean;
+  skill: boolean;
+  due: number;
+}
+
+export class BotBrain {
+  readonly id: number;
+  mode: Mode = 'idle';
+  private reaction: number;
+  private speed: number;
+  private aimErr: number;
+  private threshold: number;
+  private thinkT = 0;
+  private clock = 0;
+  private queue: Intent[] = [];
+  private cur: Intent;
+  private rng: Rng;
+  private wander = 0;
+  /** Index of the human player; first-match bots go easy on them. */
+  private humanId: number;
+
+  constructor(id: number, rng: Rng, humanId = 0) {
+    this.id = id;
+    this.rng = rng;
+    this.humanId = humanId;
+    this.reaction = rng.range(B.reactionMin, B.reactionMax);
+    this.speed = rng.range(B.speedMin, B.speedMax);
+    this.aimErr = rng.range(-B.aimErrorDeg, B.aimErrorDeg) * DEG;
+    this.threshold = rng.int(B.bankThresholdMin, B.bankThresholdMax);
+    this.thinkT = rng.next() / B.thinkHz;
+    this.cur = { mode: 'idle', tx: 0, tz: 0, dash: false, grab: false, skill: false, due: 0 };
+  }
+
+  /** Easy mode is active in round 1 of the player's first match. */
+  private easy(w: World) {
+    return w.firstMatch && w.round === 1 && this.id !== this.humanId;
+  }
+
+  newRound() {
+    this.threshold = this.rng.int(B.bankThresholdMin, B.bankThresholdMax);
+    this.queue.length = 0;
+  }
+
+  update(w: World, dt: number): Input {
+    this.clock += dt;
+    const me = w.players[this.id];
+    if (w.phase !== 'playing' || me.state === 'falling' || me.state === 'launched') return NO_INPUT;
+    this.thinkT -= dt;
+    if (this.thinkT <= 0) {
+      this.thinkT += 1 / B.thinkHz;
+      const reaction = this.easy(w) ? B.firstMatch.reaction : this.reaction;
+      this.queue.push({ ...this.think(w, me), due: this.clock + reaction });
+    }
+    while (this.queue.length && this.queue[0].due <= this.clock) {
+      const next = this.queue.shift()!;
+      // buttons fire once; movement target persists
+      this.cur = next;
+    }
+    const c = this.cur;
+    this.mode = c.mode;
+    let dx = c.tx - me.x;
+    let dz = c.tz - me.z;
+    const d = len(dx, dz);
+    const speed = this.easy(w) ? B.firstMatch.speed : this.speed;
+    let mx = 0;
+    let mz = 0;
+    if (d > 0.25) {
+      // aim error rotates the heading a little; it shrinks as the bot gets close
+      const err = this.aimErr * Math.min(1, d / 6);
+      const cs = Math.cos(err);
+      const sn = Math.sin(err);
+      dx /= d;
+      dz /= d;
+      mx = (dx * cs + dz * sn) * speed;
+      mz = (-dx * sn + dz * cs) * speed;
+      // ease into stops to avoid jitter
+      if (d < 1) {
+        mx *= d;
+        mz *= d;
+      }
+    }
+    const skipBank = this.easy(w) && !mayBankSoon(true, me, w.players[this.humanId]);
+    const out: Input = { mx, mz, dash: c.dash, grab: c.grab, skill: c.skill, skipBank };
+    c.dash = c.grab = c.skill = false;
+    return out;
+  }
+
+  private think(w: World, me: Player): Omit<Intent, 'due'> {
+    const easy = this.easy(w);
+    const threshold = easy ? B.firstMatch.bankThreshold : this.threshold;
+    const rivals = w.players.filter((o) => o !== me && targetable(o));
+    const human = w.players[this.humanId];
+    const canTarget = (o: Player) => !(easy && o === human && !o.isBot);
+
+    // standing on a crumbling tile → get to the middle
+    if (!w.arena.safe(me.x, me.z)) {
+      return { mode: 'flee', tx: me.x * 0.3, tz: me.z * 0.3, dash: me.dashCd <= 0, grab: false, skill: false };
+    }
+
+    let skill = false;
+    if (me.skillCd <= 0 && me.state === 'normal') skill = this.wantSkill(w, me, rivals.filter(canTarget));
+
+    // 4. flee: rich and someone is closing in
+    if (me.carried >= B.fleeCarry && mayBankSoon(easy, me, human)) {
+      const threat = rivals.find((o) => len(o.x - me.x, o.z - me.z) < B.fleeRange && o.grabCd < 0.4);
+      if (threat) {
+        return { mode: 'flee', tx: w.bank.x, tz: w.bank.z, dash: me.dashCd <= 0 && !easy, grab: false, skill };
+      }
+    }
+
+    // 2. bank when carrying enough (or when the round is ending)
+    const late = w.remaining < 9 && me.carried > 0;
+    // First match, round 1: never bank past the player, so the new player wins the round.
+    // These bots keep carrying instead, which makes them juicy targets to learn Grab on.
+    const mayBank = !easy || me.bankedRound + me.carried < human.bankedRound;
+    if ((me.carried >= threshold || late) && mayBank) {
+      const d = len(w.bank.x - me.x, w.bank.z - me.z);
+      const dash = !easy && d > 6 && me.dashCd <= 0 && me.carried >= threshold + 6;
+      return { mode: 'bank', tx: w.bank.x + (this.rng.next() - 0.5), tz: w.bank.z + (this.rng.next() - 0.5), dash, grab: false, skill };
+    }
+
+    // 3. steal from a richer rival nearby
+    if (me.grabCd <= 0.3) {
+      let best: Player | null = null;
+      let bestScore = 0;
+      for (const o of rivals) {
+        if (!canTarget(o) && this.rng.next() > B.firstMatch.grabPlayerChance) continue;
+        const d = len(o.x - me.x, o.z - me.z);
+        if (d > B.stealRange || o.carried <= Math.max(2, me.carried)) continue;
+        const score = o.carried / (d + 1);
+        if (score > bestScore) {
+          bestScore = score;
+          best = o;
+        }
+      }
+      if (best) {
+        const d = len(best.x - me.x, best.z - me.z);
+        // lead the target slightly
+        const tx = best.x + best.vx * 0.25;
+        const tz = best.z + best.vz * 0.25;
+        const grab = d < TUNING.grab.range + 0.2 && inCone(me, me.facing, best, TUNING.grab.range + 0.3, 90);
+        const dash = !easy && d > 2.5 && d < 5 && me.dashCd <= 0 && best.carried >= 8;
+        // Pinch: arm Sticky Fingers before the grab
+        if (HEROES[me.hero].ability === 'stickyFingers' && me.skillCd <= 0 && d < 4 && best.carried >= 5) skill = true;
+        return { mode: 'steal', tx, tz, dash, grab, skill };
+      }
+    }
+
+    // 1. collect: go to the best cluster of loose coins
+    const target = this.bestCoinSpot(w, me);
+    if (target) return { mode: 'collect', tx: target.x, tz: target.z, dash: false, grab: false, skill };
+
+    // nothing to do: drift toward the bank area
+    this.wander += 1;
+    return { mode: 'idle', tx: w.bank.x * 0.5 + Math.sin(this.wander) * 2, tz: w.bank.z * 0.5 + Math.cos(this.wander) * 2, dash: false, grab: false, skill };
+  }
+
+  private bestCoinSpot(w: World, me: Player) {
+    let best: { x: number; z: number } | null = null;
+    let bestScore = -Infinity;
+    const coins = w.coins;
+    // sample a subset of coins for speed
+    const step = coins.length > 60 ? 2 : 1;
+    for (let i = 0; i < coins.length; i += step) {
+      const c = coins[i];
+      if (c.y > 4 || (c.blockId === me.id && c.blockT > 0.3)) continue;
+      if (!w.arena.safe(c.x, c.z)) continue;
+      let n = 0;
+      for (const o of coins) if ((o.x - c.x) ** 2 + (o.z - c.z) ** 2 < 4) n++;
+      const d = len(c.x - me.x, c.z - me.z);
+      let crowd = 0;
+      for (const p of w.players) if (p !== me && (p.x - c.x) ** 2 + (p.z - c.z) ** 2 < 4) crowd++;
+      const score = n / (d + 3) - crowd * 0.4;
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  private wantSkill(w: World, me: Player, rivals: Player[]) {
+    const ab = HEROES[me.hero].ability;
+    if (ab === 'rattleBurst') {
+      const r = TUNING.abilities.rattleBurst.radius;
+      const near = rivals.filter((o) => len(o.x - me.x, o.z - me.z) < r - 0.3);
+      return near.length >= 2 || near.some((o) => o.carried >= 8);
+    }
+    if (ab === 'groundSlam') {
+      const c = TUNING.abilities.groundSlam;
+      const hit = rivals.filter((o) => inCone(me, me.facing, o, c.range - 0.3, c.coneDeg + 30));
+      return hit.length >= 2 || hit.some((o) => o.carried >= 8);
+    }
+    return false; // stickyFingers is handled in steal mode
+  }
+}
+
+function mayBankSoon(easy: boolean, me: Player, human: Player) {
+  return !easy || me.bankedRound + me.carried < human.bankedRound;
+}
+
+/** Build brains for every bot seat. */
+export function makeBrains(w: World, humanId = 0) {
+  return w.players.filter((p) => p.isBot).map((p) => new BotBrain(p.id, new Rng(w.rng.int(1, 1e9)), humanId));
+}
+
