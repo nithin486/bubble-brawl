@@ -402,3 +402,39 @@ body { font-family: var(--body); color: #fff; user-select: none; -webkit-user-se
 
 /* third-person view: you are the hero in front of the camera, no need for a YOU label */
 body.cam-third .tag.me .tn{display:none}
+
+/* ---------- phones in landscape: give the screen to the game ---------- */
+@media (max-height: 520px) {
+  .board { transform: scale(0.82); transform-origin: left top; top: 4px; }
+  .board .row.far { display: none; }
+  .top-center { top: 4px; }
+  .timer { font-size: 19px; padding: 2px 11px 4px; border-radius: 10px; box-shadow: 0 3px 0 var(--deep); }
+  .timer svg { width: 14px; height: 14px; }
+  .round { font-size: 9px; }
+  .round i { width: 5px; height: 5px; }
+  .pause-btn { width: 32px; height: 32px; font-size: 15px; border-radius: 10px; top: 4px; }
+  .prompt { top: 17%; font-size: 15px; padding: 3px 10px 5px; }
+  .prompt .key { font-size: 10px; padding: 1px 5px; }
+  .mine { bottom: calc(5px + var(--safe-b)); gap: 5px; }
+  .pill { box-shadow: 0 3px 0 var(--deep); }
+  .pill.carry { font-size: 17px; padding: 2px 9px 3px; gap: 5px; }
+  .pill.carry .coin-ico { width: 15px; height: 15px; }
+  .pill.carry small { font-size: 9px; }
+  .pill.banked { font-size: 13px; padding: 2px 9px 3px; gap: 5px; }
+  .bub-ico { width: 13px; height: 13px; }
+  .controls { transform: scale(0.66); right: calc(6px + var(--safe-r)); bottom: calc(4px + var(--safe-b)); }
+  .stick-ghost { width: 76px; height: 76px; font-size: 11px; left: calc(46px + var(--safe-l)); bottom: calc(26px + var(--safe-b)); }
+  .stick { width: 104px; height: 104px; }
+  .stick .knob { width: 46px; height: 46px; }
+  .banner { font-size: 30px; }
+  .banner.small { font-size: 18px; }
+  .countdown { font-size: 64px; }
+  .skillname { font-size: 30px; -webkit-text-stroke: 5px var(--deep); }
+  .combo { font-size: 12px; bottom: calc(34px + var(--safe-b)); }
+  .combo b { font-size: 18px; }
+  .powers { bottom: calc(34px + var(--safe-b)); }
+  .tag .tn { font-size: 11px; }
+  .tag .tc { font-size: 15px; }
+}
+/* tips stay readable over far-away name tags */
+.prompt { z-index: 3; }

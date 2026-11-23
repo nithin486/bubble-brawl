@@ -182,6 +182,13 @@ export class ArenaView {
   private makeGlow(color: string, size: number) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     s.scale.setScalar(size);
+    // the low third-person camera can pass right next to a lamp: fade glows up close so they don't fog the screen
+    const wp = new THREE.Vector3();
+    s.onBeforeRender = (_r, _s, cam) => {
+      s.getWorldPosition(wp);
+      const d = wp.distanceTo(cam.position);
+      s.material.opacity = 0.85 * Math.min(1, Math.max(0, (d - size * 0.6) / (size * 1.2 + 2)));
+    };
     return s;
   }
 

@@ -140,7 +140,14 @@ export class Stage {
     const h = window.innerHeight;
     this.camera.aspect = w / h;
     // keep the island in view on narrow screens
-    this.camera.fov = w / h < 1.3 ? this.fovBase + 10 : this.fovBase;
+    const asp = w / h;
+    let fov = asp < 1.3 ? this.fovBase + 10 : this.fovBase;
+    // very wide phone screens: cap the horizontal view so heroes don't shrink to dots
+    if (asp > 1.8) {
+      const hMax = 2 * Math.atan(Math.tan((fov * Math.PI) / 360) * 1.8);
+      fov = (2 * Math.atan(Math.tan(hMax / 2) / asp) * 180) / Math.PI;
+    }
+    this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
     if (this.composer) {

@@ -322,6 +322,7 @@ export class Hud {
     order.forEach((p, i) => {
       const r = this.rows[p.id];
       r.style.order = String(i);
+      r.classList.toggle('far', i >= 3 && p.id !== localId);
       const rk = r.querySelector('.rk')!;
       if (rk.textContent !== String(i + 1)) rk.textContent = String(i + 1);
       const v = world.finale && playing && p.id !== localId ? '???' : String(p.bankedTotal + p.bankedRound);
