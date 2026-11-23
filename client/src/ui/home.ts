@@ -40,6 +40,7 @@ export class Home {
   onPlay: ((h: HeroId) => void) | null = null;
   onSettings: (() => void) | null = null;
   onMap: ((id: string) => void) | null = null;
+  onFriends: (() => void) | null = null;
   private mapIdx = 0;
 
   constructor(state: HomeState) {
@@ -77,7 +78,7 @@ export class Home {
         <div class="mapcard"><button class="mp l" aria-label="Previous map">${SVG.left}</button><div class="mt"><small>MAP</small><b></b><span></span></div><button class="mp r" aria-label="Next map">${SVG.right}</button></div>
         <div class="mode"><div class="mi">${SVG.trophy}</div><div><b>COIN CLASH</b><span>${TUNING.match.rounds} rounds · vs bots</span></div></div>
         <button class="play tap">PLAY<small></small></button>
-        <button class="friends" disabled>Play with friends<em>SOON</em></button>
+        <button class="friends tap">👥 Play with friends<em>NEW</em></button>
         <div class="keyhint">${state.touch ? '' : 'Press Enter to play · ← → to change hero'}</div>
       </div>`;
     document.body.appendChild(r);
@@ -89,6 +90,7 @@ export class Home {
     r.querySelector('.arrow.l')!.addEventListener('click', () => this.step(-1));
     r.querySelector('.arrow.r')!.addEventListener('click', () => this.step(1));
     r.querySelector('.icon-btn')!.addEventListener('click', () => this.onSettings?.());
+    r.querySelector('.friends')!.addEventListener('click', () => this.onFriends?.());
     this.mapIdx = Math.max(0, state.maps.findIndex((m) => m.id === state.map));
     const showMap = () => {
       const m = state.maps[this.mapIdx];

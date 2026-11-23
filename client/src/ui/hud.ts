@@ -612,6 +612,7 @@ export class Hud {
       levelUp: boolean;
       xpFrac: number;
       trial: HeroId | null;
+      waitForHost?: boolean;
       onRematch: () => void;
       onHome: () => void;
     },
@@ -645,8 +646,9 @@ export class Hud {
     const row = el('div', 'btn-row');
     const home = el('button', 'big-btn alt tap', 'HOME');
     home.addEventListener('click', opts.onHome);
-    const re = el('button', 'big-btn tap', 'REMATCH');
-    re.addEventListener('click', opts.onRematch);
+    const re = el('button', 'big-btn tap', opts.waitForHost ? 'WAITING FOR HOST…' : 'REMATCH');
+    if (opts.waitForHost) (re as HTMLButtonElement).disabled = true;
+    else re.addEventListener('click', opts.onRematch);
     row.append(home, re);
     p.append(row);
     const v = this.open(p);
@@ -658,7 +660,7 @@ export class Hud {
     this.root.classList.add('menu');
     re.focus();
     const key = (e: KeyboardEvent) => {
-      if (e.code === 'Enter') {
+      if (e.code === 'Enter' && !opts.waitForHost) {
         window.removeEventListener('keydown', key);
         opts.onRematch();
       }

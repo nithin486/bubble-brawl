@@ -23,6 +23,9 @@ import { Home } from './ui/home.ts';
 import { Showcase } from './render/showcase.ts';
 import { PowerView, POWER_INFO } from './render/powerups.ts';
 import { Markers } from './render/markers.ts';
+import { Room, type StartMsg, MAX_HUMANS } from './net/room.ts';
+import { FriendsPanel } from './ui/friends.ts';
+import { SnapshotEncoder, applySnapshot, type Snapshot } from '../../shared/sim/snapshot.ts';
 import type { Personality } from '../../shared/sim/bots.ts';
 
 /** What bots say, by personality. Short, readable, and they tell you what's going on. */
@@ -60,7 +63,8 @@ const LINES: Record<string, Record<Personality, string[]>> = {
 };
 
 const BOT_NAMES = ['Chintu', 'Golu', 'Mango', 'Rocket', 'Bunty', 'Zara', 'Pixel', 'Tiki', 'Momo', 'Laddoo', 'Noodle', 'Bolt', 'Pappu', 'Rani', 'Jelly'];
-const LOCAL = 0;
+/** Seat of the player on this device (0 offline; any seat in a friends room). */
+let LOCAL = 0;
 // debug: ?autoplay lets a bot drive the local hero; ?speed=N fast-forwards the sim
 const PARAMS = new URLSearchParams(location.search);
 const AUTOPLAY = PARAMS.has('autoplay');
@@ -121,6 +125,18 @@ export class Game {
   private trial = false;
   private powers: PowerView | null = null;
   private markers: Markers | null = null;
+  // ---- friends rooms
+  private room: Room | null = null;
+  private friends: FriendsPanel | null = null;
+  /** Host: which room peer sits in each seat ('' = bot / host). */
+  private seatPeers: string[] = [];
+  private encoder = new SnapshotEncoder();
+  private snapT = 0;
+  private pending: SimEvent[] = [];
+  /** Client: server positions to smooth toward. */
+  private targets: { x: number; z: number; y: number }[] = [];
+  private sendT = 0;
+  private netInput: Input = { ...NO_INPUT };
   /** coins each bot stole from you this match → the top one is your NEMESIS */
   private robbedBy = new Map<number, number>();
   private nemesis = -1;
@@ -165,8 +181,10 @@ export class Game {
     if (AUTOPLAY || PARAMS.has('play')) {
       this.mode = 'match';
       this.startMatch(profile.hero);
-    }
-    else this.goHome();
+    } else this.goHome();
+    // invite link: straight into the friend's room
+    const invite = PARAMS.get('room');
+    if (invite && !AUTOPLAY) setTimeout(() => this.openFriends(invite.toUpperCase().slice(0, 5)), 300);
     requestAnimationFrame(this.frame);
     if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
   }
@@ -212,6 +230,10 @@ export class Game {
     };
     this.home.onHero(this.home.hero, !this.profile.unlocked.includes(this.home.hero));
     this.home.onSettings = () => this.setPaused(true);
+    this.home.onFriends = () => {
+      this.sfx.click();
+      this.openFriends();
+    };
     this.home.onPlay = (h) => {
       this.sfx.unlock();
       this.sfx.click();
@@ -230,18 +252,32 @@ export class Game {
     };
   }
 
-  private startMatch(hero: HeroId, attract = false) {
+  private startMatch(hero: HeroId, attract = false, net?: { start: StartMsg; seat: number }) {
     const rng = new Rng((Math.random() * 1e9) | 0);
     const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
     const botHeroes: HeroId[] = HERO_IDS;
-    const setups = [{ name: attract ? names[0] : 'You', hero, isBot: attract }];
+    let setups = [{ name: attract ? names[0] : 'You', hero, isBot: attract }];
     const off = rng.int(0, botHeroes.length - 1);
     // spread bots evenly over the roster so every match shows every hero
     for (let i = 1; i < TUNING.match.playersPerMatch; i++) setups.push({ name: names[i], hero: botHeroes[(off + i) % botHeroes.length], isBot: true });
-    this.world = new World(setups, { firstMatch: this.firstMatch && !attract, map: this.mapId });
-    if (this.firstMatch || attract) this.world.phaseT = 0.6; // no countdown wait in the very first round
-    this.brains = this.world.players.filter((p) => p.isBot).map((p) => new BotBrain(p.id, new Rng(rng.int(1, 1e9)), LOCAL));
+    LOCAL = 0;
+    if (net) {
+      setups = net.start.seats.map((s) => ({ name: s.name, hero: s.hero, isBot: s.isBot }));
+      this.mapId = net.start.map;
+      LOCAL = net.seat;
+      this.firstMatch = false;
+    }
+    this.world = new World(setups, { firstMatch: this.firstMatch && !attract && !net, map: this.mapId, seed: net?.start.seed });
+    if (this.world.players[LOCAL]) this.world.players[LOCAL].name = 'You';
+    if ((this.firstMatch || attract) && !net) this.world.phaseT = 0.6; // no countdown wait in the very first round
+    // bots: offline every bot seat; in a room only the host runs them (clients never tick the sim)
+    const client = this.room && !this.room.isHost && !attract;
+    this.brains = client ? [] : this.world.players.filter((p) => p.isBot).map((p) => new BotBrain(p.id, new Rng(rng.int(1, 1e9)), LOCAL));
     this.autoBrain = AUTOPLAY || attract ? new BotBrain(LOCAL, new Rng(5), LOCAL) : null;
+    this.seatPeers = net ? net.start.seats.map((s) => (s.isBot ? '' : s.peer)) : [];
+    this.encoder = new SnapshotEncoder();
+    this.pending = [];
+    this.targets = this.world.players.map((p) => ({ x: p.x, z: p.z, y: 0 }));
     this.sfx.muted = attract || !this.profile.sound;
 
     // views
@@ -296,16 +332,22 @@ export class Game {
     if (dt > 0.1) dt = 0.1;
     this.time += dt;
     this.monitorFps(dt);
-    if (this.paused) {
+    // a shared match never pauses (the menu still opens, the game keeps running)
+    if (this.paused && !this.room) {
       this.stage.render();
       this.showcase.render(this.stage.renderer);
       return;
     }
 
-    // fixed-step simulation (hit-stop freezes it briefly)
+    // fixed-step simulation (hit-stop freezes it briefly — offline only; a shared match never pauses)
     const step = TUNING.sim.dt;
-    if (this.hitStop > 0) this.hitStop -= dt;
+    const netClient = !!this.room && !this.room.isHost && this.mode === 'match';
+    if (netClient) {
+      if (this.hitStop > 0) this.hitStop -= dt;
+      this.clientFrame(dt);
+    } else if (this.hitStop > 0 && !this.room) this.hitStop -= dt;
     else {
+      if (this.hitStop > 0) this.hitStop -= dt;
       let scale = SPEED;
       if (this.slowT > 0) {
         this.slowT -= dt;
@@ -319,14 +361,28 @@ export class Game {
         const inputs: Input[] = new Array(this.world.players.length).fill(NO_INPUT);
         inputs[LOCAL] = this.autoBrain ? this.autoBrain.update(this.world, step) : this.input.read();
         for (const b of this.brains) inputs[b.id] = b.update(this.world, step);
+        if (this.room?.isHost && this.mode === 'match')
+          this.seatPeers.forEach((peer, i) => {
+            if (peer && i !== LOCAL) inputs[i] = this.room!.takeInput(peer) ?? NO_INPUT;
+          });
         const prevRound = this.world.round;
         this.world.tick(step, inputs);
+        if (this.room?.isHost && this.mode === 'match') this.pending.push(...this.world.events);
         if (this.world.round !== prevRound) this.brains.forEach((b) => b.newRound());
         if (this.world.round !== prevRound) this.autoBrain?.newRound();
         for (const e of this.world.events) this.onEvent(e);
-        if (this.hitStop > 0) {
+        if (this.hitStop > 0 && !this.room) {
           this.acc = 0;
           break;
+        }
+      }
+      // host: send the world to friends ~15×/s
+      if (this.room?.isHost && this.mode === 'match') {
+        this.snapT += dt;
+        if (this.snapT >= 1 / 15) {
+          this.snapT = 0;
+          this.room.snapshot(this.encoder.encode(this.world, this.pending));
+          this.pending = [];
         }
       }
     }
@@ -442,8 +498,172 @@ export class Game {
     return new THREE.Vector3(p.x, p.y + y, p.z);
   }
 
+  // ---------------------------------------------------------------- friends rooms
+
+  /** Client: predict my own movement, smooth everyone else, send my input ~30×/s. */
+  private clientFrame(dt: number) {
+    const w = this.world;
+    const inp = this.input.read();
+    // buttons latch until the next send
+    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill };
+    this.sendT += dt;
+    if (this.sendT >= 1 / 30) {
+      this.sendT = 0;
+      this.room?.sendInput(this.netInput);
+      this.netInput = { ...this.netInput, dash: false, grab: false, skill: false };
+    }
+    w.players.forEach((p, i) => {
+      const t = this.targets[i];
+      if (!t) return;
+      if (i === LOCAL && w.phase === 'playing' && p.state === 'normal') {
+        // prediction: move right away, then ease toward what the host says
+        const sp = TUNING.hero.walkSpeed * Math.max(TUNING.hero.carrySlowFloor, 1 - p.carried * TUNING.hero.carrySlowPerCoin);
+        const nx = p.x + inp.mx * sp * dt;
+        const nz = p.z + inp.mz * sp * dt;
+        if (w.arena.solid(nx, nz)) {
+          p.x = nx;
+          p.z = nz;
+        }
+        p.vx = inp.mx * sp;
+        p.vz = inp.mz * sp;
+        if (Math.hypot(inp.mx, inp.mz) > 0.1) p.facing = Math.atan2(inp.mx, inp.mz);
+        const err = Math.hypot(t.x - p.x, t.z - p.z);
+        const k = err > 2.5 ? 1 : Math.min(1, dt * 5);
+        p.x += (t.x - p.x) * k;
+        p.z += (t.z - p.z) * k;
+      } else {
+        const k = Math.min(1, dt * 14);
+        p.x += (t.x - p.x) * k;
+        p.z += (t.z - p.z) * k;
+      }
+    });
+  }
+
+  private onSnapshot(s: Snapshot) {
+    if (!this.world || this.mode !== 'match') return;
+    const prevRound = this.world.round;
+    applySnapshot(this.world, s, this.targets, LOCAL);
+    if (this.world.round !== prevRound) this.markers?.setWorld();
+    for (const e of s.ev) this.onEvent(e);
+  }
+
+  private openFriends(joinCode = '') {
+    this.friends?.close();
+    const fp = new FriendsPanel(this.portraits);
+    this.friends = fp;
+    this.home?.show(false);
+    if (!this.profile.name) {
+      this.profile.name = `Player${Math.floor(100 + Math.random() * 900)}`;
+      saveProfile(this.profile);
+    }
+    const me = () => ({ name: this.profile.name, hero: this.profile.hero });
+    const lobby = () => {
+      const r = this.room;
+      if (!r || this.mode === 'match') return;
+      fp.lobby(r.code, r.link(), r.members, r.isHost, MAPS[this.mapId].name);
+    };
+    const wire = (r: Room) => {
+      this.room = r;
+      r.onLobby = () => lobby();
+      r.onStart = (s, seat) => this.beginNet(s, seat);
+      r.onSnap = (s) => this.onSnapshot(s);
+      r.onLeft = (peer) => this.peerLeft(peer);
+      r.onClosed = (why) => this.roomClosed(why);
+      lobby();
+    };
+    fp.onCreate = async (name) => {
+      this.profile.name = name;
+      saveProfile(this.profile);
+      fp.busy('Making your room…');
+      try {
+        wire(await Room.create(me()));
+        track('room_create');
+      } catch (e) {
+        fp.error(`Could not create a room (${String((e as Error)?.message ?? e)}). Check your internet and try again.`, this.profile.name);
+      }
+    };
+    fp.onJoin = async (code, name) => {
+      this.profile.name = name;
+      saveProfile(this.profile);
+      fp.busy(`Joining ${code}…`);
+      const timeout = setTimeout(() => !this.room && fp.error('Could not reach that room. Is the host still in the lobby?', this.profile.name), 12000);
+      try {
+        wire(await Room.join(code, me()));
+        clearTimeout(timeout);
+        fp.busy('Joined! Waiting for the host…');
+        track('room_join');
+      } catch (e) {
+        clearTimeout(timeout);
+        fp.error(String((e as Error)?.message ?? e), this.profile.name);
+      }
+    };
+    fp.onStart = () => this.hostStart();
+    fp.onLeave = () => {
+      this.leaveRoom();
+      fp.close();
+      this.friends = null;
+      this.home?.show(true);
+    };
+    fp.menu(this.profile.name, joinCode);
+    if (joinCode) fp.onJoin(joinCode, this.profile.name);
+  }
+
+  /** Host: fill empty seats with bots and start everyone's match. */
+  private hostStart() {
+    const r = this.room;
+    if (!r?.isHost) return;
+    const rng = new Rng((Math.random() * 1e9) | 0);
+    const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
+    const seats: StartMsg['seats'] = r.members.slice(0, MAX_HUMANS).map((m) => ({ name: m.name, hero: m.hero, isBot: false, peer: m.peer }));
+    for (let i = seats.length; i < TUNING.match.playersPerMatch; i++) seats.push({ name: names[i], hero: HERO_IDS[i % HERO_IDS.length], isBot: true, peer: '' });
+    seats[0].hero = this.profile.hero;
+    const start: StartMsg = { map: this.mapId, seed: rng.int(1, 1e9), seats };
+    r.start(start);
+    track('room_start', { humans: r.members.length });
+    this.beginNet(start, 0);
+  }
+
+  private beginNet(start: StartMsg, seat: number) {
+    this.friends?.close();
+    this.friends = null;
+    this.home?.destroy();
+    this.home = null;
+    this.showcase.clear();
+    this.hud?.closePanel();
+    this.mode = 'match';
+    this.paused = false;
+    this.trial = false;
+    this.startMatch(start.seats[seat].hero, false, { start, seat });
+  }
+
+  private peerLeft(peer: string) {
+    if (this.mode !== 'match') return;
+    const seat = this.seatPeers.indexOf(peer);
+    if (seat < 0) return;
+    this.seatPeers[seat] = '';
+    const p = this.world.players[seat];
+    p.isBot = true;
+    this.brains.push(new BotBrain(seat, new Rng(seat * 31 + 7), LOCAL));
+    this.hud.feed(`<b>${p.name}</b> left — a bot took over`);
+  }
+
+  private roomClosed(why: string) {
+    this.leaveRoom();
+    this.friends?.close();
+    this.friends = null;
+    this.hud?.closePanel();
+    this.goHome();
+    setTimeout(() => this.hud.banner(why, 'red', true), 200);
+  }
+
+  private leaveRoom() {
+    this.room?.leave();
+    this.room = null;
+  }
+
   /** Brief slow motion for big moments (offline only — the sim just runs slower). */
   private slowMo(scale: number, dur: number) {
+    if (this.room) return;
     this.slowScale = scale;
     this.slowT = dur;
   }
@@ -959,9 +1179,17 @@ export class Game {
         levelUp: after.level > before.level,
         xpFrac: after.frac,
         trial: this.trial ? this.world.players[LOCAL].hero : null,
+        waitForHost: !!this.room && !this.room.isHost,
         onRematch: () => {
           this.sfx.click();
-          track('rematch_click', { hero: this.world.players[LOCAL].hero });
+          track('rematch_click', { hero: this.world.players[LOCAL].hero, room: !!this.room });
+          if (this.room?.isHost) {
+            // everyone still in the room plays again
+            this.showcase.clear();
+            this.hud.closePanel();
+            this.hostStart();
+            return;
+          }
           this.firstMatch = false;
           this.showcase.clear();
           this.hud.closePanel();
@@ -970,6 +1198,7 @@ export class Game {
         },
         onHome: () => {
           this.sfx.click();
+          this.leaveRoom();
           this.firstMatch = false;
           this.trial = false;
           this.showcase.clear();
