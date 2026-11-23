@@ -33,6 +33,11 @@ export class HeroView {
   readonly player: Player;
   readonly isLocal: boolean;
   celebrating = false;
+  /** Strong carry glow only for you and the crown-holder; others get a soft one. */
+  loudGlow = true;
+  /** 1 = solid; lower when this hero stands in front of you in a crowd. */
+  private fade = 1;
+  fadeTarget = 1;
   private baseScale: number;
 
   constructor(asset: HeroAsset, player: Player, isLocal: boolean, color: string, glowTex: THREE.Texture) {
@@ -228,7 +233,16 @@ export class HeroView {
     // carry glow
     const g = Math.min(1, p.carried / TUNING.hero.glowFullAt);
     const gm = this.glow.material;
-    gm.opacity = p.carried > 0 ? 0.18 + g * 0.6 + Math.sin(now * 6) * 0.05 * g : 0;
+    gm.opacity = p.carried > 0 ? (0.18 + g * 0.6 + Math.sin(now * 6) * 0.05 * g) * (this.loudGlow ? 1 : 0.35) : 0;
+    // see-through when standing between the camera and you
+    if (Math.abs(this.fade - this.fadeTarget) > 0.01) {
+      this.fade += (this.fadeTarget - this.fade) * Math.min(1, dt * 10);
+      for (const m of this.mats) {
+        m.transparent = this.fade < 0.99;
+        m.opacity = this.fade;
+        m.depthWrite = this.fade > 0.95;
+      }
+    }
     this.glow.scale.setScalar(1.6 + g * 2.2);
     this.sticky.material.opacity = p.stickyT > 0 ? 0.45 + Math.sin(now * 12) * 0.2 : 0;
 

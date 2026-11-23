@@ -383,3 +383,13 @@ body { font-family: var(--body); color: #fff; user-select: none; -webkit-user-se
   .rl-text { font-size: 12px; }
   .tag .say { font-size: 10px; padding: 3px 7px; }
 }
+
+/* crowded: low-priority tags shrink to just the coin count */
+.tag.compact .tn { display: none; }
+.tag.compact .tc { font-size: 13px; }
+
+/* banners sit above your hero, never on top of it */
+.banner { top: 29%; }
+.banner.small { top: 36.5%; }
+.skillname { top: 21%; }
+@media (max-height: 520px) { .banner { top: 27%; } .banner.small { top: 35%; } .skillname { top: 19%; } }

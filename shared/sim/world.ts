@@ -955,7 +955,7 @@ export class World {
 
   /** Soft body separation so heroes don't overlap. */
   private separate() {
-    const min = T.hero.radius * 2;
+    const min = T.hero.personalSpace;
     const ps = this.players;
     for (let i = 0; i < ps.length; i++) {
       const a = ps[i];

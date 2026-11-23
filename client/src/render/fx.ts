@@ -86,7 +86,7 @@ export class Fx {
         v: new THREE.Vector3(Math.sin(a) * sp, up * (0.6 + Math.random() * 0.6), Math.cos(a) * sp),
         r: new THREE.Euler(Math.random() * 6, Math.random() * 6, 0),
         w: new THREE.Vector3(Math.random() * 12 - 6, Math.random() * 12 - 6, 0),
-        life: 1.2 + Math.random() * 0.6,
+        life: 0.8 + Math.random() * 0.4,
         s: size * (0.6 + Math.random() * 0.9),
       });
       this.chunks.setColorAt(this.ch.length - 1, new THREE.Color(colors[i % colors.length]));

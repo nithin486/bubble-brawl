@@ -236,7 +236,8 @@ export class Hud {
   /** Speech bubble over a hero's head. */
   speak(id: number, text: string, now: number, dur = 2.2) {
     const t = this.tags[id];
-    if (!t) return;
+    if (!t || t.root.style.opacity === '0') return;
+    if (!t.sayUntil && this.tags.filter((x) => x.sayUntil > now).length >= 2) return;
     t.say.textContent = text;
     t.say.classList.remove('on');
     void t.say.offsetWidth;
@@ -341,12 +342,26 @@ export class Hud {
     // tags above heads
     const w = window.innerWidth;
     const h = window.innerHeight;
-    world.players.forEach((p, i) => {
+    // De-clutter: important tags win, the rest hide when they would overlap.
+    const placed: { x: number; y: number; w: number; h: number }[] = [];
+    const prio = (p: Player) =>
+      p.id === localId ? 1000 : p.id === extra?.grabTarget ? 500 : extra?.threats.has(p.id) ? 400 : p.id === world.crownId ? 300 : p.id === extra?.nemesis ? 200 : p.carried;
+    const order2 = [...world.players].sort((a, b) => prio(b) - prio(a));
+    let bubbles = 0;
+    for (const p of order2) {
+      const i = p.id;
       const t = this.tags[i];
       this.v.set(p.x, p.y + 2.25, p.z).project(camera);
-      const vis = p.state !== 'falling' && this.v.z < 1;
+      const sx = (this.v.x * 0.5 + 0.5) * w;
+      const sy = (-this.v.y * 0.5 + 0.5) * h;
+      const box = { x: sx - 40, y: sy - 34, w: 80, h: 34 };
+      const overlaps = placed.some((q) => box.x < q.x + q.w && box.x + box.w > q.x && box.y < q.y + q.h && box.y + box.h > q.y);
+      const important = prio(p) >= 200;
+      const vis = p.state !== 'falling' && this.v.z < 1 && (!overlaps || p.id === localId);
+      if (vis) placed.push(box);
       t.root.style.opacity = vis ? '1' : '0';
-      t.root.style.transform = `translate(${(this.v.x * 0.5 + 0.5) * w}px, ${(-this.v.y * 0.5 + 0.5) * h}px) translate(-50%, -100%)`;
+      t.root.classList.toggle('compact', vis && overlaps && !important);
+      t.root.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`;
       t.root.style.left = '0';
       t.root.style.top = '0';
       const crown = p.id === world.crownId ? '👑' : '';
@@ -358,16 +373,18 @@ export class Hud {
       t.root.classList.toggle('threat', threat);
       t.root.classList.toggle('nemesis', nem);
       t.root.classList.toggle('targeted', extra?.grabTarget === p.id);
-      if (t.sayUntil && now > t.sayUntil) {
+      // at most two speech bubbles, and never on a hidden tag
+      if (t.sayUntil && (now > t.sayUntil || !vis || bubbles >= 2)) {
         t.say.classList.remove('on');
         t.sayUntil = 0;
       }
+      if (t.sayUntil) bubbles++;
       if (t.ring && t.ringWrap) {
         const on = p.bankT > 0;
         t.ringWrap.classList.toggle('on', on);
         if (on) t.ring.style.strokeDashoffset = String(119.4 * (1 - p.bankT / TUNING.bank.bankSeconds));
       }
-    });
+    }
 
     // edge arrows: bank (when off-screen) and the 2 richest rivals off-screen
     this.edgeArrow(this.edgeBank, world.bank.x, 1, world.bank.z, camera, playing, '');
@@ -505,6 +522,9 @@ export class Hud {
   floater(pos: THREE.Vector3, camera: THREE.PerspectiveCamera, text: string, cls: 'plus' | 'minus' | 'bank') {
     this.v.copy(pos).project(camera);
     if (this.v.z > 1) return;
+    // cap pop-up numbers so a brawl doesn't become a wall of text
+    const live = this.root.querySelectorAll('.floater');
+    if (live.length >= 4) live[0].remove();
     const f = el('div', `floater stroke ${cls}`, text);
     f.style.left = `${(this.v.x * 0.5 + 0.5) * window.innerWidth + (Math.random() - 0.5) * 30}px`;
     f.style.top = `${(-this.v.y * 0.5 + 0.5) * window.innerHeight}px`;

@@ -332,6 +332,21 @@ export class Game {
     }
 
     // views
+    // crowd readability: fade bots standing in front of you, ease the camera out, calm the glows
+    {
+      const me = this.world.players[LOCAL];
+      let near = 0;
+      for (const h of this.heroes) {
+        const p = h.player;
+        h.loudGlow = this.mode !== 'match' || p.id === LOCAL || p.id === this.world.crownId;
+        const dx = p.x - me.x;
+        const dz = p.z - me.z;
+        const d = Math.hypot(dx, dz);
+        if (p.id !== LOCAL && d < 5 && p.state !== 'falling') near++;
+        h.fadeTarget = this.mode === 'match' && p.id !== LOCAL && dz > 0 && dz < 2.2 && Math.abs(dx) < 1.3 ? 0.4 : 1;
+      }
+      this.rig.crowd = this.mode === 'match' ? Math.min(1, Math.max(0, (near - 1) / 3)) : 0;
+    }
     const frozen = this.hitStop > 0;
     const adt = this.slowT > 0 ? dt * this.slowScale : dt;
     for (const h of this.heroes) {
@@ -594,7 +609,7 @@ export class Game {
           this.fx.dome(e.x, e.z, '#cfefff', c.radius + 0.4, 0.45);
           this.fx.ring(e.x, e.z, '#ffffff', c.radius, 0.3);
           this.fx.ring(e.x, e.z, '#7fe3ff', c.radius * 1.25, 0.55);
-          this.fx.debris(e.x, 1.1, e.z, 22, ['#f4efe2', '#e2d8c2', '#cdbf9f'], 11, 7, 1.1);
+          this.fx.debris(e.x, 1.1, e.z, local ? 14 : 6, ['#f4efe2', '#e2d8c2', '#cdbf9f'], 11, 7, 0.8);
           this.fx.emit(e.x, 1, e.z, { n: 40, color: ['#ffffff', '#bfefff'], speed: 12, up: 2, life: 0.35, size: 0.5 });
           this.fx.crack(e.x, e.z, 5);
           this.sfx.burst();
@@ -610,7 +625,7 @@ export class Game {
           const fz = e.z + Math.cos(e.facing) * 1.6;
           this.fx.crack(fx, fz, 5.5, e.facing);
           this.fx.crack(e.x, e.z, 3);
-          this.fx.debris(fx, 0.3, fz, 26, ['#9a8a7a', '#b49a72', '#7d6b5a', '#6fbb40'], 7, 12, 1.4);
+          this.fx.debris(fx, 0.3, fz, local ? 14 : 6, ['#9a8a7a', '#b49a72', '#7d6b5a', '#6fbb40'], 7, 12, 1.0);
           this.fx.emit(fx, 0.3, fz, { n: 34, color: ['#b48a5a', '#e0c08a', '#ffffff'], speed: 7, up: 8, life: 0.7, size: 0.5, gravity: 18 });
           this.fx.dust(fx, fz, true);
           this.fx.dust(e.x, e.z, true);
@@ -659,7 +674,7 @@ export class Game {
         this.fx.ring(e.x, e.z, '#fff0a0', R * 1.2, 0.5);
         this.fx.emit(e.x, 0.8, e.z, { n: 60, color: ['#ffd23f', '#ff8a3d', '#ff4a3d', '#ffffff'], speed: 10, up: 7, life: 0.6, size: 0.8, gravity: 4 });
         this.fx.emit(e.x, 1.2, e.z, { n: 20, color: ['#5a4a6a', '#3a3048'], speed: 3, up: 5, life: 1.2, size: 1.4, drag: 3 });
-        this.fx.debris(e.x, 0.6, e.z, 16, ['#2a2440', '#ff8a3d', '#8a8aa0'], 9, 9, 0.9);
+        this.fx.debris(e.x, 0.6, e.z, 10, ['#2a2440', '#ff8a3d', '#8a8aa0'], 9, 9, 0.8);
         this.fx.crack(e.x, e.z, 5);
         this.sfx.boom();
         const d = Math.hypot(w.players[LOCAL].x - e.x, w.players[LOCAL].z - e.z);

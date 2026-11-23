@@ -13,6 +13,9 @@ export class CameraRig {
   /** 0 = gameplay; 1 = close-up (results / celebration) */
   private zoom = 0;
   zoomTarget = 0;
+  /** 0..1: how crowded it is around you — the camera eases out a little. */
+  crowd = 0;
+  private crowdS = 0;
   private punchT = 0;
   private punchAmt = 0;
   private baseFov = 0;
@@ -51,7 +54,8 @@ export class CameraRig {
     this.target.copy(goal).add(change.add(temp).multiplyScalar(exp));
 
     this.zoom += (this.zoomTarget - this.zoom) * Math.min(1, dt * 2.5);
-    const off = new THREE.Vector3().copy(this.offset).multiplyScalar(1 - this.zoom * 0.45);
+    this.crowdS += (this.crowd - this.crowdS) * Math.min(1, dt * 1.5);
+    const off = new THREE.Vector3().copy(this.offset).multiplyScalar((1 - this.zoom * 0.45) * (1 + this.crowdS * 0.28));
     off.y -= this.zoom * 1.2;
     this.camera.position.copy(this.target).add(off);
     const look = new THREE.Vector3().copy(this.target).add(this.lookOffset);

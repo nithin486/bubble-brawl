@@ -20,6 +20,8 @@ export const TUNING = {
   hero: {
     height: 1.8,
     radius: 0.45,
+    /** Heroes keep this much distance between centres so crowds stay readable. */
+    personalSpace: 1.2,
     walkSpeed: 6,
     /** Acceleration toward target velocity (higher = snappier). */
     accel: 40,
