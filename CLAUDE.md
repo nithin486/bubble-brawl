@@ -61,8 +61,24 @@ Each KayKit model contains every weapon/prop; show only the one each hero uses (
 2. Use the numbers in `docs/IMPLEMENTATION_SPEC.md` → tuning table. Keep every tunable in one config file so playtests can change them without code edits.
 3. After each meaningful change: run it, take a screenshot or short clip, and look at it yourself before calling it done. Ugly or confusing = not done.
 4. Keep the game fast: measure load size and FPS on a throttled mobile profile.
-5. Commit small, with clear messages. Never commit secrets (Azure keys, Play service-account JSON).
+5. Commit small, with clear messages. Never commit secrets (Azure keys, Play service-account JSON, `.env` with `SKETCHFAB_API_KEY`).
 6. When something in the plan is wrong, say so plainly and propose the fix.
+
+## 3D models — strict rules (asset pipeline)
+
+1. **NEVER** build game objects, characters, props or environment pieces from primitive placeholder geometry (boxes, spheres, capsules, cylinders) or write procedural meshes for them. Nithin rejected "blocky / cheap AI" art twice.
+   - Allowed exceptions, because they are effects and not objects: VFX and UI markers (particles, glow sprites, rings, the bank bubble, beams, flat ground decals, grass-tuft cards).
+2. **When the game needs a 3D model**, first check `assets/models/` and the KayKit packs in `assets/`. If nothing fits, fetch one:
+   ```bash
+   npm run model -- "wooden barrel"             # best stylized, game-ready match
+   npm run model -- "rock" --list               # just show ranked candidates
+   npm run model -- "sports car" --height 1.4 --rotate-y 90 --name car_sport
+   ```
+   `scripts/fetch_model.js` searches Poly Haven (CC0) and Sketchfab (CC0 / CC-BY, key in `.env` as `SKETCHFAB_API_KEY`). It downloads the model and makes it game-ready: textures ≤ 512 px WebP, meshopt, simplified to ≤ 15k tris, centred, feet on y = 0. It writes `assets/models/<name>.glb` + `<name>.json` and updates `CREDITS.md`, then logs the path and size. `npm run assets` copies the models into the build.
+3. **Art direction filter (judge with your own eyes):** the game is stylized cartoon (KayKit). The default `--style stylized` prefers low-poly or stylized models. Poly Haven scans are photoreal, so use them only where realism still reads as cartoon (rocks, logs). Render a model in game (`?play&model=<name>`) and look at the screenshot before keeping it; if it clashes, try `--pick 2` or other words.
+4. **Phone budget per model:** about ≤ 15k tris and ≤ 300 KB. Low-end Android (3 GB RAM, mobile data) comes first.
+5. **Loading in game: always use `loadModel()`** from `client/src/render/models.ts`. It normalises scale (`height` / `fit`), centres the pivot and grounds it, turns it to face +z (`yaw`), applies cel shading + ink outline, and wires animations (`play('Run')`, `update(dt)`).
+6. **Licences:** CC-BY models need a credit line. Keep `assets/models/CREDITS.md` and show it in the game's credits screen before release. Never use non-commercial (NC) or "editorial" licences; the script never selects them.
 
 ## Map of the repo
 
@@ -72,3 +88,5 @@ Each KayKit model contains every weapon/prop; show only the one each hero uses (
 - `docs/ui/` — UI concept images (thumbnails) and links to the Figma file.
 - `assets/heroes/` — the 9 hero GLB models + licences.
 - `assets/concepts/` — rendered roster images.
+- `assets/models/` — models fetched by `scripts/fetch_model.js` (+ `.json` metadata, `CREDITS.md`; `_raw/` is git-ignored).
+- `scripts/fetch_model.js` — the 3D asset pipeline (see "3D models" above).

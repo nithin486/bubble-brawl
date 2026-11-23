@@ -6,6 +6,7 @@ import { NO_INPUT, type Input, type SimEvent } from '../../shared/sim/types.ts';
 import { TUNING } from '../../shared/config/tuning.ts';
 import { HEROES, HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 import { Stage, isTouch, type Quality } from './render/stage.ts';
+import { loadModel } from './render/models.ts';
 import type { Assets } from './render/assets.ts';
 import { ArenaView } from './render/arena-view.ts';
 import { MAPS, MAP_ROTATION, type MapId } from '../../shared/config/maps.ts';
@@ -13,7 +14,7 @@ import { HeroView } from './render/hero.ts';
 import { CoinsView } from './render/coins.ts';
 import { BankView } from './render/bank.ts';
 import { Fx, makeGlowTexture } from './render/fx.ts';
-import { CameraRig } from './camera.ts';
+import { CameraRig, CAM_PRESETS, type CamPreset } from './camera.ts';
 import { InputManager } from './input.ts';
 import { Hud, PLAYER_COLORS } from './ui/hud.ts';
 import { Sfx } from './audio.ts';
@@ -169,6 +170,7 @@ export class Game {
     });
     this.rig = new CameraRig(stage.camera);
     this.rig.shakeEnabled = profile.shake;
+    this.applyCamera((PARAMS.get('cam') as CamPreset) || profile.camera || 'close');
     this.sfx.muted = !profile.sound;
     this.fx = new Fx(stage.scene, this.glowTex);
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
@@ -181,6 +183,9 @@ export class Game {
     if (AUTOPLAY || PARAMS.has('play')) {
       this.mode = 'match';
       this.startMatch(profile.hero);
+      // ?model=crate,rock — preview models fetched by scripts/fetch_model.js in front of your hero
+      const preview = PARAMS.get('model');
+      if (preview) void this.previewModels(preview.split(','));
     } else this.goHome();
     // invite link: straight into the friend's room
     const invite = PARAMS.get('room');
@@ -314,6 +319,9 @@ export class Game {
     this.rig.zoomTarget = 0;
     const me = this.world.players[LOCAL];
     this.rig.snap(this.v.set(me.x, 0, me.z));
+    this.rig.faceBehind(me.facing);
+    this.input.mouseLook = this.rig.turns && !attract;
+    if (this.rig.turns && !attract && !this.touch) this.hud.tip('Click, then move the mouse to look around · Q/E to turn', 5);
     this.tut = this.firstMatch && !attract ? 'move' : 'done';
     this.tutT = 0;
     this.movedDist = 0;
@@ -359,7 +367,7 @@ export class Game {
         this.acc -= step;
         n++;
         const inputs: Input[] = new Array(this.world.players.length).fill(NO_INPUT);
-        inputs[LOCAL] = this.autoBrain ? this.autoBrain.update(this.world, step) : this.input.read();
+        inputs[LOCAL] = this.autoBrain ? this.autoBrain.update(this.world, step) : this.readLocal();
         for (const b of this.brains) inputs[b.id] = b.update(this.world, step);
         if (this.room?.isHost && this.mode === 'match')
           this.seatPeers.forEach((peer, i) => {
@@ -399,7 +407,8 @@ export class Game {
         const dz = p.z - me.z;
         const d = Math.hypot(dx, dz);
         if (p.id !== LOCAL && d < 5 && p.state !== 'falling') near++;
-        h.fadeTarget = this.mode === 'match' && p.id !== LOCAL && dz > 0 && dz < 2.2 && Math.abs(dx) < 1.3 ? 0.4 : 1;
+        void dz;
+        h.fadeTarget = this.mode === 'match' && p.id !== LOCAL && this.blocksView(p.x, p.z, me.x, me.z, 1.0) ? 0.35 : 1;
       }
       this.rig.crowd = this.mode === 'match' ? Math.min(1, Math.max(0, (near - 1) / 3)) : 0;
     }
@@ -427,9 +436,10 @@ export class Game {
     }
     if (this.wellWarnT > 0) this.wellWarnT -= dt;
     this.island.focus = this.mode === 'match' ? this.v.set(this.world.players[LOCAL].x, 0, this.world.players[LOCAL].z).clone() : null;
+    this.island.blocks = (x, z, fx, fz) => this.blocksView(x, z, fx, fz, 1.9);
     this.island.update(dt, this.time);
     this.coins.update(this.world, dt, this.time);
-    this.bank.update(dt, this.time);
+    this.bank.update(dt, this.time, this.stage.camera.position);
     this.fx.update(dt);
     const me = this.world.players[LOCAL];
     let focus = this.v.set(me.x, 0, me.z);
@@ -446,7 +456,14 @@ export class Game {
       cam.lookAt(0, -2.5, 0);
       focus = this.v.set(0, 0, 0);
       if (this.world.phase === 'matchEnd') this.startMatch(this.profile.hero, true);
-    } else this.rig.update(dt, focus, this.lead);
+    } else {
+      if (this.mode === 'match' && this.input.enabled) {
+        this.rig.addYaw(this.input.takeYaw(dt));
+        const me2 = this.world.players[LOCAL];
+        this.rig.autoFollow(dt, me2.facing, Math.max(0, this.lastStickFwd));
+      }
+      this.rig.update(dt, focus, this.lead);
+    }
     // keep the shadow camera on the action
     this.stage.aimSun(focus.x, focus.z);
     const threats = new Set<number>();
@@ -503,7 +520,7 @@ export class Game {
   /** Client: predict my own movement, smooth everyone else, send my input ~30×/s. */
   private clientFrame(dt: number) {
     const w = this.world;
-    const inp = this.input.read();
+    const inp = this.readLocal();
     // buttons latch until the next send
     this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill };
     this.sendT += dt;
@@ -1083,6 +1100,7 @@ export class Game {
         this.sfx.count();
         break;
       case 'roundStart':
+        if (this.mode === 'match') this.rig.faceBehind(w.players[LOCAL].facing);
         this.hud.countdown('GO!');
         this.sfx.count(true);
         this.hud.closePanel();
@@ -1128,6 +1146,7 @@ export class Game {
   }
 
   private onMatchEnd(ranking: number[]) {
+    this.input.releaseMouse();
     const rank = ranking.indexOf(LOCAL) + 1;
     const me = this.world.players[LOCAL];
     this.hud.closePanel();
@@ -1281,6 +1300,51 @@ export class Game {
 
   // ---------------------------------------------------------------- pause
 
+  /** Local input turned from screen directions into world directions for the current camera. */
+  private readLocal(): Input {
+    const i = this.input.read();
+    const w = this.rig.toWorld(i.mx, i.mz);
+    this.lastStickFwd = -i.mz;
+    return { ...i, mx: w.x, mz: w.z };
+  }
+  private lastStickFwd = 0;
+
+  /** Is (x, z) standing between the camera and the point (fx, fz)? (any camera direction) */
+  private blocksView(x: number, z: number, fx: number, fz: number, width: number) {
+    const c = this.stage.camera.position;
+    const vx = fx - c.x;
+    const vz = fz - c.z;
+    const L2 = vx * vx + vz * vz || 1;
+    const t = ((x - c.x) * vx + (z - c.z) * vz) / L2;
+    if (t < 0.05 || t > 0.97) return false;
+    const px = c.x + vx * t - x;
+    const pz = c.z + vz * t - z;
+    return px * px + pz * pz < width * width;
+  }
+
+  private async previewModels(names: string[]) {
+    const me = this.world.players[LOCAL];
+    const fx = Math.sin(me.facing);
+    const fz = Math.cos(me.facing);
+    for (let i = 0; i < names.length; i++) {
+      const m = await loadModel(`assets/models/${names[i]}.glb`, { height: 1 });
+      const side = (i - (names.length - 1) / 2) * 1.8;
+      m.root.position.set(me.x + fx * 3.2 + fz * side, 0, me.z + fz * 3.2 - fx * side);
+      this.stage.scene.add(m.root);
+    }
+  }
+
+  private applyCamera(p: CamPreset) {
+    if (!CAM_PRESETS[p]) p = 'close';
+    this.rig.setPreset(p);
+    this.input.mouseLook = this.rig.turns && this.mode === 'match';
+    if (!this.rig.turns) this.input.releaseMouse();
+    else if (this.world) this.rig.faceBehind(this.world.players[LOCAL].facing);
+    document.body.classList.toggle('cam-third', this.rig.turns);
+    this.stage.fovBase = this.rig.presetFov;
+    this.stage.resize();
+  }
+
   private togglePause() {
     if (this.world.phase === 'matchEnd' && this.mode === 'match') return;
     this.setPaused(!this.paused);
@@ -1288,6 +1352,7 @@ export class Game {
 
   private setPaused(p: boolean) {
     this.paused = p;
+    if (p) this.input.releaseMouse();
     // the landing UI sits above the HUD layer: hide it while the settings panel is open
     this.home?.show(!p);
     if (p) {
@@ -1297,6 +1362,7 @@ export class Game {
           shake: this.profile.shake,
           quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
           inMatch: this.mode === 'match',
+          camera: CAM_PRESETS[this.rig.preset].label,
           canUnlockAll: (!!import.meta.env.VITE_PACKED || PARAMS.has('dev')) && this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
         },
         {
@@ -1325,6 +1391,15 @@ export class Game {
             this.paused = false;
             this.hud.closePanel();
             this.goHome();
+          },
+          camera: () => {
+            const order: CamPreset[] = ['third', 'close', 'far', 'action'];
+            const next = order[(order.indexOf(this.rig.preset) + 1) % order.length];
+            this.profile.camera = next;
+            saveProfile(this.profile);
+            this.applyCamera(next);
+            track('camera_selected', { camera: next });
+            this.setPaused(true);
           },
           quality: () => {
             const order: Quality[] = ['low', 'medium', 'high'];

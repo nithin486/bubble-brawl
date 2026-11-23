@@ -23,6 +23,9 @@ export interface ThemeCtx {
 }
 
 /** Builds one obstacle's visual into group g (centred on the obstacle). */
+/** Flat ground detail (and grass tufts) drawn by the arena view. */
+export type Decal = (kind: 'manhole' | 'puddle' | 'crack' | 'leaves' | 'grass' | 'moss', size: number, x?: number, z?: number, rot?: number) => void;
+
 export type PropAdd = (name: string, s: number, x?: number, z?: number, ry?: number, y?: number) => THREE.Object3D | null;
 
 export interface TilePlan {
@@ -48,7 +51,7 @@ export interface Theme {
   /** Permanent stepped core layers under the middle. */
   core: { y: number; r: number; s: number }[];
   tiles(world: World): TilePlan[];
-  prop(o: Obstacle, add: PropAdd, glow: (color: string, size: number, x: number, y: number, z: number) => void): void;
+  prop(o: Obstacle, add: PropAdd, glow: (color: string, size: number, x: number, y: number, z: number) => void, decal: Decal): void;
   backdrop(ctx: ThemeCtx): void;
   /** Extra things on the arena (not obstacles), e.g. the well plaza. */
   extras?(ctx: ThemeCtx): void;
@@ -61,7 +64,7 @@ const CITY_S = 2.4; // KayKit city scale (tile 2 → 4.8 m)
 const city: Theme = {
   id: 'city',
   sky: { top: '#2a3c9e', mid: '#9a6fd6', horizon: '#ffb48a', bottom: '#ff9fb4' },
-  fog: { color: '#f0a8bc', near: 60, far: 170 },
+  fog: { color: '#f0a8bc', near: 70, far: 200 },
   hemi: { sky: '#ffe2cf', ground: '#5c4a7c', intensity: 1.15 },
   sun: { color: '#ffd2a1', intensity: 2.5, pos: [-16, 22, 10] },
   exposure: 1.02,
@@ -70,10 +73,10 @@ const city: Theme = {
   bubbles: true,
   under: { piece: 'hex_grass_bottom', sx: 2.75, sy: 1.5, sz: 2.4, y: -0.24 },
   core: [
-    { y: -1.9, r: 12, s: 0.95 },
-    { y: -3.3, r: 9, s: 0.9 },
-    { y: -4.7, r: 6, s: 0.85 },
-    { y: -6.1, r: 3.5, s: 0.8 },
+    { y: -1.9, r: 19.2, s: 0.95 },
+    { y: -3.3, r: 14.4, s: 0.9 },
+    { y: -4.7, r: 9.6, s: 0.85 },
+    { y: -6.1, r: 5.6, s: 0.8 },
   ],
   tiles(world) {
     return world.arena.tiles.map((t) => {
@@ -90,7 +93,7 @@ const city: Theme = {
       return { piece, rot, scale: [CITY_S, CITY_S, CITY_S], y: -0.24 };
     });
   },
-  prop(o, add, glow) {
+  prop(o, add, glow, decal) {
     const S = CITY_S;
     switch (o.kind) {
       case 'hydrant_gold': {
@@ -138,20 +141,39 @@ const city: Theme = {
       case 'hydrant':
         add('firehydrant', 3.4);
         break;
+      // ---- ground detail (no collision)
+      case 'manhole':
+        decal('manhole', 1.3);
+        break;
+      case 'puddle':
+        decal('puddle', 2.2, 0, 0, o.rot);
+        break;
+      case 'crack':
+        decal('crack', 2.4, 0, 0, o.rot);
+        break;
+      case 'litter':
+        add(o.rot > 3 ? 'trash_A' : 'trash_B', S * 0.9, 0, 0, o.rot);
+        decal('leaves', 1.6, 0.4, 0.3, o.rot);
+        break;
+      case 'tufts':
+        decal('grass', 0.9, 0, 0, o.rot);
+        decal('grass', 0.7, 0.55, 0.3, o.rot + 1);
+        decal('grass', 0.6, -0.4, 0.45, o.rot + 2);
+        break;
     }
   },
   backdrop(ctx) {
     const S = 4.8;
     const blocks = [
-      { a: -0.2, d: 38, y: -1, w: 3, h: 2 },
-      { a: 0.75, d: 36, y: -5, w: 2, h: 2 },
-      { a: -1.0, d: 34, y: -4, w: 2, h: 2 },
-      { a: 1.6, d: 34, y: -9, w: 2, h: 1 },
-      { a: -1.75, d: 32, y: -8, w: 1, h: 2 },
-      { a: 0.25, d: 58, y: 8, w: 2, h: 2 },
-      { a: -0.7, d: 60, y: 5, w: 2, h: 1 },
-      { a: 2.7, d: 36, y: -6, w: 2, h: 2 },
-      { a: -2.6, d: 37, y: -7, w: 2, h: 2 },
+      { a: -0.2, d: 51, y: -1, w: 3, h: 2 },
+      { a: 0.75, d: 49, y: -5, w: 2, h: 2 },
+      { a: -1.0, d: 47, y: -4, w: 2, h: 2 },
+      { a: 1.6, d: 47, y: -9, w: 2, h: 1 },
+      { a: -1.75, d: 45, y: -8, w: 1, h: 2 },
+      { a: 0.25, d: 71, y: 8, w: 2, h: 2 },
+      { a: -0.7, d: 73, y: 5, w: 2, h: 1 },
+      { a: 2.7, d: 49, y: -6, w: 2, h: 2 },
+      { a: -2.6, d: 50, y: -7, w: 2, h: 2 },
     ];
     const buildings = ['building_A', 'building_B', 'building_C', 'building_D', 'building_E', 'building_F', 'building_G', 'building_H'];
     for (const b of blocks) {
@@ -174,7 +196,7 @@ const city: Theme = {
 const spooky: Theme = {
   id: 'spooky',
   sky: { top: '#0b0628', mid: '#2c1560', horizon: '#ff8a5c', bottom: '#3a1a6a' },
-  fog: { color: '#3d2470', near: 45, far: 130 },
+  fog: { color: '#3d2470', near: 50, far: 160 },
   hemi: { sky: '#8f7dff', ground: '#2a1840', intensity: 1.25 },
   sun: { color: '#c9d4ff', intensity: 1.9, pos: [12, 24, 8] },
   exposure: 1.12,
@@ -183,10 +205,10 @@ const spooky: Theme = {
   bubbles: true,
   under: { piece: 'hex_grass_bottom', sx: 2.3, sy: 1.3, sz: 2.0, y: -0.5 },
   core: [
-    { y: -2.0, r: 11.5, s: 0.95 },
-    { y: -3.3, r: 8.5, s: 0.9 },
-    { y: -4.6, r: 5.5, s: 0.85 },
-    { y: -5.9, r: 3, s: 0.8 },
+    { y: -2.0, r: 18.4, s: 0.95 },
+    { y: -3.3, r: 13.6, s: 0.9 },
+    { y: -4.6, r: 8.8, s: 0.85 },
+    { y: -5.9, r: 4.8, s: 0.8 },
   ],
   tiles(world) {
     return world.arena.tiles.map((t) => {
@@ -203,7 +225,7 @@ const spooky: Theme = {
       };
     });
   },
-  prop(o, add, glow) {
+  prop(o, add, glow, decal) {
     switch (o.kind) {
       case 'shrine':
         add('shrine_candles', 1.25);
@@ -234,19 +256,37 @@ const spooky: Theme = {
       case 'path':
         add(['path_A', 'path_B', 'path_C', 'path_D'][Math.abs(Math.round(o.rot)) % 4], 0.85, 0, 0, o.rot, 0.02);
         break;
+      // ---- ground detail (no collision)
+      case 'bones':
+        add(['bone_A', 'skull', 'ribcage'][Math.floor(o.rot) % 3], 0.9, 0, 0, o.rot);
+        decal('moss', 1.8, 0, 0, o.rot);
+        break;
+      case 'candles':
+        add('skull_candle', 0.9, 0, 0, o.rot);
+        add('skull_candle', 0.7, 0.45, 0.3, o.rot + 1);
+        glow('#ffb347', 1.4, 0.2, 0.55, 0.15);
+        break;
+      case 'tufts':
+        decal('grass', 0.8, 0, 0, o.rot);
+        decal('grass', 0.65, 0.5, 0.35, o.rot + 1);
+        decal('moss', 1.6, 0.2, 0.1, o.rot);
+        break;
+      case 'smallpumpkin':
+        add('pumpkin_orange_small', 1, 0, 0, o.rot);
+        break;
     }
   },
   backdrop(ctx) {
     const S = 4;
     const isles = [
-      { a: -0.1, d: 40, y: -2, w: 3, h: 2, main: 'crypt', ms: 1 },
-      { a: 0.8, d: 34, y: -6, w: 2, h: 2, main: 'arch_gate', ms: 1.2 },
-      { a: -0.9, d: 34, y: -5, w: 2, h: 2, main: 'tree_pine_orange_large', ms: 1 },
-      { a: 1.7, d: 33, y: -9, w: 2, h: 1, main: 'tree_dead_large_decorated', ms: 1 },
-      { a: -1.8, d: 32, y: -8, w: 1, h: 2, main: 'tree_pine_yellow_large', ms: 1 },
-      { a: 2.7, d: 36, y: -7, w: 2, h: 2, main: 'tree_pine_orange_medium', ms: 1.2 },
-      { a: -2.6, d: 36, y: -7, w: 2, h: 2, main: 'tree_dead_large', ms: 1.2 },
-      { a: 0.35, d: 58, y: 6, w: 2, h: 1, main: 'tree_pine_orange_large', ms: 1.3 },
+      { a: -0.1, d: 53, y: -2, w: 3, h: 2, main: 'crypt', ms: 1 },
+      { a: 0.8, d: 47, y: -6, w: 2, h: 2, main: 'arch_gate', ms: 1.2 },
+      { a: -0.9, d: 47, y: -5, w: 2, h: 2, main: 'tree_pine_orange_large', ms: 1 },
+      { a: 1.7, d: 46, y: -9, w: 2, h: 1, main: 'tree_dead_large_decorated', ms: 1 },
+      { a: -1.8, d: 45, y: -8, w: 1, h: 2, main: 'tree_pine_yellow_large', ms: 1 },
+      { a: 2.7, d: 49, y: -7, w: 2, h: 2, main: 'tree_pine_orange_medium', ms: 1.2 },
+      { a: -2.6, d: 49, y: -7, w: 2, h: 2, main: 'tree_dead_large', ms: 1.2 },
+      { a: 0.35, d: 71, y: 6, w: 2, h: 1, main: 'tree_pine_orange_large', ms: 1.3 },
     ];
     const extras = ['gravestone', 'grave_B', 'pumpkin_orange', 'tree_pine_orange_small', 'tree_dead_small', 'fence', 'post_lantern', 'pumpkin_yellow_jackolantern'];
     for (const b of isles) {

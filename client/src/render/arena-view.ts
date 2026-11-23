@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { addOutlines } from './style.ts';
+import { makeDecal } from './decals.ts';
+import type { Decal } from './themes.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
@@ -59,6 +62,7 @@ interface PropView {
   mats: THREE.MeshStandardMaterial[];
   fade: number;
   tall: boolean;
+  ink: THREE.Material[];
 }
 
 /** Renders any map: themed tiles that shake and fall, props that ride their tile, pads, backdrop and ambience. */
@@ -72,6 +76,8 @@ export class ArenaView {
   private props: PropView[] = [];
   /** Set each frame: props between the camera and this point fade out so you never lose your hero. */
   focus: THREE.Vector3 | null = null;
+  /** Set by the game: does a prop at (x, z) hide the focus point from the camera? */
+  blocks: ((x: number, z: number, fx: number, fz: number) => boolean) | null = null;
   private falls = new Map<number, FallAnim>();
   private clouds: THREE.Object3D[] = [];
   private spinners: THREE.Object3D[] = [];
@@ -99,7 +105,8 @@ export class ArenaView {
     const meshes = new Map<string, THREE.InstancedMesh>();
     for (const [piece, n] of counts) {
       const { geo, mat } = this.bake(piece);
-      const m = (mat as THREE.MeshStandardMaterial).clone();
+      // ground keeps smooth PBR light (cel bands on big flat tiles look washed out)
+      const m = ((mat.userData.pbr as THREE.Material) ?? mat).clone() as THREE.MeshStandardMaterial;
       m.roughness = 0.9;
       const im = new THREE.InstancedMesh(geo, m, n);
       im.receiveShadow = true;
@@ -180,6 +187,13 @@ export class ArenaView {
   private makeGlow(color: string, size: number) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     s.scale.setScalar(size);
+    // the low third-person camera can pass right next to a lamp: fade glows up close so they don't fog the screen
+    const wp = new THREE.Vector3();
+    s.onBeforeRender = (_r, _s, cam) => {
+      s.getWorldPosition(wp);
+      const d = wp.distanceTo(cam.position);
+      s.material.opacity = 0.85 * Math.min(1, Math.max(0, (d - size * 0.6) / (size * 1.2 + 2)));
+    };
     return s;
   }
 
@@ -263,7 +277,10 @@ export class ArenaView {
       s.position.set(x, y, z);
       g.add(s);
     };
-    this.theme.prop(o as never, add, glow);
+    const decal: Decal = (kind, size, x = 0, z = 0, rot = 0) => {
+      g.add(makeDecal(kind, size, x, z, rot));
+    };
+    this.theme.prop(o as never, add, glow, decal);
     g.position.set(o.x, 0, o.z);
     g.rotation.y = o.rot;
     const mats: THREE.MeshStandardMaterial[] = [];
@@ -279,8 +296,11 @@ export class ArenaView {
       }
     });
     const box = new THREE.Box3().setFromObject(g);
+    // ink outline on solid obstacles: they pop out of the ground and read as "can't walk here"
+    const ink: THREE.Material[] = [];
+    if (o.r > 0) for (const c of [...g.children]) if (!(c as THREE.Sprite).isSprite) ink.push(...addOutlines(c, 0.03 / Math.max(0.3, c.scale.x)));
     const tile = this.world.arena.tileAt(o.x, o.z);
-    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), mats, fade: 1, tall: box.max.y > 1.4 });
+    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), mats, ink, fade: 1, tall: box.max.y > 0.7 });
     this.group.add(g);
   }
 
@@ -471,10 +491,11 @@ export class ArenaView {
         if (t.state === 1) p.obj.position.x += Math.sin(time * 47) * 0.06;
       }
       const fc = this.focus;
-      const hide = p.tall && !!fc && p.base.z > fc.z - 0.3 && p.base.z < fc.z + 5 && Math.abs(p.base.x - fc.x) < 2.6;
+      const hide = p.tall && !!fc && !!this.blocks && this.blocks(p.base.x, p.base.z, fc.x, fc.z);
       const target = hide ? 0.3 : 1;
       if (Math.abs(p.fade - target) > 0.01) {
         p.fade += (target - p.fade) * Math.min(1, dt * 8);
+        for (const m of p.ink) m.visible = p.fade > 0.95;
         for (const m of p.mats) {
           m.opacity = p.fade;
           m.depthWrite = p.fade > 0.95;

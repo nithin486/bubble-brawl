@@ -1,0 +1,29 @@
+{
+  "name": "rock",
+  "query": "rock",
+  "title": "Moon Rock 03",
+  "source": "polyhaven",
+  "id": "moon_rock_03",
+  "link": "https://polyhaven.com/a/moon_rock_03",
+  "author": "Greg Zaal, Rico Cilliers, Jenelle van Heerden",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 5598,
+  "trianglesOriginal": 5598,
+  "bytes": 105352,
+  "dimensions": [
+    1.926,
+    1,
+    1.48
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-23",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": 1,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

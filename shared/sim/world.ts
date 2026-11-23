@@ -143,7 +143,7 @@ export class World {
     this.jackpotT = 0;
     this.jackpotWarned = false;
     this.jackpotFired = false;
-    this.spawnWave(T.coins.firstWaveSize, true);
+    this.spawnWave(Math.round(T.coins.firstWaveSize * this.coinScale), true);
   }
 
   /** Round Roulette: a twist each round. First round of a first match is plain; the last round is double points. */
@@ -676,7 +676,7 @@ export class World {
     const due = this.powerT >= (this.roundTime < P.first + 0.5 ? P.first : P.every);
     if (!due) return;
     this.powerT = 0;
-    if (this.powerups.length >= P.max) return;
+    if (this.powerups.length >= Math.round(P.max * this.coinScale)) return;
     const w = P.weights;
     const total = w.magnet + w.speed + w.shield + w.bomb;
     let r = this.rng.next() * total;
@@ -1008,6 +1008,11 @@ export class World {
     }
   }
 
+  /** Bigger maps get proportionally more coins and power-ups. */
+  get coinScale() {
+    return this.map.coinScale ?? 1;
+  }
+
   // ------------------------------------------------------------------ coins
 
   private tickWaves(dt: number) {
@@ -1015,12 +1020,12 @@ export class World {
     if (this.waveT >= T.coins.waveEvery) {
       this.waveT = 0;
       const giant = this.mod === 'giant' ? T.mods.giant.waveScale : 1;
-      this.spawnWave(Math.round(T.coins.waveSize * giant * (this.finale ? T.finale.waveMultiplier : 1)), false);
+      this.spawnWave(Math.round(T.coins.waveSize * this.coinScale * giant * (this.finale ? T.finale.waveMultiplier : 1)), false);
     }
   }
 
   spawnWave(size: number, instant: boolean) {
-    const room = T.coins.maxLoose * (this.finale ? T.finale.waveMultiplier : 1) - this.coins.length;
+    const room = T.coins.maxLoose * this.coinScale * (this.finale ? T.finale.waveMultiplier : 1) - this.coins.length;
     let n = Math.min(size, room);
     if (n <= 0) return;
     const total = n;

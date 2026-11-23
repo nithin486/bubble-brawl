@@ -169,3 +169,41 @@
   .fp-seat b { font-size: 10px; }
   .fp-seat span { display: none; }
 }
+
+/* very short screens (phone landscape with browser bars, ~280–340 px tall) */
+@media (max-height: 340px) {
+  .logo .w { font-size: 30px; -webkit-text-stroke: 5px #3a1fb0; }
+  .logo .w.b { font-size: 34px; margin-left: 8px; }
+  .logo .crown { width: 24px; left: 64px; top: -8px; }
+  .logo .tag { font-size: 8px; margin-top: 2px; }
+  .chip { font-size: 13px; padding: 3px 8px 4px; }
+  .chip .lv { width: 22px; height: 22px; font-size: 11px; }
+  .chip .xp { width: 44px; height: 7px; }
+  .icon-btn { width: 32px; height: 32px; border-radius: 10px; }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .hero-name { bottom: 24%; }
+  .hero-name h2 { font-size: 26px; -webkit-text-stroke: 5px #3a1fb0; text-shadow: 0 3px 0 #1d0d52; }
+  .role { font-size: 9px; padding: 2px 8px; margin-top: 3px; }
+  .ability { padding: 4px 10px 4px 5px; bottom: calc(6px + var(--safe-b)); border-radius: 14px; }
+  .ability .ic { width: 28px; height: 28px; border-radius: 9px; }
+  .ability .ic svg { width: 18px; height: 18px; }
+  .ability b { font-size: 13px; }
+  .arrow { width: 36px; height: 36px; }
+  .arrow svg { width: 18px; height: 18px; }
+  .arrow.l { left: calc(50% - 120px); }
+  .arrow.r { left: calc(50% + 84px); }
+  .play-col { width: 168px; gap: 6px; bottom: calc(6px + var(--safe-b)); }
+  .mapcard { padding: 3px 5px; border-radius: 12px; box-shadow: 0 3px 0 #135c86, inset 0 2px 0 #ffffff90; }
+  .mapcard small { font-size: 8px; }
+  .mapcard b { font-size: 13px; }
+  .mp { width: 24px; height: 24px; }
+  .mp svg { width: 14px; height: 14px; }
+  .play { font-size: 30px; border-radius: 16px; padding: 4px 0 7px; }
+  .play small { font-size: 9px; }
+  .friends { font-size: 12px; padding: 5px; border-radius: 13px; }
+  .howto { width: 160px; padding: 6px 8px; border-radius: 13px; bottom: calc(6px + var(--safe-b)); }
+  .howto h3 { font-size: 12px; }
+  .step { font-size: 10px; margin: 2px 0; gap: 6px; }
+  .step .n { width: 22px; height: 22px; border-radius: 7px; }
+  .step .n svg { width: 14px; height: 14px; }
+}
