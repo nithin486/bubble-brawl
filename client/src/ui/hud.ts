@@ -443,9 +443,26 @@ export class Hud {
     re.focus();
   }
 
-  showPause(state: { sound: boolean; shake: boolean; quality: string }, on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void }) {
+  showPause(
+    state: { sound: boolean; shake: boolean; quality: string; hero: HeroId; heroes: HeroId[]; unlocked: HeroId[] },
+    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; hero: (h: HeroId) => void },
+  ) {
     const p = el('div', 'panel');
     p.append(el('h1', 'stroke', 'Paused'));
+    // hero switch: picking one restarts the match with that hero; locked heroes play as a free trial
+    p.append(el('h2', 'stroke', 'Change hero'));
+    const cards = el('div', 'heroes');
+    for (const id of state.heroes) {
+      const h = HEROES[id];
+      const locked = !state.unlocked.includes(id);
+      const c = el('div', 'hcard tap' + (id === state.hero ? ' sel' : ''));
+      c.innerHTML = `<div class="pic" style="background-image:url(${this.portraits.get(id)})"></div><b>${h.name}</b><i>${h.abilityName}</i>${locked ? '<div class="new">TRY</div>' : ''}`;
+      c.title = h.abilityText;
+      if (id !== state.hero) c.addEventListener('click', () => on.hero(id));
+      cards.append(c);
+    }
+    p.append(cards);
+    p.append(el('div', 'sub', 'Picking a hero starts a new match. <span style="opacity:.75">TRY = free trial match until you unlock it.</span>'));
     const t = (label: string, val: string, onClick: () => void, isOn: boolean) => {
       const r = el('div', 'toggle', `<span>${label}</span>`);
       const b = el('button', isOn ? 'on' : '', val);

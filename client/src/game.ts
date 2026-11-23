@@ -571,9 +571,29 @@ export class Game {
     this.paused = p;
     if (p) {
       this.hud.showPause(
-        { sound: this.profile.sound, shake: this.profile.shake, quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality },
+        {
+          sound: this.profile.sound,
+          shake: this.profile.shake,
+          quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
+          hero: this.world.players[LOCAL].hero,
+          heroes: HERO_IDS,
+          unlocked: this.profile.unlocked,
+        },
         {
           resume: () => this.setPaused(false),
+          hero: (h) => {
+            this.sfx.click();
+            track('hero_selected', { hero: h, trial: !this.profile.unlocked.includes(h), from: 'pause' });
+            if (this.profile.unlocked.includes(h)) {
+              this.profile.hero = h;
+              saveProfile(this.profile);
+            }
+            this.firstMatch = false;
+            this.paused = false;
+            this.hud.closePanel();
+            this.last = performance.now();
+            this.startMatch(h);
+          },
           toggle: (k) => {
             this.profile[k] = !this.profile[k];
             this.sfx.muted = !this.profile.sound;

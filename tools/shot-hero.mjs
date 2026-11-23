@@ -1,0 +1,18 @@
+import { createRequire } from 'node:module';
+const { chromium } = createRequire(import.meta.url)('playwright');
+const out = process.argv[2];
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message));
+await page.goto(process.env.URL);
+await page.waitForFunction(() => !document.getElementById('boot'), null, { timeout: 60000 });
+await page.waitForTimeout(1000);
+await page.click('.pause-btn');
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${out}/pause.png` });
+await page.click('.hcard:nth-child(3)');
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${out}/grizzle.png` });
+console.log('errors:', errs.join('\n') || 'none');
+await browser.close();
