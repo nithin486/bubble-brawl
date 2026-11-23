@@ -181,6 +181,32 @@ export class Sfx {
   whoosh() {
     this.noise(0.35, { freq: 400, sweep: 3500, vol: 0.3, q: 0.9 });
   }
+  tick() {
+    this.tone(1800, 0.03, { type: 'square', vol: 0.05 });
+  }
+  land2() {
+    [784, 1046, 1568].forEach((f, i) => this.tone(f, 0.2, { type: 'triangle', vol: 0.13, delay: i * 0.06 }));
+  }
+  crown() {
+    [523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.22, { type: 'square', vol: 0.1, delay: i * 0.09 }));
+    this.tone(1568, 0.5, { type: 'sine', vol: 0.12, delay: 0.36 });
+  }
+  crownOther() {
+    [784, 1046].forEach((f, i) => this.tone(f, 0.12, { type: 'triangle', vol: 0.07, delay: i * 0.07 }));
+  }
+  horn() {
+    this.tone(330, 0.45, { type: 'sawtooth', vol: 0.12 });
+    this.tone(415, 0.45, { type: 'sawtooth', vol: 0.1 });
+    this.tone(330, 0.3, { type: 'sawtooth', vol: 0.12, delay: 0.55 });
+    this.tone(415, 0.3, { type: 'sawtooth', vol: 0.1, delay: 0.55 });
+  }
+  bell() {
+    for (let i = 0; i < 3; i++) {
+      this.tone(196, 1.2, { type: 'sine', vol: 0.3, delay: i * 0.8 });
+      this.tone(392, 0.9, { type: 'triangle', vol: 0.1, delay: i * 0.8 });
+      this.tone(587, 0.6, { type: 'sine', vol: 0.06, delay: i * 0.8 });
+    }
+  }
   click() {
     this.tone(1200, 0.05, { type: 'square', vol: 0.06 });
   }

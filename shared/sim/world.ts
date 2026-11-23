@@ -5,7 +5,7 @@ import { HEROES, type HeroId } from '../config/heroes.ts';
 import { Arena } from './arena.ts';
 import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng } from './math.ts';
 import { MAPS, type MapDef, type MapId, type Obstacle } from '../config/maps.ts';
-import { NO_INPUT, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
+import { NO_INPUT, type Hazard, type RoundMod, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
 
 const T = TUNING;
 
@@ -32,6 +32,14 @@ export class World {
   waveT = 0;
   finale = false;
   powerups: PowerUp[] = [];
+  /** Richest carrier wears the crown (-1 = nobody). */
+  crownId = -1;
+  /** This round's twist (Round Roulette). */
+  mod: RoundMod = 'none';
+  hazards: Hazard[] = [];
+  private hazardT = 0;
+  private hazardCount = 0;
+  private modT = 0;
   bombs: Bomb[] = [];
   private powerT = 0;
   private jackpotT = 0;
@@ -125,11 +133,51 @@ export class World {
     this.waveT = 0;
     this.powerups = [];
     this.bombs = [];
+    this.crownId = -1;
+    this.hazards = [];
+    this.hazardT = 0;
+    this.hazardCount = 0;
+    this.modT = 0;
+    this.mod = this.pickMod(round);
     this.powerT = 0;
     this.jackpotT = 0;
     this.jackpotWarned = false;
     this.jackpotFired = false;
     this.spawnWave(T.coins.firstWaveSize, true);
+  }
+
+  /** Round Roulette: a twist each round. First round of a first match is plain; the last round is double points. */
+  private pickMod(round: number): RoundMod {
+    if (round >= T.match.rounds) return 'double';
+    if (round === 1) return this.firstMatch ? 'none' : this.rng.pick(['turbo', 'giant', 'magnet'] as RoundMod[]);
+    const pool: RoundMod[] = ['giant', 'thieves', 'bombs', 'turbo', 'magnet', 'goldrush'];
+    let m = this.mod;
+    while (m === this.mod) m = this.rng.pick(pool);
+    return m;
+  }
+
+  /** The rival a Grab would hit right now (used for aim assist and the target ring). */
+  findTarget(p: Player, range = T.grab.range + T.grab.rangeForgiveness, coneDeg = T.grab.coneDeg + 50) {
+    let best: Player | null = null;
+    let bestScore = -Infinity;
+    for (const o of this.players) {
+      if (o === p || !targetable(o)) continue;
+      if (!inCone(p, p.facing, o, range, coneDeg)) continue;
+      const d = len(o.x - p.x, o.z - p.z);
+      const score = o.carried * 0.3 - d - Math.abs(angleDiff(p.facing, facingOf(o.x - p.x, o.z - p.z))) + (o.id === this.crownId ? 3 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        best = o;
+      }
+    }
+    return best;
+  }
+
+  /** What banking n coins is worth right now. */
+  bankValue(n: number) {
+    const tier = T.bankBonus.find((b) => n >= b.min);
+    const mult = (tier?.mult ?? 1) * (this.mod === 'double' ? T.mods.double.bankMult : 1);
+    return { total: Math.round(n * mult), mult, label: tier?.label ?? '' };
   }
 
   private pickNextSpot(cur: number) {
@@ -198,6 +246,9 @@ export class World {
     this.tickPowerups(dt);
     this.tickJackpot(dt);
     this.tickBombs(dt);
+    this.tickCrown();
+    this.tickMods(dt);
+    this.tickHazards(dt);
     for (const p of this.players) this.tickPlayer(p, inputs[p.id] ?? NO_INPUT, dt);
     this.separate();
     this.tickCoins(dt);
@@ -208,9 +259,9 @@ export class World {
   // ------------------------------------------------------------------ players
 
   private speedOf(p: Player) {
-    if (p.speedT > 0) return T.hero.walkSpeed * T.powerups.speed.mult; // speed boots ignore the carry slowdown
+    if (p.speedT > 0) return T.hero.walkSpeed * T.powerups.speed.mult * (this.mod === 'turbo' ? T.mods.turbo.speedMult : 1); // speed boots ignore the carry slowdown
     const slow = Math.max(T.hero.carrySlowFloor, 1 - p.carried * T.hero.carrySlowPerCoin);
-    return T.hero.walkSpeed * slow;
+    return T.hero.walkSpeed * slow * (this.mod === 'turbo' ? T.mods.turbo.speedMult : 1);
   }
 
   private tickPlayer(p: Player, inp: Input, dt: number) {
@@ -224,6 +275,7 @@ export class World {
     p.speedT = Math.max(0, p.speedT - dt);
     p.shieldT = Math.max(0, p.shieldT - dt);
     p.comboT = Math.max(0, p.comboT - dt);
+    p.robbedT = Math.max(0, p.robbedT - dt);
     if (p.comboT <= 0) p.combo = 0;
 
     switch (p.state) {
@@ -276,7 +328,7 @@ export class World {
       else if (inp.skill && p.skillCd <= 0) this.startSkill(p);
       else if (inp.grab && p.grabCd <= 0) {
         p.cast = { kind: 'grab', t: T.grab.windup };
-        p.grabCd = T.grab.cooldown;
+        p.grabCd = T.grab.cooldown * (this.mod === 'thieves' ? T.mods.thieves.grabCdMult : 1);
       }
     }
     if (p.cast) {
@@ -398,15 +450,16 @@ export class World {
     }
 
     // magnet: loose coins nearby slide toward you
-    if (p.magnetT > 0) {
+    const magR = p.magnetT > 0 ? T.powerups.magnet.radius : this.mod === 'magnet' ? T.mods.magnet.radius : 0;
+    if (magR > 0) {
       const M = T.powerups.magnet;
       for (const c of this.coins) {
         if (!c.grounded || c.anyT > 0) continue;
         const dx = p.x - c.x;
         const dz = p.z - c.z;
         const d = Math.hypot(dx, dz);
-        if (d > M.radius || d < 0.05) continue;
-        const step = Math.min(d, M.pull * dt * (1.3 - d / M.radius));
+        if (d > magR || d < 0.05) continue;
+        const step = Math.min(d, M.pull * dt * (1.3 - d / magR));
         c.x += (dx / d) * step;
         c.z += (dz / d) * step;
       }
@@ -428,12 +481,18 @@ export class World {
       p.bankT += dt;
       if (p.bankT >= T.bank.bankSeconds) {
         const n = p.carried;
-        p.bankedRound += n;
+        const v = this.bankValue(n);
+        p.bankedRound += v.total;
         p.carried = 0;
         p.bankT = 0;
         p.stats.banks++;
-        p.stats.bestBank = Math.max(p.stats.bestBank, n);
-        this.events.push({ t: 'bank', p: p.id, n, x: this.bank.x, z: this.bank.z });
+        p.stats.bestBank = Math.max(p.stats.bestBank, v.total);
+        this.events.push({ t: 'bank', p: p.id, n, total: v.total, mult: v.mult, label: v.label, x: this.bank.x, z: this.bank.z });
+        // a big deposit overloads the bubble: it pops and floats off to a new spot
+        if (n >= T.bankPopAt && !this.bank.glide) {
+          this.bank.moveT = Math.max(this.bank.moveT, T.bank.moveEvery - T.bank.warnSeconds);
+          this.bank.warned = false;
+        }
       }
     } else p.bankT = 0;
   }
@@ -472,18 +531,7 @@ export class World {
 
   /** Aim assist: turn toward the richest rival within range and a wide cone. */
   private aimAt(p: Player, range: number, coneDeg: number) {
-    let best: Player | null = null;
-    let bestScore = -Infinity;
-    for (const o of this.players) {
-      if (o === p || !targetable(o)) continue;
-      if (!inCone(p, p.facing, o, range, coneDeg)) continue;
-      const d = len(o.x - p.x, o.z - p.z);
-      const score = o.carried * 0.3 - d - Math.abs(angleDiff(p.facing, facingOf(o.x - p.x, o.z - p.z)));
-      if (score > bestScore) {
-        bestScore = score;
-        best = o;
-      }
-    }
+    const best = this.findTarget(p, range, coneDeg);
     if (best) p.facing = facingOf(best.x - p.x, best.z - p.z);
     return best;
   }
@@ -505,10 +553,14 @@ export class World {
       }
     }
     const sticky = p.stickyT > 0;
-    const want = sticky ? T.abilities.stickyFingers.steal : T.grab.steal;
+    let want = sticky ? T.abilities.stickyFingers.steal : T.grab.steal;
+    if (this.mod === 'thieves') want *= T.mods.thieves.stealMult;
+    const crowned = target.id === this.crownId;
+    if (crowned) want += T.crown.stealBonus;
     const n = Math.min(target.carried, want);
     target.carried -= n;
     p.carried += n;
+    this.payBack(p, target);
     if (n > 0) {
       p.stats.steals++;
       p.stats.stolen += n;
@@ -633,7 +685,7 @@ export class World {
       if (b.fuse > 0) continue;
       this.bombs.splice(i, 1);
       let hits = 0;
-      const owner = this.players[b.owner];
+      const owner = this.players[b.owner] ?? null; // owner -1 = bomb rain
       for (const o of this.players) {
         if (o === owner || !targetable(o)) continue;
         const dx = o.x - b.x;
@@ -649,11 +701,106 @@ export class World {
     }
   }
 
+  private tickCrown() {
+    let best: Player | null = null;
+    for (const p of this.players) if (p.state !== 'falling' && (!best || p.carried > best.carried)) best = p;
+    const cur = this.crownId >= 0 ? this.players[this.crownId] : null;
+    let next = this.crownId;
+    if (cur && (cur.carried < T.crown.keep || cur.state === 'falling')) next = -1;
+    // a challenger needs a clear lead before the crown changes hands (no flickering)
+    if (best && best.carried >= T.crown.min && (next === -1 || best.carried >= this.players[next].carried + 5)) next = best.id;
+    if (next !== this.crownId) {
+      this.crownId = next;
+      this.events.push({ t: 'crown', p: next });
+    }
+  }
+
+  private tickMods(dt: number) {
+    if (this.mod !== 'bombs') return;
+    this.modT += dt;
+    if (this.modT < T.mods.bombs.every) return;
+    this.modT = 0;
+    for (let tries = 0; tries < 20; tries++) {
+      const a = this.rng.next() * Math.PI * 2;
+      const d = this.rng.next() * (this.arena.safeRadius - 2);
+      const x = Math.sin(a) * d;
+      const z = Math.cos(a) * d;
+      if (!this.arena.safe(x, z)) continue;
+      const b: Bomb = { id: this.nextId++, owner: -1, x, z, fuse: T.mods.bombs.fuse };
+      this.bombs.push(b);
+      this.events.push({ t: 'bombPlant', id: b.id, owner: -1, x, z });
+      return;
+    }
+  }
+
+  /** Map events: City traffic rushes through a street; the graveyard bell wakes grabbing hands. */
+  private tickHazards(dt: number) {
+    const ev = this.map.event;
+    if (!ev) return;
+    const H = T.hazards[ev];
+    this.hazardT += dt;
+    const due = this.hazardCount === 0 ? H.first : H.every;
+    if (this.hazardT >= due) {
+      this.hazardT = 0;
+      this.hazardCount++;
+      if (ev === 'traffic') {
+        const alongX = this.rng.next() < 0.5;
+        const dir = this.rng.next() < 0.5 ? 1 : -1;
+        const L = this.map.shape.radius + 4;
+        this.hazards.push({ id: this.nextId++, kind: 'traffic', warn: H.warn, x: alongX ? -dir * L : 0, z: alongX ? 0 : -dir * L, dx: alongX ? dir : 0, dz: alongX ? 0 : dir, zones: [], life: 10, hit: [] });
+      } else {
+        const zones = this.obstacles
+          .filter((o) => /grave|coffin/.test(o.kind) && !o.hidden && this.arena.safe(o.x, o.z))
+          .map((o) => ({ x: o.x, z: o.z, r: T.hazards.bell.radius }));
+        this.hazards.push({ id: this.nextId++, kind: 'bell', warn: H.warn, x: 0, z: 0, dx: 0, dz: 0, zones, life: 0.6, hit: [] });
+      }
+      this.events.push({ t: 'hazardWarn', kind: ev });
+    }
+    for (let i = this.hazards.length - 1; i >= 0; i--) {
+      const h = this.hazards[i];
+      if (h.warn > 0) {
+        h.warn -= dt;
+        continue;
+      }
+      h.life -= dt;
+      if (h.kind === 'traffic') {
+        const S = T.hazards.traffic;
+        h.x += h.dx * S.speed * dt;
+        h.z += h.dz * S.speed * dt;
+        for (const p of this.players) {
+          if (!targetable(p) || h.hit.includes(p.id)) continue;
+          // the car is long along its direction, narrow across it
+          const along = (p.x - h.x) * h.dx + (p.z - h.z) * h.dz;
+          const across = (p.x - h.x) * -h.dz + (p.z - h.z) * h.dx;
+          if (Math.abs(along) > 1.5 || Math.abs(across) > S.halfWidth + T.hero.radius) continue;
+          h.hit.push(p.id);
+          const side = across >= 0 ? 1 : -1;
+          const nx = -h.dz * side * 0.8 + h.dx * 0.6;
+          const nz = h.dx * side * 0.8 + h.dz * 0.6;
+          if (this.hitPlayer(p, null, 'traffic', nx, nz, S.knock, 2)) this.events.push({ t: 'hazardHit', kind: 'traffic', p: p.id });
+        }
+        if (Math.abs(h.x) > this.map.shape.radius + 6 || Math.abs(h.z) > this.map.shape.radius + 6) h.life = 0;
+      } else if (h.hit.length === 0) {
+        h.hit.push(-1);
+        for (const p of this.players) {
+          if (!targetable(p)) continue;
+          if (!h.zones.some((z) => (p.x - z.x) ** 2 + (p.z - z.z) ** 2 < z.r * z.r)) continue;
+          if (this.hitPlayer(p, null, 'bell', 0, 0, 0.1, 1)) {
+            p.state = 'stunned';
+            p.stateT = T.hazards.bell.stun;
+            this.events.push({ t: 'hazardHit', kind: 'bell', p: p.id });
+          }
+        }
+      }
+      if (h.life <= 0) this.hazards.splice(i, 1);
+    }
+  }
+
   /** The Wishing Well erupts a fountain of coins (and one golden coin) every so often. */
   private tickJackpot(dt: number) {
     const J = T.jackpot;
     this.jackpotT += dt;
-    const next = this.jackpotFired ? J.every : J.first;
+    const next = this.jackpotFired ? (this.mod === 'goldrush' ? T.mods.goldrush.jackpotEvery : J.every) : this.mod === 'goldrush' ? 6 : J.first;
     if (!this.jackpotWarned && this.jackpotT >= next - J.warn) {
       this.jackpotWarned = true;
       this.events.push({ t: 'jackpotWarn' });
@@ -690,9 +837,27 @@ export class World {
     this.events.push({ t: 'jackpot', n });
   }
 
-  private hitPlayer(o: Player, by: Player, kind: 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers' | 'bomb', nx: number, nz: number, knock: number, extra: number) {
+  /** Revenge bonus + crown bounty when `by` lands a hit or steal on `o`. */
+  private payBack(by: Player, o: Player) {
+    if (by.robbedBy === o.id && by.robbedT > 0) {
+      by.carried += T.revenge.bonus;
+      by.robbedT = 0;
+      this.events.push({ t: 'revenge', p: by.id, from: o.id, n: T.revenge.bonus });
+    }
+    if (o.id === this.crownId) {
+      by.carried += T.crown.bounty;
+      this.events.push({ t: 'bounty', p: by.id, from: o.id, n: T.crown.bounty });
+    }
+    o.robbedBy = by.id;
+    o.robbedT = T.revenge.window;
+  }
+
+  private hitPlayer(o: Player, by: Player | null, kind: 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers' | 'bomb' | 'traffic' | 'bell', nx: number, nz: number, knock: number, extra: number) {
     if (this.shielded(o, nx, nz)) return false;
-    const drop = o.carried > 0 ? Math.min(o.carried, clamp(Math.round(o.carried * T.hit.dropFraction), T.hit.dropMin, T.hit.dropMax) + extra) : 0;
+    const mult = o.id === this.crownId ? T.crown.dropMult : 1;
+    const base = clamp(Math.round(o.carried * T.hit.dropFraction), T.hit.dropMin, T.hit.dropMax) * mult;
+    const drop = o.carried > 0 ? Math.min(o.carried, base + extra) : 0;
+    if (by) this.payBack(by, o);
     o.carried -= drop;
     this.scatter(o, drop);
     this.knock(o, nx, nz, knock);
@@ -700,8 +865,8 @@ export class World {
     o.stateT = T.hit.staggerSeconds;
     o.bankT = 0;
     o.cast = null;
-    by.stats.hitsLanded++;
-    this.events.push({ t: 'hit', victim: o.id, by: by.id, kind, drop, x: o.x, z: o.z });
+    if (by) by.stats.hitsLanded++;
+    this.events.push({ t: 'hit', victim: o.id, by: by?.id ?? -1, kind, drop, x: o.x, z: o.z });
     return true;
   }
 
@@ -824,7 +989,8 @@ export class World {
     this.waveT += dt;
     if (this.waveT >= T.coins.waveEvery) {
       this.waveT = 0;
-      this.spawnWave(T.coins.waveSize * (this.finale ? T.finale.waveMultiplier : 1), false);
+      const giant = this.mod === 'giant' ? T.mods.giant.waveScale : 1;
+      this.spawnWave(Math.round(T.coins.waveSize * giant * (this.finale ? T.finale.waveMultiplier : 1)), false);
     }
   }
 
@@ -869,7 +1035,7 @@ export class World {
           blockId: -1,
           blockT: 0,
           anyT: 0,
-          v: 1,
+          v: this.mod === 'giant' ? T.mods.giant.value : 1,
         });
       }
       n -= size;
@@ -1019,6 +1185,8 @@ function newPlayer(id: number, s: PlayerSetup): Player {
     shieldT: 0,
     combo: 0,
     comboT: 0,
+    robbedBy: -1,
+    robbedT: 0,
   };
 }
 
@@ -1039,5 +1207,7 @@ function resetForRound(p: Player) {
   p.padCd = 0;
   p.magnetT = p.speedT = p.shieldT = 0;
   p.combo = p.comboT = 0;
+  p.robbedBy = -1;
+  p.robbedT = 0;
 }
 

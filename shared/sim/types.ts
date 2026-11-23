@@ -63,6 +63,9 @@ export interface Player {
   shieldT: number;
   combo: number;
   comboT: number;
+  /** Who last robbed/hit me, and for how much longer revenge counts. */
+  robbedBy: number;
+  robbedT: number;
 }
 
 export interface Coin {
@@ -79,6 +82,24 @@ export interface Coin {
   blockT: number;
   anyT: number; // nobody can pick it up yet
   v: number; // value: 1, or more for a golden coin
+}
+
+export type RoundMod = 'none' | 'giant' | 'thieves' | 'bombs' | 'turbo' | 'magnet' | 'goldrush' | 'double';
+
+export interface Hazard {
+  id: number;
+  kind: 'traffic' | 'bell';
+  /** Seconds until it becomes dangerous (warning phase while > 0). */
+  warn: number;
+  /** traffic: car position + direction */
+  x: number;
+  z: number;
+  dx: number;
+  dz: number;
+  /** bell: danger zones */
+  zones: { x: number; z: number; r: number }[];
+  life: number;
+  hit: number[];
 }
 
 export type PowerKind = 'magnet' | 'speed' | 'shield' | 'bomb';
@@ -122,16 +143,21 @@ export type SimEvent =
   | { t: 'bombPlant'; id: number; owner: number; x: number; z: number }
   | { t: 'bombBoom'; owner: number; x: number; z: number; hits: number }
   | { t: 'jackpotWarn' }
+  | { t: 'crown'; p: number }
+  | { t: 'bounty'; p: number; from: number; n: number }
+  | { t: 'revenge'; p: number; from: number; n: number }
+  | { t: 'hazardWarn'; kind: 'traffic' | 'bell' }
+  | { t: 'hazardHit'; kind: 'traffic' | 'bell'; p: number }
   | { t: 'jackpot'; n: number }
   | { t: 'steal'; from: number; to: number; n: number; sticky: boolean }
-  | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | AbilityId; drop: number; x: number; z: number }
+  | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | 'traffic' | 'bell' | AbilityId; drop: number; x: number; z: number }
   | { t: 'grab'; p: number; hit: boolean }
   | { t: 'dash'; p: number }
   | { t: 'skill'; p: number; ability: AbilityId }
   | { t: 'skillFire'; p: number; ability: AbilityId; x: number; z: number; facing: number; hits: number }
   | { t: 'stun'; p: number }
   | { t: 'bankProgress'; p: number }
-  | { t: 'bank'; p: number; n: number; x: number; z: number }
+  | { t: 'bank'; p: number; n: number; total: number; mult: number; label: string; x: number; z: number }
   | { t: 'fall'; p: number; lost: number }
   | { t: 'respawn'; p: number }
   | { t: 'bounce'; p: number }

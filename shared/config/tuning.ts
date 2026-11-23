@@ -11,7 +11,8 @@ export const TUNING = {
   match: {
     rounds: 5,
     roundSeconds: 75,
-    countdownSeconds: 3,
+    /** Long enough to read the round twist card. */
+    countdownSeconds: 4,
     roundEndSeconds: 4.5,
     playersPerMatch: 6,
   },
@@ -158,6 +159,39 @@ export const TUNING = {
   },
 
   combo: { window: 0.9 },
+
+  /** Greedy banking: bigger deposits pay more. Checked from the top. */
+  bankBonus: [
+    { min: 30, mult: 2, label: 'MEGA DEPOSIT' },
+    { min: 20, mult: 1.5, label: 'BIG DEPOSIT' },
+    { min: 10, mult: 1.2, label: 'NICE DEPOSIT' },
+  ],
+  /** After a deposit this big the bank bubble pops and moves. */
+  bankPopAt: 20,
+
+  /** The richest carrier wears the crown: everyone hunts them. */
+  /** Crown is earned at `min` carried and lost below `keep` (hysteresis keeps it readable). */
+  crown: { min: 12, keep: 6, dropMult: 2, stealBonus: 2, bounty: 3 },
+
+  /** Rob someone who robbed you within this window → bonus. */
+  revenge: { window: 25, bonus: 2 },
+
+  /** Round twists (Round Roulette). */
+  mods: {
+    giant: { waveScale: 0.45, value: 3 },
+    thieves: { stealMult: 2, grabCdMult: 0.6 },
+    bombs: { every: 3.2, fuse: 1.6 },
+    turbo: { speedMult: 1.35 },
+    magnet: { radius: 2.8 },
+    goldrush: { jackpotEvery: 9 },
+    double: { bankMult: 2 },
+  },
+
+  /** Map events. */
+  hazards: {
+    traffic: { first: 12, every: 15, warn: 2, speed: 16, halfWidth: 1.25, knock: 5.5 },
+    bell: { first: 14, every: 20, warn: 2.5, radius: 2.1, stun: 1.0 },
+  },
 
   layout: {
     wellRadius: 1.15,

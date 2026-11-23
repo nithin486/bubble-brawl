@@ -10,6 +10,15 @@ const B = TUNING.bots;
 
 type Mode = 'collect' | 'bank' | 'steal' | 'flee' | 'idle';
 
+/** Bot personalities: they change decisions AND what the bot says (speech bubbles). */
+export type Personality = 'greedy' | 'thief' | 'coward' | 'bully';
+const PERSONALITY: Record<Personality, { bankAdd: number; stealRange: number; stealMin: number; fleeAt: number; human: number }> = {
+  greedy: { bankAdd: 9, stealRange: 4, stealMin: 3, fleeAt: 99, human: 1 },
+  thief: { bankAdd: 0, stealRange: 9, stealMin: 1, fleeAt: 14, human: 1 },
+  coward: { bankAdd: -4, stealRange: 3, stealMin: 4, fleeAt: 5, human: 0.8 },
+  bully: { bankAdd: 2, stealRange: 7, stealMin: 1, fleeAt: 99, human: 2.2 },
+};
+
 interface Intent {
   mode: Mode;
   tx: number;
@@ -23,6 +32,9 @@ interface Intent {
 export class BotBrain {
   readonly id: number;
   mode: Mode = 'idle';
+  /** Rival this bot is currently hunting (-1 = none) — shown as a red "!" over its head. */
+  targetId = -1;
+  readonly personality: Personality;
   private reaction: number;
   private speed: number;
   private aimErr: number;
@@ -46,6 +58,7 @@ export class BotBrain {
     this.threshold = rng.int(B.bankThresholdMin, B.bankThresholdMax);
     this.thinkT = rng.next() / B.thinkHz;
     this.cur = { mode: 'idle', tx: 0, tz: 0, dash: false, grab: false, skill: false, due: 0 };
+    this.personality = (['greedy', 'thief', 'coward', 'bully'] as Personality[])[(id + 3) % 4];
   }
 
   /** Easy mode is active in round 1 of the player's first match. */
@@ -115,7 +128,7 @@ export class BotBrain {
         mz *= d;
       }
     }
-    const skipBank = this.easy(w) && !mayBankSoon(true, me, w.players[this.humanId]);
+    const skipBank = this.easy(w) && !mayBankSoon(true, me, w.players[this.humanId], w);
     const out: Input = { mx, mz, dash: c.dash, grab: c.grab, skill: c.skill, skipBank };
     c.dash = c.grab = c.skill = false;
     return out;
@@ -123,7 +136,9 @@ export class BotBrain {
 
   private think(w: World, me: Player): Omit<Intent, 'due'> {
     const easy = this.easy(w);
-    const threshold = easy ? B.firstMatch.bankThreshold : this.threshold;
+    const P = PERSONALITY[this.personality];
+    const threshold = easy ? B.firstMatch.bankThreshold : Math.max(4, this.threshold + P.bankAdd);
+    this.targetId = -1;
     const rivals = w.players.filter((o) => o !== me && targetable(o));
     const human = w.players[this.humanId];
     const canTarget = (o: Player) => !(easy && o === human && !o.isBot);
@@ -141,11 +156,31 @@ export class BotBrain {
       return { mode: 'flee', tx: me.x + (dx / d) * 4, tz: me.z + (dz / d) * 4, dash: me.dashCd <= 0 && d < 2.5, grab: false, skill: false };
     }
 
+    // map events: get off the street when traffic is coming, away from graves when the bell tolls
+    for (const h of w.hazards) {
+      if (h.kind === 'traffic') {
+        const across = (me.x - h.x) * -h.dz + (me.z - h.z) * h.dx;
+        const along = (me.x - h.x) * h.dx + (me.z - h.z) * h.dz;
+        if (Math.abs(across) < 2.6 && along > -2) {
+          const side = across >= 0 ? 1 : -1;
+          return { mode: 'flee', tx: me.x - h.dz * side * 4, tz: me.z + h.dx * side * 4, dash: h.warn <= 0.4 && me.dashCd <= 0, grab: false, skill: false };
+        }
+      } else if (h.warn > 0) {
+        const z = h.zones.find((zz) => Math.hypot(me.x - zz.x, me.z - zz.z) < zz.r + 0.6);
+        if (z) {
+          const dx = me.x - z.x || 0.1;
+          const dz = me.z - z.z;
+          const d = Math.hypot(dx, dz);
+          return { mode: 'flee', tx: z.x + (dx / d) * (z.r + 1.5), tz: z.z + (dz / d) * (z.r + 1.5), dash: false, grab: false, skill: false };
+        }
+      }
+    }
+
     let skill = false;
     if (me.skillCd <= 0 && me.state === 'normal') skill = this.wantSkill(w, me, rivals.filter(canTarget));
 
     // 4. flee: rich and someone is closing in
-    if (me.carried >= B.fleeCarry && mayBankSoon(easy, me, human)) {
+    if (me.carried >= Math.min(B.fleeCarry, P.fleeAt) && mayBankSoon(easy, me, human, w)) {
       const threat = rivals.find((o) => len(o.x - me.x, o.z - me.z) < B.fleeRange && o.grabCd < 0.4);
       if (threat) {
         return { mode: 'flee', tx: w.bank.x, tz: w.bank.z, dash: me.dashCd <= 0 && !easy, grab: false, skill };
@@ -156,7 +191,7 @@ export class BotBrain {
     const late = w.remaining < 9 && me.carried > 0;
     // First match, round 1: never bank past the player, so the new player wins the round.
     // These bots keep carrying instead, which makes them juicy targets to learn Grab on.
-    const mayBank = !easy || me.bankedRound + me.carried < human.bankedRound;
+    const mayBank = !easy || me.bankedRound + w.bankValue(me.carried).total < human.bankedRound;
     if ((me.carried >= threshold || late) && mayBank) {
       const d = len(w.bank.x - me.x, w.bank.z - me.z);
       const dash = !easy && d > 6 && me.dashCd <= 0 && me.carried >= threshold + 6;
@@ -170,8 +205,13 @@ export class BotBrain {
       for (const o of rivals) {
         if (!canTarget(o) && this.rng.next() > B.firstMatch.grabPlayerChance) continue;
         const d = len(o.x - me.x, o.z - me.z);
-        if (d > B.stealRange || o.carried <= Math.max(2, me.carried)) continue;
-        const score = o.carried / (d + 1);
+        const crown = o.id === w.crownId;
+        const range = (easy ? B.stealRange : P.stealRange) + (crown ? 4 : 0);
+        if (d > range || o.carried < P.stealMin || (!crown && this.personality !== 'thief' && this.personality !== 'bully' && o.carried <= Math.max(2, me.carried))) continue;
+        let score = (o.carried + (crown ? 8 : 0)) / (d + 1);
+        if (!o.isBot && !easy) score *= P.human;
+        // grudges: go after whoever robbed me
+        if (me.robbedBy === o.id && me.robbedT > 0) score *= 1.6;
         if (score > bestScore) {
           bestScore = score;
           best = o;
@@ -186,6 +226,7 @@ export class BotBrain {
         const dash = !easy && d > 2.5 && d < 5 && me.dashCd <= 0 && best.carried >= 8;
         // Pinch: arm Sticky Fingers before the grab
         if (HEROES[me.hero].ability === 'stickyFingers' && me.skillCd <= 0 && d < 4 && best.carried >= 5) skill = true;
+        this.targetId = best.id;
         return { mode: 'steal', tx, tz, dash, grab, skill };
       }
     }
@@ -243,8 +284,8 @@ export class BotBrain {
   }
 }
 
-function mayBankSoon(easy: boolean, me: Player, human: Player) {
-  return !easy || me.bankedRound + me.carried < human.bankedRound;
+function mayBankSoon(easy: boolean, me: Player, human: Player, w: World) {
+  return !easy || me.bankedRound + w.bankValue(me.carried).total < human.bankedRound;
 }
 
 /** Build brains for every bot seat. */

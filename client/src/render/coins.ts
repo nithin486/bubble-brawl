@@ -59,7 +59,7 @@ export class CoinsView {
     this.golden = new THREE.InstancedMesh(
       geo,
       new THREE.MeshStandardMaterial({ color: '#fff2a0', emissive: '#ffb000', emissiveIntensity: 1.1, metalness: 0.8, roughness: 0.2 }),
-      8,
+      200,
     );
     this.golden.count = 0;
     this.golden.frustumCulled = false;
@@ -82,14 +82,14 @@ export class CoinsView {
     let gold = 0;
     for (const c of world.coins) {
       if (c.delay > 0 || n >= 320) continue;
-      if (c.v > 1 && gold < 8) {
+      if (c.v > 1 && gold < 200) {
         E.set(0, time * 4, 0);
         Q.setFromEuler(E);
         P.set(c.x, c.y + (c.grounded ? 0.45 + Math.sin(time * 4) * 0.12 : 0), c.z);
-        S.setScalar(COIN_SCALE * 1.9);
+        S.setScalar(COIN_SCALE * (c.v >= 5 ? 1.9 : 1.4));
         this.golden.setMatrixAt(gold++, M.compose(P, Q, S));
         P.set(c.x, 0.05, c.z);
-        S.setScalar(3.2 + Math.sin(time * 6) * 0.4);
+        S.setScalar(c.v >= 5 ? 3.2 + Math.sin(time * 6) * 0.4 : 1.8);
         this.glow.setMatrixAt(g++, M.compose(P, Q.identity(), S));
         continue;
       }

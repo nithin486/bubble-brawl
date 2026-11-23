@@ -31,7 +31,29 @@ interface Tag {
   count: HTMLElement;
   ring: SVGCircleElement | null;
   ringWrap: HTMLElement | null;
+  name: HTMLElement;
+  say: HTMLElement;
+  sayUntil: number;
 }
+
+/** Info the game passes each frame that the sim doesn't know (bot intent, nemesis, targeting). */
+export interface HudExtra {
+  threats: Set<number>; // bots hunting you
+  nemesis: number; // bot id or -1
+  grabTarget: number;
+  skillHits: number;
+}
+
+export const MOD_INFO: Record<string, { name: string; text: string; icon: string; color: string }> = {
+  none: { name: 'CLASSIC', text: 'Grab coins, steal, bank them!', icon: '🪙', color: '#ffd84a' },
+  giant: { name: 'GIANT COINS', text: 'Fewer coins, but each is worth 3', icon: '💰', color: '#ffd84a' },
+  thieves: { name: 'THIEF PARTY', text: 'Grabs steal DOUBLE and recharge fast', icon: '🖐️', color: '#ff5fd2' },
+  bombs: { name: 'BOMB RAIN', text: 'Bubble bombs fall from the sky — watch the red circles', icon: '💣', color: '#ff8a3d' },
+  turbo: { name: 'TURBO', text: 'Everyone runs 35% faster', icon: '⚡', color: '#ffd23f' },
+  magnet: { name: 'MAGNET STORM', text: 'Everyone pulls nearby coins', icon: '🧲', color: '#ff5f7a' },
+  goldrush: { name: 'GOLD RUSH', text: 'The jackpot erupts every 9 seconds', icon: '⛲', color: '#7ff3ff' },
+  double: { name: 'FINAL ROUND · DOUBLE POINTS', text: 'Every bank counts ×2 — anyone can still win!', icon: '✨', color: '#ff5fd2' },
+};
 
 export class Hud {
   root = el('div');
@@ -53,6 +75,8 @@ export class Hud {
   private fpsEl = el('div', 'fps');
   private panel: HTMLElement | null = null;
   private feedEl = el('div', 'feed');
+  private bankValEl = el('div', 'bankval stroke');
+  private modEl = el('div', 'modchip');
   private comboEl = el('div', 'combo stroke');
   private powersEl = el('div', 'powers');
   private powerChips = new Map<PowerKind, HTMLElement>();
@@ -73,7 +97,7 @@ export class Hud {
     document.body.appendChild(this.root);
 
     const top = el('div', 'top-center');
-    top.append(this.timer, this.roundEl, this.finaleTag);
+    top.append(this.timer, this.roundEl, this.modEl, this.finaleTag);
     this.root.append(top, this.board);
     world.players.forEach((p) => {
       const r = el('div', 'row' + (p.id === localId ? ' me' : ''));
@@ -87,7 +111,7 @@ export class Hud {
 
     const mine = el('div', 'mine');
     mine.append(this.carryPill, this.bankPill);
-    this.root.append(mine, this.comboEl, this.powersEl, this.flashEl);
+    this.root.append(mine, this.comboEl, this.powersEl, this.flashEl, this.bankValEl);
     for (const k of ['magnet', 'speed', 'shield'] as PowerKind[]) {
       const c = el('div', 'pchip', `<img src="${powerIconCanvas(k, 96).toDataURL()}"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="#ffffff40" stroke-width="4"/><circle class="t" cx="20" cy="20" r="17" fill="none" stroke="${POWER_INFO[k].color}" stroke-width="4" stroke-dasharray="106.8" transform="rotate(-90 20 20)"/></svg>`);
       this.powerChips.set(k, c);
@@ -99,7 +123,9 @@ export class Hud {
     world.players.forEach((p) => {
       const root = el('div', 'tag' + (p.id === localId ? ' me' : ''));
       const count = el('div', 'tc stroke');
-      root.append(el('div', 'tn', p.id === localId ? 'YOU' : p.name), count);
+      const name = el('div', 'tn', p.id === localId ? 'YOU' : p.name);
+      const say = el('div', 'say');
+      root.append(say, name, count);
       let ring: SVGCircleElement | null = null;
       let ringWrap: HTMLElement | null = null;
       if (p.id === localId) {
@@ -107,7 +133,7 @@ export class Hud {
         ring = ringWrap.querySelector('.pr');
         root.append(ringWrap);
       }
-      this.tags.push({ root, count, ring, ringWrap });
+      this.tags.push({ root, count, ring, ringWrap, name, say, sayUntil: 0 });
       this.root.append(root);
     });
     this.root.append(this.edgeBank);
@@ -121,7 +147,7 @@ export class Hud {
     const me = world.players[localId];
     const ab = HEROES[me.hero].ability;
     const ctr = el('div', 'controls');
-    this.btnSkill = el('div', 'btn skill tap', `<div class="cd"></div>${ICONS[ab]}<span class="lbl">SKILL</span><span class="num"></span>${touch ? '' : '<span class="key">K</span>'}`);
+    this.btnSkill = el('div', 'btn skill tap', `<div class="cd"></div>${ICONS[ab]}<span class="lbl">SKILL</span><span class="num"></span><span class="hits"></span>${touch ? '' : '<span class="key">K</span>'}`);
     this.btnGrab = el('div', 'btn grab tap', `<div class="cd"></div>${ICONS.grab}<span class="lbl">GRAB</span>${touch ? '' : '<span class="key">J</span>'}`);
     this.btnDash = el('div', 'btn dash tap', `<div class="cd"></div>${ICONS.dash}<span class="lbl">DASH</span>${touch ? '' : '<span class="key">SPACE</span>'}`);
     ctr.append(this.btnSkill, this.btnGrab, this.btnDash, this.skillTip);
@@ -207,7 +233,55 @@ export class Hud {
 
   // ---------------------------------------------------------------- per frame
 
-  update(world: World, camera: THREE.PerspectiveCamera, localId: number, now: number) {
+  /** Speech bubble over a hero's head. */
+  speak(id: number, text: string, now: number, dur = 2.2) {
+    const t = this.tags[id];
+    if (!t) return;
+    t.say.textContent = text;
+    t.say.classList.remove('on');
+    void t.say.offsetWidth;
+    t.say.classList.add('on');
+    t.sayUntil = now + dur;
+  }
+
+  /** Round Roulette card: spins through twists, lands on this round's. */
+  roulette(mod: string, round: number) {
+    const keys = Object.keys(MOD_INFO).filter((k) => k !== 'double' && k !== 'none');
+    const card = el('div', 'roulette');
+    card.innerHTML = `<div class="rl-top stroke">ROUND ${round}</div><div class="rl-reel"><span class="rl-ic"></span></div><div class="rl-name stroke"></div><div class="rl-text"></div>`;
+    this.root.append(card);
+    const ic = card.querySelector('.rl-ic') as HTMLElement;
+    const nm = card.querySelector('.rl-name') as HTMLElement;
+    const tx = card.querySelector('.rl-text') as HTMLElement;
+    const final = MOD_INFO[mod] ?? MOD_INFO.none;
+    let i = 0;
+    const spins = mod === 'none' ? 0 : 9;
+    const tick = () => {
+      if (i < spins) {
+        const k = MOD_INFO[keys[i % keys.length]];
+        ic.textContent = k.icon;
+        nm.textContent = k.name;
+        nm.style.color = k.color;
+        i++;
+        this.onTick?.();
+        setTimeout(tick, 60 + i * 18);
+      } else {
+        ic.textContent = final.icon;
+        nm.textContent = final.name;
+        nm.style.color = final.color;
+        tx.textContent = final.text;
+        card.classList.add('landed');
+        this.onLand?.();
+      }
+    };
+    tick();
+    setTimeout(() => card.classList.add('out'), 3400);
+    setTimeout(() => card.remove(), 3900);
+  }
+  onTick: (() => void) | null = null;
+  onLand: (() => void) | null = null;
+
+  update(world: World, camera: THREE.PerspectiveCamera, localId: number, now: number, extra?: HudExtra) {
     const me = world.players[localId];
     const playing = world.phase === 'playing';
     const remaining = world.phase === 'countdown' ? TUNING.match.roundSeconds : world.remaining;
@@ -275,8 +349,19 @@ export class Hud {
       t.root.style.transform = `translate(${(this.v.x * 0.5 + 0.5) * w}px, ${(-this.v.y * 0.5 + 0.5) * h}px) translate(-50%, -100%)`;
       t.root.style.left = '0';
       t.root.style.top = '0';
-      const c = p.carried > 0 ? `<i class="coin-ico"></i>${p.carried}` : '';
+      const crown = p.id === world.crownId ? '👑' : '';
+      const c = p.carried > 0 ? `${crown}<i class="coin-ico"></i>${p.carried}` : crown;
       if (t.count.innerHTML !== c) t.count.innerHTML = c;
+      // red "!" = this bot is coming for you; skull = your nemesis
+      const threat = !!extra?.threats.has(p.id);
+      const nem = extra?.nemesis === p.id;
+      t.root.classList.toggle('threat', threat);
+      t.root.classList.toggle('nemesis', nem);
+      t.root.classList.toggle('targeted', extra?.grabTarget === p.id);
+      if (t.sayUntil && now > t.sayUntil) {
+        t.say.classList.remove('on');
+        t.sayUntil = 0;
+      }
       if (t.ring && t.ringWrap) {
         const on = p.bankT > 0;
         t.ringWrap.classList.toggle('on', on);
@@ -286,15 +371,39 @@ export class Hud {
 
     // edge arrows: bank (when off-screen) and the 2 richest rivals off-screen
     this.edgeArrow(this.edgeBank, world.bank.x, 1, world.bank.z, camera, playing, '');
+    // crown holder always gets an arrow; plus the richest other rival
+    const crownP = world.crownId >= 0 && world.crownId !== localId ? world.players[world.crownId] : null;
     const rich = world.players
-      .filter((p) => p.id !== localId && p.carried >= 8 && p.state !== 'falling')
-      .sort((a, b) => b.carried - a.carried)
-      .slice(0, 2);
+      .filter((p) => p.id !== localId && p !== crownP && p.carried >= 8 && p.state !== 'falling')
+      .sort((a, b) => b.carried - a.carried);
+    const list = [crownP, rich[0]].filter(Boolean) as Player[];
     this.edgeRich.forEach((e, i) => {
-      const p = rich[i];
+      const p = list[i];
+      e.classList.toggle('crown', !!p && p === crownP);
       if (!p || !playing) e.style.display = 'none';
-      else this.edgeArrow(e, p.x, 1, p.z, camera, true, String(p.carried));
+      else this.edgeArrow(e, p.x, 1, p.z, camera, true, `${p === crownP ? '👑' : ''}${p.carried}`);
     });
+
+    // what banking is worth right now (greed tiers)
+    const bv = world.bankValue(me.carried);
+    const nextTier = [...TUNING.bankBonus].reverse().find((b) => me.carried < b.min);
+    const bvHtml =
+      me.carried > 0
+        ? `<span>BANK = <b>${bv.total}</b></span>${bv.mult > 1 ? `<em>×${bv.mult}</em>` : ''}${nextTier ? `<small>${nextTier.min - me.carried} more → ×${nextTier.mult}${world.mod === 'double' ? '×2' : ''}</small>` : ''}`
+        : '';
+    if (this.bankValEl.innerHTML !== bvHtml) this.bankValEl.innerHTML = bvHtml;
+    this.bankValEl.classList.toggle('hot', bv.mult >= 1.5);
+    // current twist
+    const mi = MOD_INFO[world.mod];
+    const modHtml = world.mod !== 'none' && mi ? `${mi.icon} ${mi.name}` : '';
+    if (this.modEl.innerHTML !== modHtml) this.modEl.innerHTML = modHtml;
+    this.modEl.style.display = modHtml ? 'block' : 'none';
+    // buttons light up only when they'd land
+    this.btnGrab.classList.toggle('can', !!extra && extra.grabTarget >= 0 && me.grabCd <= 0.05);
+    this.btnSkill.classList.toggle('hot', !!extra && extra.skillHits > 0 && me.skillCd <= 0);
+    const hitsEl = this.btnSkill.querySelector('.hits') as HTMLElement | null;
+    const hitsTxt = extra && extra.skillHits > 0 && me.skillCd <= 0 ? `×${extra.skillHits}` : '';
+    if (hitsEl && hitsEl.textContent !== hitsTxt) hitsEl.textContent = hitsTxt;
 
     // buttons: cooldown rings
     this.cooldown(this.btnSkill, me.skillCd, TUNING.abilities[HEROES[me.hero].ability].cooldown, true);

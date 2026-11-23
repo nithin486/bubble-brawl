@@ -22,6 +22,42 @@ import { saveProfile, levelOf, type Profile } from './save.ts';
 import { Home } from './ui/home.ts';
 import { Showcase } from './render/showcase.ts';
 import { PowerView, POWER_INFO } from './render/powerups.ts';
+import { Markers } from './render/markers.ts';
+import type { Personality } from '../../shared/sim/bots.ts';
+
+/** What bots say, by personality. Short, readable, and they tell you what's going on. */
+const LINES: Record<string, Record<Personality, string[]>> = {
+  robbedYou: {
+    greedy: ['Mine now! 💰', 'Thanks!', 'More for me!'],
+    thief: ['Too easy 😜', 'Yoink!', 'Catch me if you can!'],
+    coward: ['Sorry!! 😅', 'Don\'t hurt me!', 'Eep!'],
+    bully: ['Too slow!', 'Get rekt 😤', 'Ha! Weak!'],
+  },
+  youRobbed: {
+    greedy: ['MY COINS!! 😡', 'Give them back!', 'Noooo!'],
+    thief: ['Hey! That\'s my trick!', 'Not cool!', 'Revenge is coming…'],
+    coward: ['Help!! 😭', 'Please stop!', 'Why me?!'],
+    bully: ['You\'re dead! 😠', 'Big mistake!', 'I\'ll get you!'],
+  },
+  hunting: {
+    greedy: ['Ooh, shiny…', 'Gimme those!', ''],
+    thief: ['I see your coins 👀', 'Here I come~', 'Nice coins you got'],
+    coward: ['', 'Uh… hi?', ''],
+    bully: ['You\'re MINE!', 'Coming for you!', 'Run!! 😈'],
+  },
+  bankBig: {
+    greedy: ['KA-CHING! 🤑', 'Rich rich rich!', 'Jackpot!'],
+    thief: ['Safe and sound 😎', 'Banked!', 'Easy money'],
+    coward: ['Phew… safe!', 'Banked! 😅', 'Safe now!'],
+    bully: ['Bow down! 💪', 'Count it!', 'Too good'],
+  },
+  crown: {
+    greedy: ['I\'m the king! 👑', 'All mine!', ''],
+    thief: ['Royal thief 👑', 'Crown suits me', ''],
+    coward: ['Uh oh… 👑', 'I don\'t want this!', ''],
+    bully: ['BOW TO THE KING 👑', 'Come at me!', ''],
+  },
+};
 
 const BOT_NAMES = ['Chintu', 'Golu', 'Mango', 'Rocket', 'Bunty', 'Zara', 'Pixel', 'Tiki', 'Momo', 'Laddoo', 'Noodle', 'Bolt', 'Pappu', 'Rani', 'Jelly'];
 const LOCAL = 0;
@@ -84,6 +120,12 @@ export class Game {
   private showcase: Showcase;
   private trial = false;
   private powers: PowerView | null = null;
+  private markers: Markers | null = null;
+  /** coins each bot stole from you this match → the top one is your NEMESIS */
+  private robbedBy = new Map<number, number>();
+  private nemesis = -1;
+  private lastSay = new Map<number, number>();
+  private lastHunt = new Map<number, number>();
   private wellWarnT = 0;
   private slowT = 0;
   private slowScale = 1;
@@ -218,11 +260,19 @@ export class Game {
     this.bank = new BankView(this.world, this.assets.env, this.stage.scene, this.glowTex);
     if (!this.powers) this.powers = new PowerView(this.world, this.stage.scene, this.glowTex);
     else this.powers.setWorld(this.world);
+    if (!this.markers) this.markers = new Markers(this.stage.scene, this.assets.env, this.glowTex);
+    else this.markers.setWorld();
+    this.robbedBy.clear();
+    this.nemesis = -1;
+    this.lastSay.clear();
+    this.lastHunt.clear();
     this.slowT = 0;
     this.wellWarnT = 0;
     this.hud?.root.remove();
     this.hud = new Hud(this.world, LOCAL, this.portraits, this.touch, this.input);
     this.hud.onPause = () => this.togglePause();
+    this.hud.onTick = () => this.sfx.tick();
+    this.hud.onLand = () => this.sfx.land2();
     this.hud.root.classList.toggle('menu', attract);
     this.hud.attract = attract;
     this.rig.zoomTarget = 0;
@@ -288,6 +338,8 @@ export class Game {
       if (h.update(adt, this.time, frozen)) this.fx.dust(h.player.x, h.player.z);
     }
     this.powers?.update(this.time);
+    this.markers?.update(this.world, this.world.players[LOCAL], this.time, this.mode === 'match');
+    if (this.mode === 'match') this.chatterHunting();
     // trails: speed boots (yellow streaks), sticky fingers (pink sparkles), magnet (red bits)
     this.trailT -= dt;
     if (this.trailT <= 0) {
@@ -326,7 +378,20 @@ export class Game {
     } else this.rig.update(dt, focus, this.lead);
     // keep the shadow camera on the action
     this.stage.aimSun(focus.x, focus.z);
-    this.hud.update(this.world, this.stage.camera, LOCAL, this.time);
+    const threats = new Set<number>();
+    if (this.mode === 'match') {
+      const me = this.world.players[LOCAL];
+      for (const b of this.brains) {
+        const p = this.world.players[b.id];
+        if (b.targetId === LOCAL && Math.hypot(p.x - me.x, p.z - me.z) < 9) threats.add(b.id);
+      }
+    }
+    this.hud.update(this.world, this.stage.camera, LOCAL, this.time, {
+      threats,
+      nemesis: this.nemesis,
+      grabTarget: this.markers?.grabTarget ?? -1,
+      skillHits: this.markers?.skillHits ?? 0,
+    });
     if (this.mode === 'match') {
       this.tutorial(dt);
       this.bankTicks(dt);
@@ -368,6 +433,33 @@ export class Game {
     this.slowT = dur;
   }
 
+  /** A bot says something (rate-limited so it never spams). */
+  private say(id: number, kind: keyof typeof LINES, force = false) {
+    if (this.mode !== 'match' || id === LOCAL) return;
+    const b = this.brains.find((x) => x.id === id);
+    if (!b) return;
+    const last = this.lastSay.get(id) ?? -99;
+    if (!force && this.time - last < 3.5) return;
+    const opts = LINES[kind][b.personality].filter(Boolean);
+    if (!opts.length) return;
+    this.lastSay.set(id, this.time);
+    this.hud.speak(id, opts[Math.floor(Math.random() * opts.length)], this.time);
+  }
+
+  /** Bots announce when they start hunting you, so attacks never come out of nowhere. */
+  private chatterHunting() {
+    const me = this.world.players[LOCAL];
+    for (const b of this.brains) {
+      if (b.targetId !== LOCAL) continue;
+      const p = this.world.players[b.id];
+      if (Math.hypot(p.x - me.x, p.z - me.z) > 8) continue;
+      const last = this.lastHunt.get(b.id) ?? -99;
+      if (this.time - last < 10) continue;
+      this.lastHunt.set(b.id, this.time);
+      this.say(b.id, 'hunting');
+    }
+  }
+
   private who(id: number) {
     return id === LOCAL ? '<span class="me">You</span>' : `<b>${this.world.players[id].name}</b>`;
   }
@@ -384,15 +476,18 @@ export class Game {
     switch (e.t) {
       case 'pickup':
         if (e.p === LOCAL) {
-          if (e.v > 1) {
+          if (e.v >= 5) {
             this.sfx.golden();
             this.hud.banner(`GOLDEN COIN +${e.v}!`, 'gold', true);
+            this.hud.floater(this.pos(e.p, 2.6), cam, `+${e.v}`, 'plus');
+          } else if (e.v > 1) {
+            this.sfx.pickup();
             this.hud.floater(this.pos(e.p, 2.6), cam, `+${e.v}`, 'plus');
           } else this.sfx.pickup();
           if (e.combo > 0 && e.combo % 5 === 0) this.hud.floater(this.pos(e.p, 2.8), cam, `COMBO x${e.combo}!`, 'bank');
         }
         this.fx.sparkle(e.x, 0.6, e.z, e.v > 1 ? '#fff27a' : '#ffe27a', e.v > 1 ? 30 : 5);
-        if (e.v > 1) this.fx.pillar(e.x, e.z, '#ffd84a', 6, 0.7, 0.6);
+        if (e.v >= 5) this.fx.pillar(e.x, e.z, '#ffd84a', 6, 0.7, 0.6);
         break;
       case 'grab':
         hv(e.p).oneShot(hv(e.p).grabAnim, this.time, 1.9, 0.45);
@@ -404,6 +499,17 @@ export class Game {
         }
         break;
       case 'steal': {
+        if (e.n > 0 && e.from === LOCAL) {
+          this.say(e.to, 'robbedYou', true);
+          const tot = (this.robbedBy.get(e.to) ?? 0) + e.n;
+          this.robbedBy.set(e.to, tot);
+          const top = [...this.robbedBy.entries()].sort((a, b) => b[1] - a[1])[0];
+          if (top && top[1] >= 6 && top[0] !== this.nemesis) {
+            this.nemesis = top[0];
+            this.hud.feed(`☠ <b>${w.players[top[0]].name}</b> is your NEMESIS — rob them back for REVENGE!`);
+          }
+        }
+        if (e.n > 0 && e.to === LOCAL) this.say(e.from, 'youRobbed', true);
         const from = this.pos(e.from);
         if (e.n > 0) this.coins.fly(from, () => this.pos(e.to, 1.0), e.n, { dur: 0.4, arc: 1.4 });
         if (e.sticky) {
@@ -599,11 +705,21 @@ export class Game {
         this.bank.onBanked();
         this.fx.ring(e.x, e.z, '#7ff3ff', 3, 0.5, 1.5);
         this.fx.sparkle(e.x, 2, e.z, ['#7ff3ff', '#ffe27a'] as unknown as string, 30);
-        this.hud.floater(this.v.set(e.x, 3.6, e.z), cam, `+${e.n}`, 'bank');
-        if (e.n >= 10) this.hud.feed(`${this.who(e.p)} banked ${e.n}!`);
+        this.hud.floater(this.v.set(e.x, 3.6, e.z), cam, `+${e.total}`, 'bank');
+        if (e.total >= 12) this.hud.feed(`${this.who(e.p)} banked ${e.total}${e.mult > 1 ? ` (×${e.mult})` : ''}!`);
+        if (e.n >= 15) this.say(e.p, 'bankBig');
+        if (e.mult >= 1.5) {
+          this.fx.pillar(e.x, e.z, '#7ff3ff', 12, 1, 1.8);
+          this.fx.confetti(e.x, 3, e.z, e.mult >= 2 ? 160 : 70);
+        }
+        if (e.n >= TUNING.bankPopAt) this.hud.feed('🫧 The bank bubble overloaded — it\'s moving!');
         if (e.p === LOCAL) {
           this.sfx.bank(e.n);
-          this.hud.banner(`BANKED ${e.n}!`, 'teal');
+          if (e.label) {
+            this.hud.skillBanner(`${e.label} ×${e.mult}!`, '#7ff3ff');
+            this.hud.banner(`+${e.total}`, 'teal', true);
+            this.rig.punch(5);
+          } else this.hud.banner(`BANKED ${e.total}!`, 'teal');
           if (this.tut === 'bank' || this.tut === 'coins') this.tutAdvance('done');
         }
         break;
@@ -651,9 +767,61 @@ export class Game {
         this.sfx.rumble();
         this.rig.shake(0.12);
         break;
+      case 'crown': {
+        if (e.p === LOCAL) {
+          this.hud.skillBanner('YOU HAVE THE CROWN!', '#ffd84a');
+          this.hud.banner('Everyone is hunting you — BANK IT!', 'red', true);
+          this.sfx.crown();
+        } else if (e.p >= 0) {
+          this.hud.feed(`👑 ${this.who(e.p)} has the CROWN — hit them for a bounty!`);
+          this.say(e.p, 'crown');
+          this.sfx.crownOther();
+        }
+        break;
+      }
+      case 'bounty':
+        if (e.p === LOCAL) {
+          this.hud.banner(`👑 BOUNTY +${e.n}!`, 'gold');
+          this.sfx.golden();
+        } else this.hud.feed(`${this.who(e.p)} claimed the bounty on ${this.who(e.from)}`);
+        break;
+      case 'revenge':
+        if (e.p === LOCAL) {
+          this.hud.skillBanner(`REVENGE! +${e.n}`, '#ff5f7a');
+          this.sfx.golden();
+          if (e.from === this.nemesis) this.hud.feed(`☠ You got back at your nemesis <b>${w.players[e.from].name}</b>!`);
+        }
+        break;
+      case 'hazardWarn':
+        if (this.mode !== 'match') break;
+        if (e.kind === 'traffic') {
+          this.hud.skillBanner('🚕 RUSH HOUR!', '#ffd23f');
+          this.hud.banner('Get off the street!', 'red', true);
+          this.sfx.horn();
+        } else {
+          this.hud.skillBanner('🔔 MIDNIGHT BELL', '#7dff6a');
+          this.hud.banner('Get away from the graves!', 'red', true);
+          this.sfx.bell();
+        }
+        break;
+      case 'hazardHit': {
+        const p = w.players[e.p];
+        if (e.kind === 'bell') {
+          this.fx.debris(p.x, 0.2, p.z, 10, ['#f4efe2', '#d8d0c0'], 3, 9, 0.9);
+          this.fx.emit(p.x, 0.5, p.z, { n: 24, color: ['#7dff6a', '#d6ffcf'], speed: 3, up: 6, life: 0.7, size: 0.5 });
+        } else this.sfx.horn();
+        if (e.p === LOCAL) {
+          this.hud.banner(e.kind === 'traffic' ? 'HIT BY TRAFFIC!' : 'GRABBED BY THE DEAD!', 'red', true);
+          this.hud.flash(e.kind === 'traffic' ? '#ffd23f' : '#7dff6a', 0.5);
+        }
+        break;
+      }
       case 'countdown':
-        if (e.n === Math.ceil(TUNING.match.countdownSeconds)) this.hud.closePanel();
-        this.hud.countdown(e.n);
+        if (e.n === Math.ceil(TUNING.match.countdownSeconds)) {
+          this.hud.closePanel();
+          if (this.mode === 'match') this.hud.roulette(w.mod, w.round);
+        }
+        if (e.n <= 3) this.hud.countdown(e.n);
         this.sfx.count();
         break;
       case 'roundStart':

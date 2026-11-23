@@ -30,6 +30,8 @@ export interface MapDef {
   /** Where the jackpot fountain erupts from. */
   jackpot: { x: number; z: number; name: string };
   obstacles: Obstacle[];
+  /** Live map event. */
+  event?: 'traffic' | 'bell';
 }
 
 const ring = (n: number, r: number, off = 0) =>
@@ -95,6 +97,7 @@ function city(): MapDef {
     ],
     jackpot: { x: 0, z: 0, name: 'Coin Hydrant' },
     obstacles: o,
+    event: 'traffic',
   };
 }
 
@@ -172,6 +175,7 @@ function spooky(): MapDef {
     ],
     jackpot: { x: 0, z: 0, name: 'Ghost Shrine' },
     obstacles: o,
+    event: 'bell',
   };
 }
 
