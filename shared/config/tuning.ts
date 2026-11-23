@@ -71,7 +71,7 @@ export const TUNING = {
     maxLoose: 120,
     firstWaveSize: 30,
     /** Coins spawned in a wave fall from this height. */
-    spawnHeight: 9,
+    spawnHeight: 5,
     /** Coins avoid spawning closer than this to the bank centre. */
     bankClearance: 2.5,
   },

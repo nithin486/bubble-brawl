@@ -105,10 +105,10 @@ const envInputs = [...ENV.hex, ...ENV.dungeon];
 const envDst = path.join(out, 'env.glb');
 if (!fresh(envDst, envInputs.map((e) => e[1]))) {
   const doc = await io.read(envInputs[0][1]);
-  // Give every piece a single named root node "piece:<name>" in one scene.
+  // Give every piece a single named root node "piece_<name>" in one scene.
   const nameRoot = (d, name) => {
     const scene = d.getRoot().listScenes()[0];
-    const holder = d.createNode(`piece:${name}`);
+    const holder = d.createNode(`piece_${name}`);
     for (const child of scene.listChildren()) {
       scene.removeChild(child);
       holder.addChild(child);
