@@ -117,3 +117,14 @@ Difficulty per bot: reaction 0.25–0.6 s, aim error, speed 90–100%.
 - [ ] 30+ fps on throttled mobile; 60 fps desktop.
 - [ ] Nithin has seen a screen recording and approved the look.
 - [ ] **Gate:** 5 friends play it without explanation; at least 4 ask for another match unprompted, and they understand banking without being told.
+
+## Additions after the first playtest (Nithin: "only clicking buttons, not interesting")
+
+Added on top of the original Step 1 scope; all numbers are in `shared/config/tuning.ts`:
+
+- **Power bubbles** (`powerups`): one spawns every 11 s (max 2): Magnet (pulls coins 6 s), Speed Boots (×1.45, no carry slowdown, 5 s), Bubble Shield (blocks the next hit, 10 s), Bubble Bomb (planted at your feet, 1.3 s fuse, 3.6 m blast).
+- **Wishing Well jackpot** (`jackpot`): the centre well bubbles for 2.5 s, then erupts 16 coins + one golden coin worth 5 (first at 16 s, then every 24 s; ×1.5 in the finale).
+- **Combo counter** (`combo`): quick pickups chain; visual only for now.
+- **Map**: village island with roads, well, beach rim, solid cover props; waterfalls, windmill, drifting bubbles.
+- **Skill feel**: wind-up glow, shockwave domes, debris, ground cracks, camera punch, screen flash, slow motion on big hits.
+- **Landing page** with live attract-mode match behind it (PLAY is still the only click before a match).

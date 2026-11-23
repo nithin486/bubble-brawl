@@ -1,0 +1,85 @@
+import type { Input } from '../../shared/sim/types.ts';
+
+/**
+ * Keyboard + mouse + touch → sim Input. Camera looks toward -z, so "up" on screen is -z.
+ * Button presses latch until the sim consumes them (no lost taps between frames).
+ */
+export class InputManager {
+  private keys = new Set<string>();
+  private latch = { dash: false, grab: false, skill: false };
+  private stick = { x: 0, y: 0, active: false };
+  onFirstInput: (() => void) | null = null;
+  onAnyKey: ((code: string) => void) | null = null;
+  enabled = true;
+
+  constructor(canvas: HTMLElement) {
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      this.keys.add(e.code);
+      this.first();
+      this.onAnyKey?.(e.code);
+      if (e.code === 'Space') this.press('dash');
+      if (e.code === 'KeyJ') this.press('grab');
+      if (e.code === 'KeyK') this.press('skill');
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    });
+    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    window.addEventListener('blur', () => this.keys.clear());
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this.press('grab');
+      if (e.button === 2) this.press('skill');
+      this.first();
+    });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  private first() {
+    if (this.onFirstInput) {
+      const f = this.onFirstInput;
+      this.onFirstInput = null;
+      f();
+    }
+  }
+
+  press(b: 'dash' | 'grab' | 'skill') {
+    if (!this.enabled) return;
+    this.latch[b] = true;
+    this.first();
+  }
+
+  setStick(x: number, y: number, active: boolean) {
+    this.stick.x = x;
+    this.stick.y = y;
+    this.stick.active = active;
+    if (active && (x || y)) this.first();
+  }
+
+  /** Read and clear. */
+  read(): Input {
+    let mx = 0;
+    let mz = 0;
+    const k = this.keys;
+    if (k.has('KeyW') || k.has('ArrowUp')) mz -= 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) mz += 1;
+    if (k.has('KeyA') || k.has('ArrowLeft')) mx -= 1;
+    if (k.has('KeyD') || k.has('ArrowRight')) mx += 1;
+    if (this.stick.active) {
+      mx += this.stick.x;
+      mz += this.stick.y;
+    }
+    const m = Math.hypot(mx, mz);
+    if (m > 1) {
+      mx /= m;
+      mz /= m;
+    }
+    const out: Input = { mx, mz, dash: this.latch.dash, grab: this.latch.grab, skill: this.latch.skill };
+    this.latch.dash = this.latch.grab = this.latch.skill = false;
+    if (!this.enabled) return { mx: 0, mz: 0, dash: false, grab: false, skill: false };
+    return out;
+  }
+
+  get moving() {
+    const k = this.keys;
+    return this.stick.active || ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].some((c) => k.has(c));
+  }
+}
