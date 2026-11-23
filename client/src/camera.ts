@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 
-/** Critically damped follow camera: 14 m up, 11 m behind, small lead, optional shake. */
+export type CamPreset = 'far' | 'close' | 'action';
+/** Camera views the player can pick in Settings. */
+export const CAM_PRESETS: Record<CamPreset, { label: string; offset: [number, number, number]; look: [number, number, number]; lead: number; fov: number }> = {
+  far: { label: 'FAR', offset: [0, 11, 10], look: [0, 0.8, -1.2], lead: 0.35, fov: 45 },
+  close: { label: 'CLOSE', offset: [0, 8.2, 6.6], look: [0, 0.9, -1.4], lead: 0.45, fov: 46 },
+  action: { label: 'ACTION', offset: [0, 5.6, 7.4], look: [0, 1.3, -3.2], lead: 0.6, fov: 52 },
+};
+
+/** Critically damped follow camera with presets, lead, crowd ease-out and shake. */
 export class CameraRig {
   private target = new THREE.Vector3();
   private vel = new THREE.Vector3();
@@ -26,6 +34,20 @@ export class CameraRig {
     this.punchT = 0.35;
   }
 
+  preset: CamPreset = 'far';
+  private leadK = 0.35;
+  /** Desired vertical FOV for this preset (Stage keeps aspect handling). */
+  presetFov = 45;
+
+  setPreset(p: CamPreset) {
+    const c = CAM_PRESETS[p];
+    this.preset = p;
+    this.offset.set(...c.offset);
+    this.lookOffset.set(...c.look);
+    this.leadK = c.lead;
+    this.presetFov = c.fov;
+  }
+
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
   }
@@ -43,7 +65,7 @@ export class CameraRig {
 
   update(dt: number, focus: THREE.Vector3, lead: THREE.Vector3) {
     // critically damped smooth-damp toward focus + lead (settles in ~0.5 s)
-    const goal = new THREE.Vector3().copy(focus).addScaledVector(lead, 0.35);
+    const goal = new THREE.Vector3().copy(focus).addScaledVector(lead, this.leadK);
     goal.y = 0;
     const omega = 2 / 0.28;
     const x = omega * dt;

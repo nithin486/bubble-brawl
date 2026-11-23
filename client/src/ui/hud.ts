@@ -669,8 +669,8 @@ export class Hud {
   }
 
   showPause(
-    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; canUnlockAll: boolean },
-    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; unlockAll: () => void },
+    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; canUnlockAll: boolean; camera: string },
+    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; unlockAll: () => void; camera: () => void },
   ) {
     const p = el('div', 'panel');
     p.append(el('h1', 'stroke', state.inMatch ? 'Paused' : 'Settings'));
@@ -683,6 +683,7 @@ export class Hud {
     };
     t('Sound', state.sound ? 'ON' : 'OFF', () => on.toggle('sound'), state.sound);
     t('Screen shake', state.shake ? 'ON' : 'OFF', () => on.toggle('shake'), state.shake);
+    t('Camera view', state.camera, () => on.camera(), true);
     t('Graphics', state.quality.toUpperCase(), () => on.quality(), true);
     // playtest builds only: skip the unlock flow
     if (state.canUnlockAll) t('All heroes (playtest)', 'UNLOCK', () => on.unlockAll(), false);

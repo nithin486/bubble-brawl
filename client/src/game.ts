@@ -13,7 +13,7 @@ import { HeroView } from './render/hero.ts';
 import { CoinsView } from './render/coins.ts';
 import { BankView } from './render/bank.ts';
 import { Fx, makeGlowTexture } from './render/fx.ts';
-import { CameraRig } from './camera.ts';
+import { CameraRig, CAM_PRESETS, type CamPreset } from './camera.ts';
 import { InputManager } from './input.ts';
 import { Hud, PLAYER_COLORS } from './ui/hud.ts';
 import { Sfx } from './audio.ts';
@@ -169,6 +169,7 @@ export class Game {
     });
     this.rig = new CameraRig(stage.camera);
     this.rig.shakeEnabled = profile.shake;
+    this.applyCamera((PARAMS.get('cam') as CamPreset) || profile.camera || 'close');
     this.sfx.muted = !profile.sound;
     this.fx = new Fx(stage.scene, this.glowTex);
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
@@ -1281,6 +1282,13 @@ export class Game {
 
   // ---------------------------------------------------------------- pause
 
+  private applyCamera(p: CamPreset) {
+    if (!CAM_PRESETS[p]) p = 'close';
+    this.rig.setPreset(p);
+    this.stage.fovBase = this.rig.presetFov;
+    this.stage.resize();
+  }
+
   private togglePause() {
     if (this.world.phase === 'matchEnd' && this.mode === 'match') return;
     this.setPaused(!this.paused);
@@ -1297,6 +1305,7 @@ export class Game {
           shake: this.profile.shake,
           quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
           inMatch: this.mode === 'match',
+          camera: CAM_PRESETS[this.rig.preset].label,
           canUnlockAll: (!!import.meta.env.VITE_PACKED || PARAMS.has('dev')) && this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
         },
         {
@@ -1325,6 +1334,15 @@ export class Game {
             this.paused = false;
             this.hud.closePanel();
             this.goHome();
+          },
+          camera: () => {
+            const order: CamPreset[] = ['far', 'close', 'action'];
+            const next = order[(order.indexOf(this.rig.preset) + 1) % order.length];
+            this.profile.camera = next;
+            saveProfile(this.profile);
+            this.applyCamera(next);
+            track('camera_selected', { camera: next });
+            this.setPaused(true);
           },
           quality: () => {
             const order: Quality[] = ['low', 'medium', 'high'];

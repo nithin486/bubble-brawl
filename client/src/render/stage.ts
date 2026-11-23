@@ -19,6 +19,8 @@ export class Stage {
   private skyMat!: THREE.ShaderMaterial;
   private hemi!: THREE.HemisphereLight;
   private sunOffset = new THREE.Vector3(-12, 26, 14);
+  /** Vertical field of view (set by the camera preset). */
+  fovBase = 45;
 
   constructor(parent: HTMLElement, quality: Quality) {
     this.quality = quality;
@@ -138,7 +140,7 @@ export class Stage {
     const h = window.innerHeight;
     this.camera.aspect = w / h;
     // keep the island in view on narrow screens
-    this.camera.fov = w / h < 1.3 ? 55 : 45;
+    this.camera.fov = w / h < 1.3 ? this.fovBase + 10 : this.fovBase;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
     if (this.composer) {
