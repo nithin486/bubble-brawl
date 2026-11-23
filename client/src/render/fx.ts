@@ -207,7 +207,7 @@ export class Fx {
   }
 
   /** Forward cone wedge on the ground (Ground Slam). */
-  cone(x: number, z: number, facing: number, range: number, deg: number, color: THREE.ColorRepresentation) {
+  cone(x: number, z: number, facing: number, range: number, deg: number, color: THREE.ColorRepresentation, dur = 0.4, from = 0.5) {
     const half = (deg * Math.PI) / 360;
     // sector centred on +x in the XY plane → lay flat (+x stays +x) → yaw so +x points along `facing`
     const mesh = new THREE.Mesh(
@@ -220,7 +220,7 @@ export class Fx {
     holder.rotation.y = facing - Math.PI / 2;
     holder.position.set(x, 0.09, z);
     this.scene.add(holder);
-    this.waves.push({ mesh: holder as unknown as THREE.Mesh, t: 0, dur: 0.4, from: 0.5, to: range });
+    this.waves.push({ mesh: holder as unknown as THREE.Mesh, t: 0, dur, from, to: range });
   }
 
   update(dt: number) {

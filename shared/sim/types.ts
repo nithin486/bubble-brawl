@@ -50,7 +50,7 @@ export interface Player {
   grabCd: number;
   skillCd: number;
   invuln: number;
-  cast: null | { kind: 'grab' | 'skill'; t: number };
+  cast: null | { kind: 'grab' | 'skill'; t: number; total: number };
   stickyT: number;
   bankT: number;
   launch: null | { fx: number; fz: number; tx: number; tz: number; t: number };
@@ -152,6 +152,8 @@ export type SimEvent =
   | { t: 'steal'; from: number; to: number; n: number; sticky: boolean }
   | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | 'traffic' | 'bell' | AbilityId; drop: number; x: number; z: number }
   | { t: 'grab'; p: number; hit: boolean }
+  | { t: 'grabStart'; p: number; facing: number }
+  | { t: 'dodge'; p: number; from: number }
   | { t: 'dash'; p: number }
   | { t: 'skill'; p: number; ability: AbilityId }
   | { t: 'skillFire'; p: number; ability: AbilityId; x: number; z: number; facing: number; hits: number }

@@ -504,9 +504,28 @@ export class Game {
         this.fx.sparkle(e.x, 0.6, e.z, e.v > 1 ? '#fff27a' : '#ffe27a', e.v > 1 ? 30 : 5);
         if (e.v >= 5) this.fx.pillar(e.x, e.z, '#ffd84a', 6, 0.7, 0.6);
         break;
+      case 'grabStart': {
+        // the lunge: anim + a quick red swipe in front so the target can see it coming
+        hv(e.p).oneShot(hv(e.p).grabAnim, this.time, 1.6, 0.5);
+        const P = w.players[e.p];
+        this.fx.cone(P.x, P.z, e.facing, TUNING.grab.range + TUNING.grab.lunge + 0.3, TUNING.grab.coneDeg, e.p === LOCAL ? '#ffd23f' : '#ff3a5a', TUNING.grab.windup + 0.05, 0.6);
+        break;
+      }
+      case 'dodge':
+        this.fx.ring(w.players[e.p].x, w.players[e.p].z, '#7ff3ff', 2, 0.35, 0.6);
+        this.fx.emit(w.players[e.p].x, 1, w.players[e.p].z, { n: 18, color: ['#7ff3ff', '#ffffff'], speed: 5, up: 2, life: 0.4, size: 0.45 });
+        if (e.p === LOCAL) {
+          this.hud.skillBanner('DODGED!', '#7ff3ff');
+          this.sfx.dodge();
+          this.slowMo(0.35, 0.25);
+        } else if (e.from === LOCAL) this.hud.banner(`${w.players[e.p].name} dodged!`, 'teal', true);
+        break;
       case 'grab':
-        hv(e.p).oneShot(hv(e.p).grabAnim, this.time, 1.9, 0.45);
-        if (!e.hit && e.p === LOCAL) this.sfx.whiff();
+        if (!e.hit) hv(e.p).oneShot('Hit_B', this.time, 1.8, 0.35);
+        if (!e.hit && e.p === LOCAL) {
+          this.sfx.whiff();
+          this.hud.banner('MISSED!', 'red', true);
+        }
         if (e.p === LOCAL && this.grabHintT > 0) {
           this.grabHintT = 0;
           this.hud.hintButton(null);
@@ -581,8 +600,12 @@ export class Game {
         const P = w.players[e.p];
         h.oneShot(h.abilityAnim, this.time, e.ability === 'groundSlam' ? 1.5 : 1.4, 0.7);
         const color = HEROES[P.hero].color;
-        // wind-up: glow gathers under the caster
-        this.fx.ring(P.x, P.z, color, 0.4, 0.3, 2.2);
+        // telegraph: a warning that grows to the exact reach and lands when the skill fires — dash out!
+        const cast = TUNING.abilities[e.ability].castDelay;
+        const warn = e.p === LOCAL ? color : '#ff3a3a';
+        if (e.ability === 'rattleBurst') this.fx.ring(P.x, P.z, warn, TUNING.abilities.rattleBurst.radius, cast, 0.4);
+        else if (e.ability === 'groundSlam') this.fx.cone(P.x, P.z, P.facing, TUNING.abilities.groundSlam.range, TUNING.abilities.groundSlam.coneDeg, warn, cast, 0.3);
+        else this.fx.ring(P.x, P.z, color, 0.4, 0.3, 2.2);
         this.fx.sparkle(P.x, 1.2, P.z, color, 18);
         if (e.ability === 'groundSlam') {
           h.jump(1.5, TUNING.abilities.groundSlam.castDelay);

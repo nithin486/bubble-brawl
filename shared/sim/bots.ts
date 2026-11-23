@@ -45,6 +45,9 @@ export class BotBrain {
   private cur: Intent;
   private rng: Rng;
   private wander = 0;
+  /** Casts this bot already decided whether to dodge (each attack gets one roll). */
+  private seenCasts = new WeakSet<object>();
+  private dodgeSkill: number;
   /** Index of the human player; first-match bots go easy on them. */
   private humanId: number;
 
@@ -59,6 +62,7 @@ export class BotBrain {
     this.thinkT = rng.next() / B.thinkHz;
     this.cur = { mode: 'idle', tx: 0, tz: 0, dash: false, grab: false, skill: false, due: 0 };
     this.personality = (['greedy', 'thief', 'coward', 'bully'] as Personality[])[(id + 3) % 4];
+    this.dodgeSkill = rng.range(0.2, 0.5) + (this.personality === 'coward' ? 0.2 : 0);
   }
 
   /** Easy mode is active in round 1 of the player's first match. */
@@ -80,6 +84,25 @@ export class BotBrain {
       this.thinkT += 1 / B.thinkHz;
       const reaction = this.easy(w) ? B.firstMatch.reaction : this.reaction;
       this.queue.push({ ...this.think(w, me), due: this.clock + reaction });
+    }
+    // reflex: see an attack winding up at me → maybe dash out (one roll per attack)
+    if (me.state === 'normal' && me.dashCd <= 0 && !this.easy(w)) {
+      for (const r of w.players) {
+        if (r === me || !r.cast || this.seenCasts.has(r.cast)) continue;
+        const dx = me.x - r.x;
+        const dz = me.z - r.z;
+        const d = Math.hypot(dx, dz);
+        const ab = HEROES[r.hero].ability;
+        const reach = r.cast.kind === 'grab' ? 3 : ab === 'rattleBurst' ? TUNING.abilities.rattleBurst.radius + 0.6 : ab === 'groundSlam' ? TUNING.abilities.groundSlam.range + 0.6 : 0;
+        if (d > reach) continue;
+        this.seenCasts.add(r.cast);
+        if (this.rng.next() > this.dodgeSkill) continue;
+        // dash sideways-away from the attacker
+        const side = this.rng.next() < 0.5 ? 1 : -1;
+        const ax = dx / (d || 1);
+        const az = dz / (d || 1);
+        return { mx: ax * 0.6 - az * side * 0.8, mz: az * 0.6 + ax * side * 0.8, dash: true, grab: false, skill: false };
+      }
     }
     while (this.queue.length && this.queue[0].due <= this.clock) {
       const next = this.queue.shift()!;

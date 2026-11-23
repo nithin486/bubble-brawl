@@ -49,7 +49,12 @@ export const TUNING = {
     cooldown: 1.2,
     /** Shove applied to the victim (metres). */
     shove: 1.5,
-    windup: 0.08,
+    /** Visible lunge before the grab lands — long enough to see and dash away from. */
+    windup: 0.22,
+    /** Extra reach from the lunge. */
+    lunge: 0.7,
+    /** A whiffed grab leaves you stumbling this long. */
+    missRecover: 0.35,
   },
 
   hit: {
@@ -162,6 +167,9 @@ export const TUNING = {
 
   combo: { window: 0.9 },
 
+  /** Dashing through an attack at the right moment. */
+  dodge: { dashRefund: 0.5 },
+
   /** Greedy banking: bigger deposits pay more. Checked from the top. */
   bankBonus: [
     { min: 30, mult: 2, label: 'MEGA DEPOSIT' },
@@ -202,9 +210,9 @@ export const TUNING = {
   },
 
   abilities: {
-    rattleBurst: { cooldown: 12, radius: 3, knockback: 5, extraDrop: 1, castDelay: 0.25 },
+    rattleBurst: { cooldown: 12, radius: 3, knockback: 5, extraDrop: 1, castDelay: 0.4 },
     stickyFingers: { cooldown: 14, buffSeconds: 4, steal: 6, pull: 2, castDelay: 0.1 },
-    groundSlam: { cooldown: 10, coneDeg: 70, range: 3.5, stun: 1, knockback: 1.5, castDelay: 0.35 },
+    groundSlam: { cooldown: 10, coneDeg: 70, range: 3.5, stun: 1, knockback: 1.5, castDelay: 0.45 },
   },
 
   rewards: {

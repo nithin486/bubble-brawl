@@ -327,8 +327,11 @@ export class World {
       if (inp.dash && p.dashCd <= 0 && p.state === 'normal') this.startDash(p, inp);
       else if (inp.skill && p.skillCd <= 0) this.startSkill(p);
       else if (inp.grab && p.grabCd <= 0) {
-        p.cast = { kind: 'grab', t: T.grab.windup };
+        // commit to a direction now (aim assist), then lunge — the target can see it coming and dash
+        this.aimAt(p, T.grab.range + T.grab.rangeForgiveness + T.grab.lunge + 0.6, T.grab.coneDeg + 70);
+        p.cast = { kind: 'grab', t: T.grab.windup, total: T.grab.windup };
         p.grabCd = T.grab.cooldown * (this.mod === 'thieves' ? T.mods.thieves.grabCdMult : 1);
+        this.events.push({ t: 'grabStart', p: p.id, facing: p.facing });
       }
     }
     if (p.cast) {
@@ -360,6 +363,12 @@ export class World {
       }
       let sp = this.speedOf(p);
       if (p.cast) sp *= 0.5;
+      // grab lunge: a quick step forward during the wind-up
+      if (p.cast?.kind === 'grab') {
+        const lungeV = T.grab.lunge / T.grab.windup;
+        ix = dirX(p.facing) * (lungeV / Math.max(0.1, sp));
+        iz = dirZ(p.facing) * (lungeV / Math.max(0.1, sp));
+      }
       const tx = ix * sp;
       const tz = iz * sp;
       const a = Math.min(1, T.hero.accel * dt);
@@ -523,7 +532,7 @@ export class World {
     const ab = HEROES[p.hero].ability;
     const cfg = T.abilities[ab];
     p.skillCd = cfg.cooldown;
-    p.cast = { kind: 'skill', t: cfg.castDelay };
+    p.cast = { kind: 'skill', t: cfg.castDelay, total: cfg.castDelay };
     // face the best target for aimed abilities
     if (ab === 'groundSlam') this.aimAt(p, T.abilities.groundSlam.range + 1, 100);
     this.events.push({ t: 'skill', p: p.id, ability: ab });
@@ -536,11 +545,25 @@ export class World {
     return best;
   }
 
+  /** Anyone dashing through this attack's reach gets a DODGED! and some dash back. */
+  private dodges(p: Player, inReach: (o: Player) => boolean) {
+    for (const o of this.players) {
+      if (o === p || o.state !== 'dashing' || !inReach(o)) continue;
+      o.dashCd *= 1 - T.dodge.dashRefund;
+      this.events.push({ t: 'dodge', p: o.id, from: p.id });
+    }
+  }
+
   private resolveGrab(p: Player) {
     const range = T.grab.range + T.grab.rangeForgiveness;
-    const target = this.aimAt(p, range, T.grab.coneDeg + 50);
-    if (!target || !inCone(p, p.facing, target, range, T.grab.coneDeg)) {
+    // direction was committed at the start of the wind-up: no re-aiming, so a dash really dodges
+    const target = this.findTarget(p, range, T.grab.coneDeg + 20);
+    if (!target) {
+      this.dodges(p, (o) => inCone(p, p.facing, o, range + 0.4, T.grab.coneDeg + 30));
       this.events.push({ t: 'grab', p: p.id, hit: false });
+      // a whiff leaves you stumbling: missing has a cost, so mashing doesn't pay
+      p.state = 'stagger';
+      p.stateT = T.grab.missRecover;
       return;
     }
     {
@@ -590,6 +613,7 @@ export class World {
     let hits = 0;
     if (ab === 'rattleBurst') {
       const c = T.abilities.rattleBurst;
+      this.dodges(p, (o) => len(o.x - p.x, o.z - p.z) < c.radius + T.hero.radius);
       for (const o of this.players) {
         if (o === p || !targetable(o)) continue;
         const dx = o.x - p.x;
@@ -601,6 +625,7 @@ export class World {
       }
     } else if (ab === 'groundSlam') {
       const c = T.abilities.groundSlam;
+      this.dodges(p, (o) => inCone(p, p.facing, o, c.range + T.hero.radius, c.coneDeg));
       for (const o of this.players) {
         if (o === p || !targetable(o)) continue;
         if (!inCone(p, p.facing, o, c.range + T.hero.radius, c.coneDeg)) continue;

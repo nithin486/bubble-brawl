@@ -181,6 +181,10 @@ export class Sfx {
   whoosh() {
     this.noise(0.35, { freq: 400, sweep: 3500, vol: 0.3, q: 0.9 });
   }
+  dodge() {
+    this.noise(0.25, { freq: 1500, sweep: 5000, vol: 0.2, q: 1.5 });
+    this.tone(1760, 0.18, { type: 'sine', vol: 0.12, delay: 0.08 });
+  }
   tick() {
     this.tone(1800, 0.03, { type: 'square', vol: 0.05 });
   }
