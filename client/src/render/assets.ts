@@ -82,7 +82,7 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (mat.map && o.name.startsWith('piece_') && !o.name.includes('coin') && !o.name.includes('chest') && !o.name.includes('torch')) {
+      if (mat.map && mat.map.name === 'hexagons_medieval') {
         if (!recolored.has(mat.map)) recolored.set(mat.map, greenerGrass(mat.map));
         mat.map = recolored.get(mat.map)!;
       }

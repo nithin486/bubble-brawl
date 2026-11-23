@@ -37,24 +37,41 @@ export function worldToHex(x: number, z: number) {
 
 export const key = (q: number, r: number) => (q + 64) * 256 + (r + 64);
 
+export interface ArenaShape {
+  grid: 'hex' | 'square';
+  /** Square grids: tile edge length (m). Hex grids use the KayKit hex size. */
+  tileSize: number;
+  radius: number;
+}
+
 export class Arena {
   tiles: Tile[] = [];
   private map = new Map<number, Tile>();
+  readonly shape: ArenaShape;
 
-  constructor() {
-    const R = TUNING.arena.radius;
-    const n = Math.ceil(R / (S * 1.5)) + 2;
-    for (let q = -n; q <= n; q++) {
-      for (let r = -n; r <= n; r++) {
-        const p = hexToWorld(q, r);
-        const d = len(p.x, p.z);
-        if (d <= R - 0.6) {
-          const t: Tile = { q, r, x: p.x, z: p.z, d, state: 0, fallAt: 0 };
-          this.tiles.push(t);
-          this.map.set(key(q, r), t);
+  constructor(shape: ArenaShape = { grid: 'hex', tileSize: 2, radius: TUNING.arena.radius }) {
+    this.shape = shape;
+    const R = shape.radius;
+    if (shape.grid === 'hex') {
+      const n = Math.ceil(R / (S * 1.5)) + 2;
+      for (let q = -n; q <= n; q++)
+        for (let r = -n; r <= n; r++) {
+          const p = hexToWorld(q, r);
+          this.add(q, r, p.x, p.z, R - 0.6);
         }
-      }
+    } else {
+      const s = shape.tileSize;
+      const n = Math.ceil(R / s) + 1;
+      for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) this.add(i, j, i * s, j * s, R - s * 0.3);
     }
+  }
+
+  private add(q: number, r: number, x: number, z: number, maxD: number) {
+    const d = len(x, z);
+    if (d > maxD) return;
+    const t: Tile = { q, r, x, z, d, state: 0, fallAt: 0 };
+    this.tiles.push(t);
+    this.map.set(key(q, r), t);
   }
 
   reset() {
@@ -65,8 +82,16 @@ export class Arena {
   }
 
   tileAt(x: number, z: number): Tile | undefined {
+    if (this.shape.grid === 'square') {
+      const s = this.shape.tileSize;
+      return this.map.get(key(Math.round(x / s), Math.round(z / s)));
+    }
     const h = worldToHex(x, z);
     return this.map.get(key(h.q, h.r));
+  }
+
+  has(q: number, r: number) {
+    return this.map.has(key(q, r));
   }
 
   /** Solid ground under a point? (warned tiles still hold you until they fall) */

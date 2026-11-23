@@ -4,7 +4,7 @@ import { TUNING } from '../config/tuning.ts';
 import { HEROES, type HeroId } from '../config/heroes.ts';
 import { Arena } from './arena.ts';
 import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng } from './math.ts';
-import { OBSTACLES, SPOKES } from './layout.ts';
+import { MAPS, type MapDef, type MapId, type Obstacle } from '../config/maps.ts';
 import { NO_INPUT, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
 
 const T = TUNING;
@@ -23,7 +23,10 @@ export class World {
   roundTime = 0;
   players: Player[] = [];
   coins: Coin[] = [];
-  arena = new Arena();
+  map: MapDef;
+  arena: Arena;
+  /** Solid obstacles of this map (decorations excluded). */
+  obstacles: Obstacle[];
   bank: Bank;
   pads: BouncePad[] = [];
   waveT = 0;
@@ -42,14 +45,15 @@ export class World {
   private nextCoinId = 1;
   private lastCount = -1;
 
-  constructor(setups: PlayerSetup[], opts: { seed?: number; firstMatch?: boolean } = {}) {
+  constructor(setups: PlayerSetup[], opts: { seed?: number; firstMatch?: boolean; map?: MapId } = {}) {
     this.rng = new Rng(opts.seed ?? (Math.random() * 2 ** 31) | 0);
     this.firstMatch = !!opts.firstMatch;
+    this.map = MAPS[opts.map ?? 'city'];
+    this.arena = new Arena(this.map.shape);
+    this.obstacles = this.map.obstacles.filter((o) => o.r > 0);
     this.players = setups.map((s, i) => newPlayer(i, s));
-    const n = T.arena.bouncePadCount;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + Math.PI / 4;
-      const t = this.arena.tileAt(Math.sin(a) * T.arena.bouncePadRadius, Math.cos(a) * T.arena.bouncePadRadius)!;
+    for (const p of this.map.pads) {
+      const t = this.arena.tileAt(p.x, p.z)!;
       this.pads.push({ x: t.x, z: t.z });
     }
     this.bank = { x: 0, z: 0, spot: 0, nextSpot: 1, moveT: 0, warned: false, glide: null };
@@ -62,19 +66,18 @@ export class World {
 
   /** Bank spots sit at the end of each road (spoke). */
   bankSpot(i: number) {
-    const a = SPOKES[i % SPOKES.length];
-    return { x: Math.sin(a) * T.bank.ringRadius, z: Math.cos(a) * T.bank.ringRadius };
+    return this.map.bankSpots[i % this.map.bankSpots.length];
   }
 
   /** Obstacles whose tile is still standing. */
   activeObstacles() {
-    return OBSTACLES.filter((o) => this.arena.solid(o.x, o.z));
+    return this.obstacles.filter((o) => this.arena.solid(o.x, o.z));
   }
 
   /** Push a circle out of every standing obstacle. Returns true if it moved. */
   pushOut(e: { x: number; z: number }, radius: number) {
     let moved = false;
-    for (const o of OBSTACLES) {
+    for (const o of this.obstacles) {
       const dx = e.x - o.x;
       const dz = e.z - o.z;
       const min = o.r + radius;
@@ -90,7 +93,7 @@ export class World {
 
   /** Free of obstacles with some clearance? */
   clear(x: number, z: number, clearance: number) {
-    return OBSTACLES.every((o) => (x - o.x) ** 2 + (z - o.z) ** 2 > (o.r + clearance) ** 2 || !this.arena.solid(o.x, o.z));
+    return this.obstacles.every((o) => (x - o.x) ** 2 + (z - o.z) ** 2 > (o.r + clearance) ** 2 || !this.arena.solid(o.x, o.z));
   }
 
   // ------------------------------------------------------------------ rounds
@@ -104,8 +107,8 @@ export class World {
     this.finale = false;
     this.coins = [];
     this.arena.reset();
-    this.arena.safeRadius = T.arena.radius;
-    const spot = this.rng.int(0, T.bank.spots - 1);
+    this.arena.safeRadius = this.map.shape.radius;
+    const spot = this.rng.int(0, this.map.bankSpots.length - 1);
     const p = this.bankSpot(spot);
     this.bank = { x: p.x, z: p.z, spot, nextSpot: this.pickNextSpot(spot), moveT: 0, warned: false, glide: null };
     const n = this.players.length;
@@ -113,11 +116,10 @@ export class World {
     this.players.forEach((pl, i) => {
       const a = startA + (i / n) * Math.PI * 2;
       resetForRound(pl);
-      // start on the roads, facing the well
-      const s = SPOKES[(i + Math.round(startA)) % SPOKES.length];
       void a;
-      pl.x = Math.sin(s) * 3.6;
-      pl.z = Math.cos(s) * 3.6;
+      const st = this.map.starts[(i + Math.round(startA * 10)) % this.map.starts.length];
+      pl.x = st.x;
+      pl.z = st.z;
       pl.facing = facingOf(-pl.x, -pl.z);
     });
     this.waveT = 0;
@@ -132,7 +134,7 @@ export class World {
 
   private pickNextSpot(cur: number) {
     let s = cur;
-    while (s === cur) s = this.rng.int(0, T.bank.spots - 1);
+    while (s === cur) s = this.rng.int(0, this.map.bankSpots.length - 1);
     return s;
   }
 
@@ -666,12 +668,13 @@ export class World {
       const a = this.rng.next() * Math.PI * 2;
       const d = J.minDist + this.rng.next() * (J.maxDist - J.minDist);
       const flight = 0.9 + this.rng.next() * 0.4;
+      const J0 = this.map.jackpot;
       const tx = Math.sin(a) * d;
       const tz = Math.cos(a) * d;
       this.coins.push({
         id: this.nextCoinId++,
-        x: 0,
-        z: 0,
+        x: J0.x,
+        z: J0.z,
         y: 2.2,
         vx: tx / flight,
         vz: tz / flight,
@@ -830,7 +833,7 @@ export class World {
     let n = Math.min(size, room);
     if (n <= 0) return;
     const total = n;
-    const maxR = Math.min(this.arena.safeRadius, T.arena.radius) - 1.2;
+    const maxR = Math.min(this.arena.safeRadius, this.map.shape.radius) - 1.2;
     while (n > 0) {
       // clusters of 4–8 coins make "go to the pile" decisions readable
       const size = Math.min(n, this.rng.int(4, 8));
@@ -946,8 +949,8 @@ export class World {
     if (!this.finale && this.roundTime >= start) {
       this.finale = true;
       this.events.push({ t: 'finale' });
-      const R = T.arena.radius;
-      const keep = T.finale.shrinkToRadius + 0.6;
+      const R = Math.max(...this.arena.tiles.map((t) => t.d));
+      const keep = this.map.keepRadius;
       for (const tile of this.arena.tiles) {
         if (tile.d <= keep) continue;
         const outer = (tile.d - keep) / (R - keep); // 1 = outermost

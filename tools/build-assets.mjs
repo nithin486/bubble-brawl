@@ -94,6 +94,16 @@ const ENV = {
     .filter((f) => f.endsWith('.gltf'))
     .sort()
     .map((f) => [f.slice(0, -5), path.join(root, 'assets/env/hex', f)]),
+  city: fs
+    .readdirSync(path.join(root, 'assets/env/city'))
+    .filter((f) => f.endsWith('.gltf'))
+    .sort()
+    .map((f) => [f.slice(0, -5), path.join(root, 'assets/env/city', f)]),
+  spooky: fs
+    .readdirSync(path.join(root, 'assets/env/spooky'))
+    .filter((f) => f.endsWith('.gltf'))
+    .sort()
+    .map((f) => [f.slice(0, -5), path.join(root, 'assets/env/spooky', f)]),
   dungeon: [
     ['coin', path.join(root, 'assets/env/dungeon/coin.gltf.glb')],
     ['coin_stack', path.join(root, 'assets/env/dungeon/coin_stack_small.gltf.glb')],
@@ -101,7 +111,14 @@ const ENV = {
     ['torch_lit', path.join(root, 'assets/env/dungeon/torch_lit.gltf.glb')],
   ],
 };
-const envInputs = [...ENV.hex, ...ENV.dungeon];
+const envInputs = [...ENV.hex, ...ENV.city, ...ENV.spooky, ...ENV.dungeon];
+{
+  const seen = new Set();
+  for (const [n] of envInputs) {
+    if (seen.has(n)) throw new Error(`duplicate env piece name: ${n}`);
+    seen.add(n);
+  }
+}
 const envDst = path.join(out, 'env.glb');
 if (!fresh(envDst, envInputs.map((e) => e[1]))) {
   const doc = await io.read(envInputs[0][1]);

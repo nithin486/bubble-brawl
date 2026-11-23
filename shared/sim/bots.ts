@@ -5,7 +5,6 @@ import { HEROES } from '../config/heroes.ts';
 import { DEG, inCone, len, Rng } from './math.ts';
 import { NO_INPUT, type Input, type Player } from './types.ts';
 import { targetable, type World } from './world.ts';
-import { OBSTACLES } from './layout.ts';
 
 const B = TUNING.bots;
 
@@ -90,7 +89,7 @@ export class BotBrain {
       dx /= d;
       dz /= d;
       // steer around rocks, trees and the well instead of pushing into them
-      for (const o of OBSTACLES) {
+      for (const o of w.obstacles) {
         const ox = o.x - me.x;
         const oz = o.z - me.z;
         const od = Math.hypot(ox, oz);

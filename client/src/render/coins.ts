@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { bakePiece } from './island.ts';
+import { bakePiece } from './arena-view.ts';
 import type { World } from '../../../shared/sim/world.ts';
 
 const M = new THREE.Matrix4();

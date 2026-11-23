@@ -16,6 +16,9 @@ export class Stage {
   composer: EffectComposer | null = null;
   bloom: UnrealBloomPass | null = null;
   quality: Quality;
+  private skyMat!: THREE.ShaderMaterial;
+  private hemi!: THREE.HemisphereLight;
+  private sunOffset = new THREE.Vector3(-12, 26, 14);
 
   constructor(parent: HTMLElement, quality: Quality) {
     this.quality = quality;
@@ -50,13 +53,14 @@ export class Stage {
           #include <colorspace_fragment>
         }`,
     });
+    this.skyMat = skyMat;
     const sky = new THREE.Mesh(skyGeo, skyMat);
     sky.renderOrder = -10;
     this.scene.add(sky);
     this.scene.fog = new THREE.Fog('#c9b4ff', 60, 160);
 
     // --- lights
-    const hemi = new THREE.HemisphereLight('#dfe6ff', '#6a5a8c', 1.1);
+    const hemi = (this.hemi = new THREE.HemisphereLight('#dfe6ff', '#6a5a8c', 1.1));
     this.scene.add(hemi);
     this.sun = new THREE.DirectionalLight('#fff0d4', 2.2);
     this.sun.position.set(-12, 26, 14);
@@ -82,6 +86,32 @@ export class Stage {
     this.setQuality(quality);
     window.addEventListener('resize', () => this.resize());
     this.resize();
+  }
+
+  /** Sky, fog and lights for a map theme. */
+  applyTheme(t: { sky: { top: string; mid: string; horizon: string; bottom: string }; fog: { color: string; near: number; far: number }; hemi: { sky: string; ground: string; intensity: number }; sun: { color: string; intensity: number; pos: [number, number, number] }; exposure: number }) {
+    const u = this.skyMat.uniforms;
+    u.top.value.set(t.sky.top);
+    u.mid.value.set(t.sky.mid);
+    u.horizon.value.set(t.sky.horizon);
+    u.bottom.value.set(t.sky.bottom);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.set(t.fog.color);
+    fog.near = t.fog.near;
+    fog.far = t.fog.far;
+    this.hemi.color.set(t.hemi.sky);
+    this.hemi.groundColor.set(t.hemi.ground);
+    this.hemi.intensity = t.hemi.intensity;
+    this.sun.color.set(t.sun.color);
+    this.sun.intensity = t.sun.intensity;
+    this.sunOffset.set(...t.sun.pos);
+    this.renderer.toneMappingExposure = t.exposure;
+  }
+
+  /** Keep the shadow camera centred on the action. */
+  aimSun(x: number, z: number) {
+    this.sun.position.set(x + this.sunOffset.x, this.sunOffset.y, z + this.sunOffset.z);
+    this.sun.target.position.set(x, 0, z);
   }
 
   setQuality(q: Quality) {

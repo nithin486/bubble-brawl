@@ -7,7 +7,8 @@ import { TUNING } from '../../shared/config/tuning.ts';
 import { HEROES, HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 import { Stage, isTouch, type Quality } from './render/stage.ts';
 import type { Assets } from './render/assets.ts';
-import { IslandView } from './render/island.ts';
+import { ArenaView } from './render/arena-view.ts';
+import { MAPS, MAP_ROTATION, type MapId } from '../../shared/config/maps.ts';
 import { HeroView } from './render/hero.ts';
 import { CoinsView } from './render/coins.ts';
 import { BankView } from './render/bank.ts';
@@ -42,7 +43,8 @@ export class Game {
   private brains: BotBrain[] = [];
   private autoBrain: BotBrain | null = null;
   private heroes: HeroView[] = [];
-  private island!: IslandView;
+  private island!: ArenaView;
+  private mapId: MapId = 'city';
   private coins: CoinsView;
   private bank!: BankView;
   private fx: Fx;
@@ -113,6 +115,11 @@ export class Game {
     this.fx = new Fx(stage.scene, this.glowTex);
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
     this.showcase = new Showcase(assets);
+    const forced = PARAMS.get('map');
+    if (forced && forced in MAPS) {
+      this.mapId = forced as MapId;
+      this.profile.map = forced;
+    }
     if (AUTOPLAY || PARAMS.has('play')) {
       this.mode = 'match';
       this.startMatch(profile.hero);
@@ -128,6 +135,7 @@ export class Game {
   private goHome() {
     this.mode = 'home';
     this.paused = false;
+    this.mapId = (MAP_ROTATION as string[]).includes(this.profile.map) ? (this.profile.map as MapId) : MAP_ROTATION[0];
     this.startMatch(this.profile.hero, true);
     const lv = levelOf(this.profile.xp);
     this.home?.destroy();
@@ -143,7 +151,17 @@ export class Game {
         return `Unlocks after ${n} more match${n === 1 ? '' : 'es'}`;
       },
       touch: this.touch,
+      maps: MAP_ROTATION.map((id) => ({ id, name: MAPS[id].name, blurb: MAPS[id].blurb })),
+      map: this.mapId,
     });
+    this.home.onMap = (id) => {
+      this.sfx.click();
+      this.mapId = id as MapId;
+      this.profile.map = id;
+      saveProfile(this.profile);
+      track('map_selected', { map: id });
+      this.startMatch(this.profile.hero, true);
+    };
     this.home.onHero = (h, locked) => {
       this.showcase.set([{ hero: h, anim: locked ? 'Idle' : 'Cheer', locked, color: HEROES[h].color, height: 0.45 }]);
       this.showcase.screenX = 0;
@@ -178,7 +196,7 @@ export class Game {
     const off = rng.int(0, botHeroes.length - 1);
     // spread bots evenly over the roster so every match shows every hero
     for (let i = 1; i < TUNING.match.playersPerMatch; i++) setups.push({ name: names[i], hero: botHeroes[(off + i) % botHeroes.length], isBot: true });
-    this.world = new World(setups, { firstMatch: this.firstMatch && !attract });
+    this.world = new World(setups, { firstMatch: this.firstMatch && !attract, map: this.mapId });
     if (this.firstMatch || attract) this.world.phaseT = 0.6; // no countdown wait in the very first round
     this.brains = this.world.players.filter((p) => p.isBot).map((p) => new BotBrain(p.id, new Rng(rng.int(1, 1e9)), LOCAL));
     this.autoBrain = AUTOPLAY || attract ? new BotBrain(LOCAL, new Rng(5), LOCAL) : null;
@@ -192,7 +210,8 @@ export class Game {
       return hv;
     });
     if (this.island) this.stage.scene.remove(this.island.group);
-    this.island = new IslandView(this.world, this.assets.env, this.stage.scene);
+    this.island = new ArenaView(this.world, this.assets.env, this.stage.scene, this.glowTex);
+    this.stage.applyTheme(this.island.theme);
     if (this.bank) {
       this.stage.scene.remove(this.bank.group);
     }
@@ -280,7 +299,8 @@ export class Game {
         if (p.magnetT > 0) this.fx.emit(p.x, 0.4, p.z, { n: 1, color: ['#ff5f7a'], speed: 3.5, up: 0.2, life: 0.4, size: 0.25 });
       }
       // the well bubbles before a jackpot
-      if (this.wellWarnT > 0) this.fx.emit(0, 1.6, 0, { n: 4, color: ['#7ff3ff', '#ffffff', '#ffe27a'], speed: 1.2, up: 5, life: 0.7, size: 0.4, gravity: 6, spread: 0.8 });
+      const J = this.world.map.jackpot;
+      if (this.wellWarnT > 0) this.fx.emit(J.x, 1.6, J.z, { n: 4, color: ['#7ff3ff', '#ffffff', '#ffe27a'], speed: 1.2, up: 5, life: 0.7, size: 0.4, gravity: 6, spread: 0.8 });
     }
     if (this.wellWarnT > 0) this.wellWarnT -= dt;
     this.island.focus = this.mode === 'match' ? this.v.set(this.world.players[LOCAL].x, 0, this.world.players[LOCAL].z).clone() : null;
@@ -305,8 +325,7 @@ export class Game {
       if (this.world.phase === 'matchEnd') this.startMatch(this.profile.hero, true);
     } else this.rig.update(dt, focus, this.lead);
     // keep the shadow camera on the action
-    this.stage.sun.position.set(focus.x - 12, 26, focus.z + 14);
-    this.stage.sun.target.position.set(focus.x, 0, focus.z);
+    this.stage.aimSun(focus.x, focus.z);
     this.hud.update(this.world, this.stage.camera, LOCAL, this.time);
     if (this.mode === 'match') {
       this.tutorial(dt);
@@ -549,20 +568,22 @@ export class Game {
       case 'jackpotWarn':
         this.wellWarnT = TUNING.jackpot.warn;
         this.sfx.jackpotWarn();
-        if (this.mode === 'match') this.hud.banner('WISHING WELL IS BUBBLING…', 'teal', true);
+        if (this.mode === 'match') this.hud.banner(`${this.world.map.jackpot.name.toUpperCase()} IS BUBBLING…`, 'teal', true);
         break;
-      case 'jackpot':
+      case 'jackpot': {
         this.wellWarnT = 0;
-        this.fx.pillar(0, 0, '#ffd84a', 14, 1.2, 1.3);
-        this.fx.dome(0, 0, '#ffe27a', 3, 0.5);
-        this.fx.emit(0, 2.2, 0, { n: 60, color: ['#7ff3ff', '#ffffff', '#ffe27a'], speed: 4, up: 12, life: 1, size: 0.5, gravity: 14 });
+        const J = w.map.jackpot;
+        this.fx.pillar(J.x, J.z, '#ffd84a', 14, 1.2, 1.3);
+        this.fx.dome(J.x, J.z, '#ffe27a', 3, 0.5);
+        this.fx.emit(J.x, 2.2, J.z, { n: 60, color: ['#7ff3ff', '#ffffff', '#ffe27a'], speed: 4, up: 12, life: 1, size: 0.5, gravity: 14 });
         this.sfx.jackpot();
         this.rig.shake(0.2);
         if (this.mode === 'match') {
           this.hud.skillBanner('JACKPOT!', '#ffd84a');
-          this.hud.feed(`The well erupted <b>${e.n + 1} coins</b> + a golden one!`);
+          this.hud.feed(`The ${w.map.jackpot.name} erupted <b>${e.n + 1} coins</b> + a golden one!`);
         }
         break;
+      }
       case 'stun':
         if (e.p === LOCAL) {
           this.hud.banner('STUNNED!', 'red', true);

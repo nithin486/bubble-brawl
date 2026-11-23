@@ -23,6 +23,8 @@ export interface HomeState {
   unlocked: HeroId[];
   lockText: (h: HeroId) => string;
   touch: boolean;
+  maps: { id: string; name: string; blurb: string }[];
+  map: string;
 }
 
 export class Home {
@@ -37,6 +39,8 @@ export class Home {
   onHero: ((h: HeroId, locked: boolean) => void) | null = null;
   onPlay: ((h: HeroId) => void) | null = null;
   onSettings: (() => void) | null = null;
+  onMap: ((id: string) => void) | null = null;
+  private mapIdx = 0;
 
   constructor(state: HomeState) {
     this.state = state;
@@ -70,6 +74,7 @@ export class Home {
         <div class="step"><div class="n" style="background:linear-gradient(#a5f6ff,#2aa8e0)">${SVG.bubble}</div><div>Bank them in the bubble<small>Only banked coins count!</small></div></div>
       </div>
       <div class="play-col">
+        <div class="mapcard"><button class="mp l" aria-label="Previous map">${SVG.left}</button><div class="mt"><small>MAP</small><b></b><span></span></div><button class="mp r" aria-label="Next map">${SVG.right}</button></div>
         <div class="mode"><div class="mi">${SVG.trophy}</div><div><b>COIN CLASH</b><span>${TUNING.match.rounds} rounds · vs bots</span></div></div>
         <button class="play tap">PLAY<small></small></button>
         <button class="friends" disabled>Play with friends<em>SOON</em></button>
@@ -84,6 +89,20 @@ export class Home {
     r.querySelector('.arrow.l')!.addEventListener('click', () => this.step(-1));
     r.querySelector('.arrow.r')!.addEventListener('click', () => this.step(1));
     r.querySelector('.icon-btn')!.addEventListener('click', () => this.onSettings?.());
+    this.mapIdx = Math.max(0, state.maps.findIndex((m) => m.id === state.map));
+    const showMap = () => {
+      const m = state.maps[this.mapIdx];
+      r.querySelector('.mapcard b')!.textContent = m.name;
+      r.querySelector('.mapcard span')!.textContent = m.blurb;
+    };
+    showMap();
+    const stepMap = (d: number) => {
+      this.mapIdx = (this.mapIdx + d + state.maps.length) % state.maps.length;
+      showMap();
+      this.onMap?.(state.maps[this.mapIdx].id);
+    };
+    r.querySelector('.mp.l')!.addEventListener('click', () => stepMap(-1));
+    r.querySelector('.mp.r')!.addEventListener('click', () => stepMap(1));
     this.playBtn.addEventListener('click', () => this.onPlay?.(this.hero));
     window.addEventListener('keydown', this.onKey);
     // swipe on the hero to change

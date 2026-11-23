@@ -65,6 +65,16 @@
 .friends em { font-style: normal; font-size: 11px; padding: 2px 7px; border-radius: 7px; background: var(--pink); margin-left: 6px; vertical-align: 3px; font-family: var(--body); font-weight: 900; }
 .keyhint { text-align: center; font-weight: 900; font-size: 12px; opacity: .75; }
 
+/* map picker */
+.mapcard { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 20px; background: linear-gradient(180deg, #7cf0ff, #2aa8e0); box-shadow: 0 5px 0 #135c86, inset 0 2px 0 #ffffff90, 0 0 0 3px #ffffff50; }
+.mapcard .mt { flex: 1; text-align: center; line-height: 1.05; }
+.mapcard small { display: block; font-weight: 900; font-size: 10px; letter-spacing: 2px; opacity: .85; }
+.mapcard b { display: block; font-family: var(--display); font-weight: 400; font-size: 22px; text-shadow: 0 2px 0 #135c86; }
+.mapcard span { display: block; font-size: 11px; font-weight: 800; opacity: .95; }
+.mp { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; background: #fff; box-shadow: 0 3px 0 #135c86; }
+.mp svg { width: 18px; height: 18px; }
+.mp:active { transform: translateY(2px); box-shadow: 0 1px 0 #135c86; }
+
 /* how to play */
 .howto { position: absolute; left: calc(24px + var(--safe-l)); bottom: calc(26px + var(--safe-b)); width: 280px; padding: 14px 16px; border-radius: 22px;
   background: linear-gradient(180deg, #ffffff2a, #ffffff12); box-shadow: 0 0 0 2px #ffffff40, 0 6px 18px #1d0d5260; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
@@ -113,6 +123,11 @@
   .play small { font-size: 10px; }
   .friends { font-size: 14px; padding: 6px; }
   .keyhint { display: none; }
+  .mapcard { padding: 4px 6px; border-radius: 14px; }
+  .mapcard b { font-size: 15px; }
+  .mapcard span { display: none; }
+  .mp { width: 28px; height: 28px; }
+  .mode { display: none; }
   .howto { width: 200px; padding: 8px 10px; left: calc(10px + var(--safe-l)); bottom: calc(10px + var(--safe-b)); border-radius: 16px; }
   .howto h3 { font-size: 15px; margin-bottom: 2px; }
   .step { font-size: 11px; gap: 7px; margin: 4px 0; }
