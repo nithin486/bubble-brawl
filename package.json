@@ -11,7 +11,8 @@
     "assets": "node tools/build-assets.mjs",
     "test": "node tools/sim-smoke.ts && node tools/maps-smoke.ts",
     "build:packed": "node tools/build-assets.mjs && tsc --noEmit && VITE_PACKED=1 vite build && node tools/pack-assets.mjs",
-    "deploy": "npm run build && npx wrangler@4 deploy"
+    "deploy": "npm run build && npx wrangler@4 deploy",
+    "build:site": "npm run build && rm -rf site && cp -r dist site"
   },
   "dependencies": {
     "@fontsource/lilita-one": "^5.3.0",
