@@ -149,4 +149,13 @@ if (!fresh(envDst, envInputs.map((e) => e[1]))) {
   const size = await compress(doc, envDst);
   console.log(`env ${(size / 1024).toFixed(0)} KB, ${envInputs.length} pieces`);
 }
+// Models fetched by scripts/fetch_model.js are already game-ready: copy them as they are.
+const modelsSrc = path.join(root, 'assets/models');
+if (fs.existsSync(modelsSrc)) {
+  const dst = path.join(out, 'models');
+  fs.mkdirSync(dst, { recursive: true });
+  const glbs = fs.readdirSync(modelsSrc).filter((f) => f.endsWith('.glb'));
+  for (const f of glbs) if (!fresh(path.join(dst, f), [path.join(modelsSrc, f)])) fs.copyFileSync(path.join(modelsSrc, f), path.join(dst, f));
+  if (glbs.length) console.log(`models ${glbs.length} → assets/models`);
+}
 console.log('assets ok →', path.relative(root, out));

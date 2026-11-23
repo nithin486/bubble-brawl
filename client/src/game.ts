@@ -6,6 +6,7 @@ import { NO_INPUT, type Input, type SimEvent } from '../../shared/sim/types.ts';
 import { TUNING } from '../../shared/config/tuning.ts';
 import { HEROES, HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 import { Stage, isTouch, type Quality } from './render/stage.ts';
+import { loadModel } from './render/models.ts';
 import type { Assets } from './render/assets.ts';
 import { ArenaView } from './render/arena-view.ts';
 import { MAPS, MAP_ROTATION, type MapId } from '../../shared/config/maps.ts';
@@ -182,6 +183,9 @@ export class Game {
     if (AUTOPLAY || PARAMS.has('play')) {
       this.mode = 'match';
       this.startMatch(profile.hero);
+      // ?model=crate,rock — preview models fetched by scripts/fetch_model.js in front of your hero
+      const preview = PARAMS.get('model');
+      if (preview) void this.previewModels(preview.split(','));
     } else this.goHome();
     // invite link: straight into the friend's room
     const invite = PARAMS.get('room');
@@ -1316,6 +1320,18 @@ export class Game {
     const px = c.x + vx * t - x;
     const pz = c.z + vz * t - z;
     return px * px + pz * pz < width * width;
+  }
+
+  private async previewModels(names: string[]) {
+    const me = this.world.players[LOCAL];
+    const fx = Math.sin(me.facing);
+    const fz = Math.cos(me.facing);
+    for (let i = 0; i < names.length; i++) {
+      const m = await loadModel(`assets/models/${names[i]}.glb`, { height: 1 });
+      const side = (i - (names.length - 1) / 2) * 1.8;
+      m.root.position.set(me.x + fx * 3.2 + fz * side, 0, me.z + fz * 3.2 - fx * side);
+      this.stage.scene.add(m.root);
+    }
   }
 
   private applyCamera(p: CamPreset) {

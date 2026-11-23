@@ -1,0 +1,29 @@
+{
+  "name": "crate",
+  "query": "crate",
+  "title": "Crate - Low Poly Medieval, CC0",
+  "source": "sketchfab",
+  "id": "d54d8752e2724d16b4b45f2afa929e28",
+  "link": "https://sketchfab.com/3d-models/none-d54d8752e2724d16b4b45f2afa929e28",
+  "author": "Avramania",
+  "authorLink": "https://sketchfab.com/Avramania",
+  "licence": "CC0 Public Domain",
+  "needsCredit": false,
+  "triangles": 1529,
+  "trianglesOriginal": 1529,
+  "bytes": 53752,
+  "dimensions": [
+    0.511,
+    0.527,
+    0.495
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-23",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}
