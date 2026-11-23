@@ -5,6 +5,7 @@ import { HEROES } from '../config/heroes.ts';
 import { DEG, inCone, len, Rng } from './math.ts';
 import { NO_INPUT, type Input, type Player } from './types.ts';
 import { targetable, type World } from './world.ts';
+import { OBSTACLES } from './layout.ts';
 
 const B = TUNING.bots;
 
@@ -88,6 +89,25 @@ export class BotBrain {
       const sn = Math.sin(err);
       dx /= d;
       dz /= d;
+      // steer around rocks, trees and the well instead of pushing into them
+      for (const o of OBSTACLES) {
+        const ox = o.x - me.x;
+        const oz = o.z - me.z;
+        const od = Math.hypot(ox, oz);
+        const reach = o.r + TUNING.hero.radius + 1.4;
+        if (od > reach || od > d + o.r || !w.arena.solid(o.x, o.z)) continue;
+        const ahead = (ox * dx + oz * dz) / od;
+        if (ahead < 0.2) continue;
+        const side = ox * dz - oz * dx > 0 ? 1 : -1; // steer to the side away from the obstacle
+        const k = (1 - od / reach) * 2.2 * ahead;
+        const px = -oz / od;
+        const pz = ox / od;
+        dx += px * side * k;
+        dz += pz * side * k;
+        const n = Math.hypot(dx, dz) || 1;
+        dx /= n;
+        dz /= n;
+      }
       mx = (dx * cs + dz * sn) * speed;
       mz = (-dx * sn + dz * cs) * speed;
       // ease into stops to avoid jitter

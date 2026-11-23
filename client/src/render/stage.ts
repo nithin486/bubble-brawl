@@ -35,10 +35,10 @@ export class Stage {
       depthWrite: false,
       fog: false,
       uniforms: {
-        top: { value: new THREE.Color('#3b1fa8') },
-        mid: { value: new THREE.Color('#a86bff') },
-        horizon: { value: new THREE.Color('#ffb7d9') },
-        bottom: { value: new THREE.Color('#6b4fd8') },
+        top: { value: new THREE.Color('#3f7dff') },
+        mid: { value: new THREE.Color('#9b8cff') },
+        horizon: { value: new THREE.Color('#ffc4ec') },
+        bottom: { value: new THREE.Color('#8f7bff') },
       },
       vertexShader: `varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
       fragmentShader: `uniform vec3 top; uniform vec3 mid; uniform vec3 horizon; uniform vec3 bottom; varying vec3 vP;
@@ -53,10 +53,10 @@ export class Stage {
     const sky = new THREE.Mesh(skyGeo, skyMat);
     sky.renderOrder = -10;
     this.scene.add(sky);
-    this.scene.fog = new THREE.Fog('#c08cff', 55, 150);
+    this.scene.fog = new THREE.Fog('#c9b4ff', 60, 160);
 
     // --- lights
-    const hemi = new THREE.HemisphereLight('#dcd2ff', '#5d4a86', 1.0);
+    const hemi = new THREE.HemisphereLight('#dfe6ff', '#6a5a8c', 1.1);
     this.scene.add(hemi);
     this.sun = new THREE.DirectionalLight('#fff0d4', 2.2);
     this.sun.position.set(-12, 26, 14);

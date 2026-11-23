@@ -17,9 +17,12 @@ function playMatch(seed: number, firstMatch: boolean) {
   const counts: Record<string, number> = {};
   const round1: number[] = [];
   let steps = 0;
+  let moving = 0;
+  let stuck = 0;
   let lastRound = 1;
   while (w.phase !== 'matchEnd' && steps < 60 * 60 * 10) {
     const inputs: Input[] = brains.map((b) => b.update(w, TUNING.sim.dt));
+    const prev = w.players.map((p) => ({ x: p.x, z: p.z }));
     w.tick(TUNING.sim.dt, inputs);
     for (const e of w.events) {
       counts[e.t] = (counts[e.t] ?? 0) + 1;
@@ -30,17 +33,27 @@ function playMatch(seed: number, firstMatch: boolean) {
       }
     }
     for (const p of w.players) if (!Number.isFinite(p.x + p.z + p.y)) throw new Error(`NaN position p${p.id}`);
+    if (w.phase === 'playing')
+      inputs.forEach((inp, i) => {
+        const p = w.players[i];
+        if (p.state !== 'normal' || Math.hypot(inp.mx, inp.mz) < 0.5) return;
+        moving++;
+        const moved = Math.hypot(p.x - prev[i].x, p.z - prev[i].z) / TUNING.sim.dt;
+        if (moved < 1) stuck++;
+      });
     steps++;
   }
   if (w.phase !== 'matchEnd') throw new Error('match did not finish');
-  return { w, counts, round1, steps };
+  return { w, counts, round1, steps, stuckPct: (100 * stuck) / Math.max(1, moving) };
 }
 
 let r1wins = 0;
 let bankedSum = 0;
+let stuckSum = 0;
 const N = 12;
 for (let s = 1; s <= N; s++) {
-  const { w, counts, round1, steps } = playMatch(s, true);
+  const { w, counts, round1, steps, stuckPct } = playMatch(s, true);
+  stuckSum += stuckPct;
   const proxyWon = round1[0] === Math.max(...round1);
   if (proxyWon) r1wins++;
   else console.log("lost seed", s, round1.join(" "));
@@ -57,3 +70,4 @@ for (let s = 1; s <= N; s++) {
 }
 console.log(`first-match round-1 win rate for an average-bot "player": ${r1wins}/${N}`);
 console.log(`avg banked per player per round: ${(bankedSum / N / 6 / TUNING.match.rounds).toFixed(1)}`);
+console.log(`bots pushing but not moving (stuck): ${(stuckSum / N).toFixed(1)}% of moving frames`);

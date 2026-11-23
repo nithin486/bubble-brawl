@@ -1,0 +1,21 @@
+<!doctype html><html><body style="margin:0;background:#bcd"><script type="module">
+import * as THREE from 'three';
+import { loadAssets } from './src/render/assets.ts';
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(innerWidth, innerHeight); document.body.appendChild(r.domElement);
+r.outputColorSpace = THREE.SRGBColorSpace;
+const sc = new THREE.Scene(); sc.background = new THREE.Color('#bcd');
+sc.add(new THREE.HemisphereLight('#fff', '#888', 2)); const d = new THREE.DirectionalLight('#fff', 2); d.position.set(3, 8, 5); sc.add(d);
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 200);
+const a = await loadAssets([], () => {});
+const names = (new URLSearchParams(location.search).get('n') || [...a.env.keys()].join(',')).split(',');
+const cols = Math.ceil(Math.sqrt(names.length * 1.6));
+names.forEach((n, i) => {
+  const o = a.env.get(n)?.clone(); if (!o) return;
+  const x = (i % cols) * 3, z = Math.floor(i / cols) * 3.4; o.position.set(x, 0, z); sc.add(o);
+  const c = document.createElement('canvas'); c.width = 256; c.height = 48; const g = c.getContext('2d'); g.font = '24px sans-serif'; g.fillStyle = '#000'; g.fillText(n, 4, 32);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c) })); s.scale.set(2.6, 0.5, 1); s.position.set(x, -0.2, z + 1.4); sc.add(s);
+});
+const rows = Math.ceil(names.length / cols);
+cam.position.set((cols - 1) * 1.5, Math.max(cols, rows) * 2.6, rows * 3.4 + 4); cam.lookAt((cols - 1) * 1.5, 0, rows * 1.5);
+r.render(sc, cam); window.done = true;
+</script></body></html>

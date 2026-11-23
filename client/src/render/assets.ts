@@ -74,11 +74,17 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
   results[0].scene.traverse((o) => {
     if (o.name.startsWith('piece_')) env.set(o.name.slice(6), o);
   });
+  const recolored = new Map<THREE.Texture, THREE.Texture>();
   env.forEach((o) =>
     o.traverse((m) => {
-      if ((m as THREE.Mesh).isMesh) {
-        m.castShadow = true;
-        m.receiveShadow = true;
+      const mesh = m as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (mat.map && o.name.startsWith('piece_') && !o.name.includes('coin') && !o.name.includes('chest') && !o.name.includes('torch')) {
+        if (!recolored.has(mat.map)) recolored.set(mat.map, greenerGrass(mat.map));
+        mat.map = recolored.get(mat.map)!;
       }
     }),
   );
@@ -112,4 +118,34 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
     heroes.set(id, { scene: g.scene, clips, scale: 1.8 / h });
   });
   return { heroes, env };
+}
+
+/**
+ * KayKit's hex atlas paints grass with a lime-yellow swatch (x 0–128, y 512–768 of 1024²).
+ * Repaint only that swatch with a richer green so sand, roads and wood keep their colours.
+ */
+function greenerGrass(tex: THREE.Texture): THREE.Texture {
+  const img = tex.image as CanvasImageSource & { width: number; height: number };
+  if (!img?.width) return tex;
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  const g = c.getContext('2d')!;
+  g.drawImage(img, 0, 0);
+  const sx = img.width / 1024;
+  const sy = img.height / 1024;
+  const grd = g.createLinearGradient(0, 512 * sy, 0, 768 * sy);
+  grd.addColorStop(0, '#86cf4a');
+  grd.addColorStop(0.3, '#6dbb40');
+  grd.addColorStop(1, '#3a7a33');
+  g.fillStyle = grd;
+  g.fillRect(0, 512 * sy, 128 * sx, 256 * sy);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = tex.flipY;
+  t.colorSpace = tex.colorSpace;
+  t.wrapS = tex.wrapS;
+  t.wrapT = tex.wrapT;
+  t.magFilter = tex.magFilter;
+  t.minFilter = tex.minFilter;
+  return t;
 }

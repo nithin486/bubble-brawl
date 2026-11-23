@@ -88,12 +88,12 @@ for (const hero of Object.values(HEROES)) {
 
 // ---------- environment ----------
 const ENV = {
-  hex: [
-    'hex_grass', 'hex_grass_bottom', 'tree_single_A', 'tree_single_B', 'trees_A_small', 'trees_B_small', 'trees_A_medium',
-    'rock_single_A', 'rock_single_C', 'rock_single_E', 'cloud_big', 'cloud_small', 'hill_single_A', 'barrel', 'crate_A_small',
-    'flag_red', 'flag_blue', 'flag_yellow', 'sack', 'tent', 'building_windmill_yellow', 'building_home_A_red',
-    'building_home_B_blue', 'building_tower_A_blue', 'building_well_green', 'fence_wood_straight', 'mountain_A_grass_trees', 'hills_A_trees',
-  ].map((n) => [n, path.join(root, 'assets/env/hex', `${n}.gltf`)]),
+  // every KayKit hex-pack piece we downloaded into assets/env/hex
+  hex: fs
+    .readdirSync(path.join(root, 'assets/env/hex'))
+    .filter((f) => f.endsWith('.gltf'))
+    .sort()
+    .map((f) => [f.slice(0, -5), path.join(root, 'assets/env/hex', f)]),
   dungeon: [
     ['coin', path.join(root, 'assets/env/dungeon/coin.gltf.glb')],
     ['coin_stack', path.join(root, 'assets/env/dungeon/coin_stack_small.gltf.glb')],

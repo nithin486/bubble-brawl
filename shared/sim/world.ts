@@ -4,6 +4,7 @@ import { TUNING } from '../config/tuning.ts';
 import { HEROES, type HeroId } from '../config/heroes.ts';
 import { Arena } from './arena.ts';
 import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng } from './math.ts';
+import { OBSTACLES, SPOKES } from './layout.ts';
 import { NO_INPUT, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
 
 const T = TUNING;
@@ -52,9 +53,37 @@ export class World {
     return Math.max(0, T.match.roundSeconds - this.roundTime);
   }
 
+  /** Bank spots sit at the end of each road (spoke). */
   bankSpot(i: number) {
-    const a = (i / T.bank.spots) * Math.PI * 2;
+    const a = SPOKES[i % SPOKES.length];
     return { x: Math.sin(a) * T.bank.ringRadius, z: Math.cos(a) * T.bank.ringRadius };
+  }
+
+  /** Obstacles whose tile is still standing. */
+  activeObstacles() {
+    return OBSTACLES.filter((o) => this.arena.solid(o.x, o.z));
+  }
+
+  /** Push a circle out of every standing obstacle. Returns true if it moved. */
+  pushOut(e: { x: number; z: number }, radius: number) {
+    let moved = false;
+    for (const o of OBSTACLES) {
+      const dx = e.x - o.x;
+      const dz = e.z - o.z;
+      const min = o.r + radius;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= min * min || !this.arena.solid(o.x, o.z)) continue;
+      const d = Math.sqrt(d2) || 0.001;
+      e.x = o.x + (dx / d) * min;
+      e.z = o.z + (dz / d) * min;
+      moved = true;
+    }
+    return moved;
+  }
+
+  /** Free of obstacles with some clearance? */
+  clear(x: number, z: number, clearance: number) {
+    return OBSTACLES.every((o) => (x - o.x) ** 2 + (z - o.z) ** 2 > (o.r + clearance) ** 2 || !this.arena.solid(o.x, o.z));
   }
 
   // ------------------------------------------------------------------ rounds
@@ -77,8 +106,11 @@ export class World {
     this.players.forEach((pl, i) => {
       const a = startA + (i / n) * Math.PI * 2;
       resetForRound(pl);
-      pl.x = Math.sin(a) * 4.5;
-      pl.z = Math.cos(a) * 4.5;
+      // start on the roads, facing the well
+      const s = SPOKES[(i + Math.round(startA)) % SPOKES.length];
+      void a;
+      pl.x = Math.sin(s) * 3.6;
+      pl.z = Math.cos(s) * 3.6;
       pl.facing = facingOf(-pl.x, -pl.z);
     });
     this.waveT = 0;
@@ -291,6 +323,12 @@ export class World {
       p.kx *= f;
       p.kz *= f;
       if (k < 0.3) p.kx = p.kz = 0;
+    }
+
+    // obstacles: slide around them (also stops knockback dead)
+    if (this.pushOut(p, T.hero.radius) && k > 0.05) {
+      p.kx *= 0.3;
+      p.kz *= 0.3;
     }
 
     if (!this.arena.solid(p.x, p.z)) {
@@ -555,7 +593,7 @@ export class World {
       const r = this.rng.next() * Math.min(4, this.arena.safeRadius - 3);
       x = Math.sin(a) * r;
       z = Math.cos(a) * r;
-      if (this.arena.safe(x, z) && this.players.every((o) => o === p || (o.x - x) ** 2 + (o.z - z) ** 2 > 2)) break;
+      if (this.arena.safe(x, z) && this.clear(x, z, 0.6) && this.players.every((o) => o === p || (o.x - x) ** 2 + (o.z - z) ** 2 > 2)) break;
     }
     p.x = x;
     p.z = z;
@@ -623,14 +661,14 @@ export class World {
         cx = Math.sin(a) * r;
         cz = Math.cos(a) * r;
         const nearBank = (cx - this.bank.x) ** 2 + (cz - this.bank.z) ** 2 < (T.coins.bankClearance + 1) ** 2;
-        if (this.arena.safe(cx, cz) && !nearBank) break;
+        if (this.arena.safe(cx, cz) && !nearBank && this.clear(cx, cz, 1.2)) break;
       }
       for (let i = 0; i < size; i++) {
         const a = this.rng.next() * Math.PI * 2;
         const r = Math.sqrt(this.rng.next()) * 1.4;
         let x = cx + Math.sin(a) * r;
         let z = cz + Math.cos(a) * r;
-        if (!this.arena.safe(x, z)) {
+        if (!this.arena.safe(x, z) || !this.clear(x, z, 0.3)) {
           x = cx;
           z = cz;
         }
@@ -679,6 +717,7 @@ export class World {
             } else {
               c.grounded = true;
               c.vx = c.vz = c.vy = 0;
+              this.pushOut(c, 0.35); // never rest inside a rock or tree
             }
           } else if (c.y < -6) this.coins.splice(i, 1);
         }

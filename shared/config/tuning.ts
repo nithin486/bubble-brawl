@@ -78,8 +78,8 @@ export const TUNING = {
 
   bank: {
     radius: 2,
-    /** Spec said 8 m; moved to 7 m so the bank stays fully on land after the final crumble. */
-    ringRadius: 7,
+    /** Spec said 8 m; the bank sits at the end of each road, 3 tiles (6 m) out, so it stays on land after the crumble. */
+    ringRadius: 6,
     spots: 6,
     moveEvery: 20,
     warnSeconds: 3,
@@ -131,6 +131,12 @@ export const TUNING = {
       speed: 0.85,
       grabPlayerChance: 0.25,
     },
+  },
+
+  layout: {
+    wellRadius: 1.15,
+    /** Collision radius per obstacle kind (see shared/sim/layout.ts). */
+    radius: { well: 1.15, trees: 1.0, rock: 0.95, crates: 0.85, barrels: 0.6, cart: 0.85 },
   },
 
   abilities: {
