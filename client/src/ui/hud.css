@@ -125,7 +125,10 @@ body { font-family: var(--body); color: #fff; user-select: none; -webkit-user-se
 .desktop .stick-zone, .desktop .stick-ghost { display: none; }
 
 /* ---------- panels ---------- */
-.veil { position: absolute; inset: 0; background: radial-gradient(circle at 50% 40%, #3a1f8f70, #1d0d52d8); display: flex; align-items: center; justify-content: center; pointer-events: auto; animation: fade .3s; }
+.veil { position: absolute; inset: 0; overflow: auto; padding: 8px 0; background: radial-gradient(circle at 50% 40%, #3a1f8f70, #1d0d52d8); display: flex; align-items: safe center; justify-content: center; pointer-events: auto; animation: fade .3s; }
+.panel.results .st { padding-top: 2px; padding-bottom: 2px; }
+.panel.results .st .face { width: 30px; height: 30px; }
+.panel.results h1 { font-size: 34px; margin-bottom: 4px; }
 .panel { background: linear-gradient(180deg, #5a32d6, #3a1f8f); border-radius: 26px; padding: 18px 22px 20px; box-shadow: 0 8px 0 var(--deep), inset 0 3px 0 #ffffff40, 0 0 0 4px #ffffff20; min-width: 300px; max-width: min(94vw, 760px); max-height: 92vh; overflow: auto; animation: pop .35s; }
 .panel h1 { font-family: var(--display); font-weight: 400; font-size: 40px; margin: 0 0 6px; text-align: center; letter-spacing: 1px; }
 .panel h2 { font-family: var(--display); font-weight: 400; font-size: 20px; margin: 10px 0 6px; text-align: center; color: var(--yellow); }

@@ -111,7 +111,9 @@ export class Game {
     const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
     const botHeroes: HeroId[] = HERO_IDS;
     const setups = [{ name: 'You', hero, isBot: false }];
-    for (let i = 1; i < TUNING.match.playersPerMatch; i++) setups.push({ name: names[i], hero: botHeroes[(i + rng.int(0, 2)) % botHeroes.length], isBot: true });
+    const off = rng.int(0, botHeroes.length - 1);
+    // spread bots evenly over the roster so every match shows every hero
+    for (let i = 1; i < TUNING.match.playersPerMatch; i++) setups.push({ name: names[i], hero: botHeroes[(off + i) % botHeroes.length], isBot: true });
     this.world = new World(setups, { firstMatch: this.firstMatch });
     if (this.firstMatch) this.world.phaseT = 0.6; // no countdown wait in the very first round
     this.brains = this.world.players.filter((p) => p.isBot).map((p) => new BotBrain(p.id, new Rng(rng.int(1, 1e9)), LOCAL));

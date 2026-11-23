@@ -42,7 +42,7 @@ export class CameraRig {
     this.target.copy(goal).add(change.add(temp).multiplyScalar(exp));
 
     this.zoom += (this.zoomTarget - this.zoom) * Math.min(1, dt * 2.5);
-    const off = new THREE.Vector3().copy(this.offset).multiplyScalar(1 - this.zoom * 0.62);
+    const off = new THREE.Vector3().copy(this.offset).multiplyScalar(1 - this.zoom * 0.45);
     off.y -= this.zoom * 1.2;
     this.camera.position.copy(this.target).add(off);
     const look = new THREE.Vector3().copy(this.target).add(this.lookOffset);

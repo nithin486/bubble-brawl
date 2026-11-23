@@ -395,7 +395,7 @@ export class Hud {
     localId: number,
     opts: { unlocked: HeroId | null; heroes: HeroId[]; locked: Record<string, string>; selected: HeroId; coins: number; onRematch: (h: HeroId) => void },
   ) {
-    const p = el('div', 'panel');
+    const p = el('div', 'panel results');
     const ranking = world.ranking();
     const rank = ranking.indexOf(localId) + 1;
     const title = rank === 1 ? 'YOU WIN!' : rank === 2 ? '2nd place!' : rank === 3 ? '3rd place!' : `${rank}th place`;

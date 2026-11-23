@@ -12,6 +12,8 @@ await page.waitForFunction(() => !document.getElementById('boot'), null, { timeo
 await page.waitForFunction(() => document.querySelector('.veil .standings'), null, { timeout: 120000, polling: 200 });
 await page.waitForTimeout(400);
 await page.screenshot({ path: `${out}/panel-round.png` });
+// skip ahead: last round, nearly over
+await page.evaluate(() => { const w = window.__bb.world; w.round = 5; w.roundTime = Math.max(w.roundTime, 71); });
 await page.waitForFunction(() => document.querySelector('.big-btn'), null, { timeout: 300000, polling: 500 });
 await page.waitForTimeout(800);
 await page.screenshot({ path: `${out}/panel-results.png` });

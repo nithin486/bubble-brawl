@@ -34,8 +34,13 @@ export function makePortraits(renderer: THREE.WebGLRenderer, assets: Assets, siz
     }
     model.rotation.y = 0.35;
     scene.add(model);
-    cam.position.set(0.35, 1.45, 2.6);
-    cam.lookAt(0, 1.2, 0);
+    model.updateMatrixWorld(true);
+    // frame on the head bone so every hero (big hats, capes) is centred the same way
+    const head = new THREE.Vector3(0, 1.25, 0);
+    model.getObjectByName('head')?.getWorldPosition(head);
+    head.y += 0.12;
+    cam.position.set(head.x + 0.35, head.y + 0.2, head.z + 2.3);
+    cam.lookAt(head.x, head.y - 0.1, head.z);
     renderer.setRenderTarget(rt);
     renderer.setClearColor(0x000000, 0);
     renderer.clear();
