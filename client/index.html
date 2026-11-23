@@ -7,16 +7,18 @@
     <meta name="description" content="Grab it, steal it, bank it. A carry-and-bank party brawler." />
     <title>Bubble Brawl</title>
     <style>
-      html,body{margin:0;height:100%;background:#2a1670;overflow:hidden}
-      #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
-        background:radial-gradient(circle at 50% 40%,#7b4dff 0%,#3a1f8f 55%,#1d0d52 100%);color:#fff;font:700 18px system-ui,sans-serif;z-index:50;transition:opacity .4s}
-      #boot .logo{font:900 44px system-ui,sans-serif;letter-spacing:1px;text-shadow:0 4px 0 #1d0d52,0 0 24px #ff8fd8}
-      #boot .bar{width:220px;height:12px;border-radius:8px;background:#1d0d52;overflow:hidden;box-shadow:inset 0 2px 4px #0006}
-      #boot .bar i{display:block;height:100%;width:5%;background:linear-gradient(90deg,#ffd84a,#ff9a3d);border-radius:8px;transition:width .2s}
+      html,body{margin:0;height:100%;background:#4a2fd0;overflow:hidden}
+      #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+        background:radial-gradient(circle at 50% 38%,#9b8cff 0%,#5a3be6 45%,#2a1580 100%);color:#fff;font:800 16px system-ui,sans-serif;z-index:50;transition:opacity .4s}
+      #boot .logo{font:900 58px/0.9 system-ui,sans-serif;text-align:center;transform:rotate(-4deg);color:#fff;-webkit-text-stroke:9px #3a1fb0;paint-order:stroke fill;text-shadow:0 7px 0 #1d0d52}
+      #boot .logo b{display:block;color:#ffd84a;font-size:70px}
+      #boot .bar{width:240px;height:16px;border-radius:10px;background:#1d0d52;overflow:hidden;box-shadow:inset 0 2px 4px #0008,0 0 0 3px #ffffff40}
+      #boot .bar i{display:block;height:100%;width:5%;background:linear-gradient(90deg,#ffe27a,#ff9a3d);border-radius:10px;transition:width .2s}
+      #boot .tip{opacity:.85;letter-spacing:.5px}
     </style>
   </head>
   <body>
-    <div id="boot"><div class="logo">Bubble Brawl</div><div class="bar"><i id="bootbar"></i></div></div>
+    <div id="boot"><div class="logo">BUBBLE<b>BRAWL</b></div><div class="bar"><i id="bootbar"></i></div><div class="tip">Tip: only coins you BANK are safe!</div></div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

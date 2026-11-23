@@ -349,9 +349,9 @@ export class IslandView {
       // upper clouds only far behind the arena (camera looks toward -z), never over the play area
       const ua = rng.range(-1.2, 1.2);
       const d = below ? rng.range(16, 70) : rng.range(42, 70);
-      if (below) c.position.set(Math.sin(a) * d, rng.range(-16, -11), Math.cos(a) * d);
+      if (below) c.position.set(Math.sin(a) * d, rng.range(-21, -17), Math.cos(a) * d);
       else c.position.set(Math.sin(ua) * d, rng.range(-4, 6), -Math.cos(ua) * d);
-      c.scale.setScalar(below ? rng.range(5, 8) : rng.range(3, 5));
+      c.scale.setScalar(below ? rng.range(5, 7) : rng.range(3, 5));
       c.rotation.y = rng.range(0, 6.28);
       c.traverse((o) => {
         const m = o as THREE.Mesh;
