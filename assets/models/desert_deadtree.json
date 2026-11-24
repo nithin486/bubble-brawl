@@ -1,0 +1,29 @@
+{
+  "name": "desert_deadtree",
+  "query": "dead quiver trunk",
+  "title": "Dead Quiver Trunk",
+  "source": "polyhaven",
+  "id": "dead_quiver_trunk",
+  "link": "https://polyhaven.com/a/dead_quiver_trunk",
+  "author": "James Ray Cock, Dario Barresi, Rico Cilliers",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 8998,
+  "trianglesOriginal": 17978,
+  "bytes": 178140,
+  "dimensions": [
+    0.306,
+    1.994,
+    0.268
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

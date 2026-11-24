@@ -1,0 +1,29 @@
+{
+  "name": "desert_quiver_b",
+  "query": "quiver tree 02",
+  "title": "Quiver Tree 02",
+  "source": "polyhaven",
+  "id": "quiver_tree_02",
+  "link": "https://polyhaven.com/a/quiver_tree_02",
+  "author": "Dario Barresi, Rico Cilliers",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 8998,
+  "trianglesOriginal": 82074,
+  "bytes": 263612,
+  "dimensions": [
+    0.867,
+    1.468,
+    0.88
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

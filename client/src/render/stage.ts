@@ -42,6 +42,8 @@ export class Stage {
   /** Vertical field of view (set by the camera preset). */
   fovBase = 45;
   private bloomCfg = { strength: 0.55, threshold: 0.82 };
+  private gradeCfg = { sat: 1.18, con: 1.06 };
+  private gradePass: ShaderPass | null = null;
 
   constructor(parent: HTMLElement, quality: Quality) {
     this.quality = quality;
@@ -112,8 +114,13 @@ export class Stage {
   }
 
   /** Sky, fog and lights for a map theme. */
-  applyTheme(t: { sky: { top: string; mid: string; horizon: string; bottom: string }; fog: { color: string; near: number; far: number }; hemi: { sky: string; ground: string; intensity: number }; sun: { color: string; intensity: number; pos: [number, number, number] }; exposure: number; bloom?: { strength: number; threshold: number } }) {
+  applyTheme(t: { grade?: { sat: number; con: number }; sky: { top: string; mid: string; horizon: string; bottom: string }; fog: { color: string; near: number; far: number }; hemi: { sky: string; ground: string; intensity: number }; sun: { color: string; intensity: number; pos: [number, number, number] }; exposure: number; bloom?: { strength: number; threshold: number } }) {
     this.bloomCfg = t.bloom ?? { strength: 0.55, threshold: 0.82 };
+    this.gradeCfg = { sat: t.grade?.sat ?? 1.18, con: t.grade?.con ?? 1.06 };
+    if (this.gradePass) {
+      this.gradePass.uniforms.sat.value = this.gradeCfg.sat;
+      this.gradePass.uniforms.con.value = this.gradeCfg.con;
+    }
     if (this.bloom) {
       this.bloom.strength = this.bloomCfg.strength;
       this.bloom.threshold = this.bloomCfg.threshold;
@@ -150,6 +157,7 @@ export class Stage {
     if (q === 'low') {
       this.composer = null;
       this.bloom = null;
+      this.gradePass = null;
     } else if (!this.composer) {
       const composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true }));
       composer.addPass(new RenderPass(this.scene, this.camera));
@@ -157,7 +165,10 @@ export class Stage {
       this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), this.bloomCfg.strength, 0.5, this.bloomCfg.threshold);
       composer.addPass(this.bloom);
       composer.addPass(new OutputPass());
-      composer.addPass(new ShaderPass(GradeShader));
+      this.gradePass = new ShaderPass(GradeShader);
+      this.gradePass.uniforms.sat.value = this.gradeCfg.sat;
+      this.gradePass.uniforms.con.value = this.gradeCfg.con;
+      composer.addPass(this.gradePass);
       this.composer = composer;
     }
     this.resize();

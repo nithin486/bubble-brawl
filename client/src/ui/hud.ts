@@ -17,6 +17,13 @@ export const ICONS = {
   groundSlam: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M9 2h6l-1 9h4l-6 7-6-7h4z"/><path d="M2 20h20v2H2z" opacity=".7"/></svg>`,
 };
 
+/** A health bar fill: green → amber → red as it drains. */
+function hpFill(hp: number, full: number) {
+  const f = Math.max(0, Math.min(1, hp / full));
+  const c = f > 0.6 ? '#5cf06a' : f > 0.3 ? '#ffc83a' : '#ff4a5a';
+  return `<i class="hpfill" style="width:${(f * 100).toFixed(0)}%;background:${c}"></i>`;
+}
+
 export const PLAYER_COLORS = ['#ffd84a', '#ff5fd2', '#3fe0ff', '#7dff6a', '#ff9a3d', '#b38cff'];
 
 const el = (tag: string, cls = '', html = '') => {
@@ -54,7 +61,25 @@ export const MOD_INFO: Record<string, { name: string; text: string; icon: string
   magnet: { name: 'MAGNET STORM', text: 'Everyone pulls nearby coins', icon: '🧲', color: '#ff5f7a' },
   goldrush: { name: 'GOLD RUSH', text: 'The jackpot erupts every 9 seconds', icon: '⛲', color: '#7ff3ff' },
   double: { name: 'FINAL ROUND · DOUBLE POINTS', text: 'Every bank counts ×2 — anyone can still win!', icon: '✨', color: '#ff5fd2' },
+  // weapons-mode twists
+  rapid: { name: 'RAPID FIRE', text: 'Every weapon reloads twice as fast', icon: '🔫', color: '#5fe3ff' },
+  ammo: { name: 'DOUBLE AMMO', text: 'Every box gives you twice the ammo', icon: '🎒', color: '#9dff7a' },
+  rockets: { name: 'ROCKET PARTY', text: 'Every mystery box is a Rocket Glove — boom!', icon: '🚀', color: '#ff7a3d' },
+  blasters: { name: 'BLASTER BASH', text: 'Every mystery box is a Bubble Blaster', icon: '🫧', color: '#5fe3ff' },
+  frost: { name: 'DEEP FREEZE', text: 'Every mystery box is a Freeze Bomb — keep moving!', icon: '❄️', color: '#9fe8ff' },
+  boxfest: { name: 'BOX FEST', text: 'Mystery boxes come back almost instantly', icon: '🎁', color: '#ffd84a' },
 };
+
+/** Weapons mode shows its own words for the shared twists. */
+const WEAPON_MODS = ['turbo', 'bombs', 'rapid', 'ammo', 'rockets', 'blasters', 'frost', 'boxfest'];
+export function modInfo(mod: string, mode: string) {
+  const base = MOD_INFO[mod] ?? MOD_INFO.none;
+  if (mode !== 'weapons') return base;
+  if (mod === 'none') return { ...base, name: 'CLASSIC', text: 'Grab mystery boxes, shoot rivals, pop bubbles!', icon: '🎁' };
+  if (mod === 'double') return { ...base, text: 'Every KO and every pop counts ×2 — anyone can still win!' };
+  if (mod === 'bombs') return { ...base, text: 'Bubble bombs fall from the sky — watch the red circles' };
+  return base;
+}
 
 export class Hud {
   root = el('div');
@@ -270,20 +295,20 @@ export class Hud {
   }
 
   /** Round Roulette card: spins through twists, lands on this round's. */
-  roulette(mod: string, round: number) {
-    const keys = Object.keys(MOD_INFO).filter((k) => k !== 'double' && k !== 'none');
+  roulette(mod: string, round: number, mode = 'coins') {
+    const keys = mode === 'weapons' ? WEAPON_MODS : Object.keys(MOD_INFO).filter((k) => k !== 'double' && k !== 'none' && !WEAPON_MODS.includes(k));
     const card = el('div', 'roulette');
     card.innerHTML = `<div class="rl-top stroke">ROUND ${round}</div><div class="rl-reel"><span class="rl-ic"></span></div><div class="rl-name stroke"></div><div class="rl-text"></div>`;
     this.root.append(card);
     const ic = card.querySelector('.rl-ic') as HTMLElement;
     const nm = card.querySelector('.rl-name') as HTMLElement;
     const tx = card.querySelector('.rl-text') as HTMLElement;
-    const final = MOD_INFO[mod] ?? MOD_INFO.none;
+    const final = modInfo(mod, mode);
     let i = 0;
     const spins = mod === 'none' ? 0 : 9;
     const tick = () => {
       if (i < spins) {
-        const k = MOD_INFO[keys[i % keys.length]];
+        const k = modInfo(keys[i % keys.length], mode);
         ic.textContent = k.icon;
         nm.textContent = k.name;
         nm.style.color = k.color;
@@ -342,8 +367,8 @@ export class Hud {
         this.carryPill.innerHTML =
           me.state === 'bubble'
             ? `<span class="hearts">🫧</span><small>MASH TO ESCAPE!</small>`
-            : `<span class="hearts">${'<i class="hrt"></i>'.repeat(me.hp)}${'<i class="hrt off"></i>'.repeat(Math.max(0, full - me.hp))}</span><small>HEALTH</small>`;
-        this.carryPill.classList.toggle('low', me.hp === 1 && me.state !== 'bubble');
+            : `<span class="hpbar">${hpFill(me.hp, full)}<b>${Math.ceil(me.hp)}</b></span><small>HEALTH</small>`;
+        this.carryPill.classList.toggle('low', me.hp <= TUNING.weapons.hitHp && me.state !== 'bubble');
         if (hpKey < this.lastCarry) this.bumpEl(this.carryPill);
         this.lastCarry = hpKey;
       }
@@ -426,7 +451,7 @@ export class Hud {
         world.mode === 'weapons'
           ? p.state === 'bubble'
             ? '<span class="tbub">POP ME!</span>'
-            : `<span class="thp">${'<i class="hrt"></i>'.repeat(p.hp)}${'<i class="hrt off"></i>'.repeat(Math.max(0, TUNING.weapons.hp - p.hp))}</span>`
+            : `<span class="thp">${hpFill(p.hp, TUNING.weapons.hp)}</span>`
           : p.carried > 0
             ? `${crown}<i class="coin-ico"></i>${p.carried}`
             : crown;
@@ -476,7 +501,7 @@ export class Hud {
     if (this.bankValEl.innerHTML !== bvHtml) this.bankValEl.innerHTML = bvHtml;
     this.bankValEl.classList.toggle('hot', bv.mult >= 1.5);
     // current twist
-    const mi = MOD_INFO[world.mod];
+    const mi = modInfo(world.mod, world.mode);
     const modHtml = world.mod !== 'none' && mi ? `${mi.icon} ${mi.name}` : '';
     if (this.modEl.innerHTML !== modHtml) this.modEl.innerHTML = modHtml;
     this.modEl.style.display = modHtml ? 'block' : 'none';

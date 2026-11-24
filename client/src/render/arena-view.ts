@@ -55,6 +55,40 @@ export function bakePiece(piece: THREE.Object3D): { geo: THREE.BufferGeometry; m
   return { geo, mat: mat! };
 }
 
+/**
+ * Realistic ground: map the texture by WORLD position, so neighbouring tiles of one type join into one continuous surface
+ * (no tiling seams), and darken + re-map the vertical faces so the slab edges read as rock.
+ */
+function worldGroundUv(m: THREE.MeshStandardMaterial, perMetre: number) {
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader =
+      'varying vec3 vGroundN;\n' +
+      sh.vertexShader.replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+        vec4 gW = vec4(transformed, 1.0);
+        vec3 gN = normal;
+        #ifdef USE_INSTANCING
+          gW = instanceMatrix * gW;
+          gN = mat3(instanceMatrix) * gN;
+        #endif
+        gW = modelMatrix * gW;
+        vGroundN = normalize(mat3(modelMatrix) * gN);
+        vec2 gUv = (vGroundN.y > 0.5 ? gW.xz : vec2(gW.x + gW.z, gW.y)) * ${perMetre.toFixed(3)};
+        #ifdef USE_MAP
+          vMapUv = gUv;
+        #endif
+        #ifdef USE_NORMALMAP
+          vNormalMapUv = gUv;
+        #endif`,
+      );
+    sh.fragmentShader =
+      'varying vec3 vGroundN;\n' +
+      sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb *= mix(vec3(0.6, 0.5, 0.43), vec3(1.0), smoothstep(0.55, 0.9, vGroundN.y));');
+  };
+  m.customProgramCacheKey = () => 'groundUv' + perMetre;
+}
+
 const tmpM = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
 const tmpS = new THREE.Vector3();
@@ -136,6 +170,7 @@ export class ArenaView {
       // ground keeps smooth PBR light (cel bands on big flat tiles look washed out)
       const m = ((mat.userData.pbr as THREE.Material) ?? mat).clone() as THREE.MeshStandardMaterial;
       m.roughness = 0.9;
+      if (th.pbr) worldGroundUv(m, 0.42);
       const im = new THREE.InstancedMesh(geo, m, n);
       im.receiveShadow = true;
       im.castShadow = true;
@@ -158,14 +193,19 @@ export class ArenaView {
     // ---- underside: one piece per tile (falls with it) + a permanent stepped core
     const U = th.under;
     const bottom = this.bake(U.piece);
-    this.under = new THREE.InstancedMesh(bottom.geo, bottom.mat, tiles.length);
+    let underMat = bottom.mat;
+    if (th.pbr) {
+      underMat = bottom.mat.clone();
+      worldGroundUv(underMat as THREE.MeshStandardMaterial, 0.3);
+    }
+    this.under = new THREE.InstancedMesh(bottom.geo, underMat, tiles.length);
     this.under.receiveShadow = true;
     tiles.forEach((t, i) => this.setUnder(i, t.x, 0, t.z, 1));
     this.group.add(this.under);
     const core: THREE.Matrix4[] = [];
     for (const L of th.core)
       for (const t of tiles) if (t.d <= L.r) core.push(new THREE.Matrix4().compose(tmpP.set(t.x, L.y, t.z), tmpQ.identity(), tmpS.set(U.sx * L.s, U.sy, U.sz * L.s)));
-    const coreMesh = new THREE.InstancedMesh(bottom.geo, bottom.mat, core.length);
+    const coreMesh = new THREE.InstancedMesh(bottom.geo, underMat, core.length);
     core.forEach((m, i) => coreMesh.setMatrixAt(i, m));
     this.group.add(coreMesh);
 
@@ -179,7 +219,7 @@ export class ArenaView {
     this.mergeScenery();
     this.batch.flush();
     this.group.add(this.batch.group, this.glowField.points);
-    this.buildClouds();
+    if (!th.pbr) this.buildClouds(); // (the cartoon cloud puffs have no place in a realistic sky)
     if (th.waterfalls) this.buildWaterfalls();
     if (th.bubbles) this.buildBubbles();
     scene.add(this.group);
@@ -347,7 +387,7 @@ export class ArenaView {
     });
     g.updateMatrixWorld(true);
     // drawn inside the merged batch; the group itself is only shown while its tile falls
-    const item = this.batch.add(bakeParts(g, o.r > 0), o.r > 0);
+    const item = this.batch.add(bakeParts(g, o.r > 0), o.r > 0 && !this.theme.pbr); // realistic maps: no ink outlines
     const ids = glows.map((q) => {
       const w = g.localToWorld(q.p.clone());
       return this.glowField.add(q.c, q.s, w.x, w.y, w.z);

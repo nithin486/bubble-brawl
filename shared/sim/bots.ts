@@ -411,7 +411,7 @@ export class BotBrain {
       return { ...idle, tx: Math.sin(this.wander + this.id) * 5, tz: Math.cos(this.wander * 0.7 + this.id) * 5 };
     }
     // armed: hunt (spread targets out between bots, prefer the hurt and the leaders)
-    const score = (o: Player) => dist(o) - (WP.hp - o.hp) * 1.5 - o.bankedRound * 0.4 + huntersOf(w, o.id, this.id) * 3 + (o === human && !o.isBot ? -1 : 0);
+    const score = (o: Player) => dist(o) - ((WP.hp - o.hp) / WP.hitHp) * 1.5 - o.bankedRound * 0.4 + huntersOf(w, o.id, this.id) * 3 + (o === human && !o.isBot ? -1 : 0);
     const t = rivals.sort((a, b) => score(a) - score(b))[0];
     if (!t) return { ...idle, tx: me.x, tz: me.z };
     this.targetId = t.id;
@@ -446,7 +446,8 @@ export class BotBrain {
       const hit = rivals.filter((o) => inCone(me, me.facing, o, c.range - 0.3, c.coneDeg + 30));
       return hit.length >= 2 || hit.some((o) => o.carried >= 8) || (w.mode === 'weapons' && hit.length >= 1 && this.rng.next() < 0.4);
     }
-    return false; // stickyFingers is handled in steal mode
+    if (ab === 'stickyFingers' && w.mode === 'weapons') return !me.weapon && rivals.some((o) => o.weapon && len(o.x - me.x, o.z - me.z) < 3.5); // unarmed and an armed rival is right here: take it
+    return false;
   }
 }
 

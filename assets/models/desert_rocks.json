@@ -1,0 +1,29 @@
+{
+  "name": "desert_rocks",
+  "query": "namaqualand rocks 01",
+  "title": "Namaqualand Rocks 01",
+  "source": "polyhaven",
+  "id": "namaqualand_rocks_01",
+  "link": "https://polyhaven.com/a/namaqualand_rocks_01",
+  "author": "Greg Zaal, Jenelle van Heerden",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 9000,
+  "trianglesOriginal": 85716,
+  "bytes": 277624,
+  "dimensions": [
+    1.448,
+    0.152,
+    0.216
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

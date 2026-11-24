@@ -66,10 +66,19 @@ export class Brawl {
     }
   }
 
+  /** Final round: every KO and pop counts double. */
+  private pointMult() {
+    return this.w.mod === 'double' ? 2 : 1;
+  }
+
   private roll(p: Player): WeaponKind {
     const w = this.w;
     // the very first box of a first match: the easy, satisfying one
     if (w.firstMatch && w.round === 1 && !p.isBot && p.kos === 0 && p.stats.hitsLanded === 0) return 'blaster';
+    // round twists that decide the box
+    if (w.mod === 'rockets') return 'rocket';
+    if (w.mod === 'blasters') return 'blaster';
+    if (w.mod === 'frost') return 'freeze';
     const total = WEAPONS.reduce((a, k) => a + W.odds[k], 0);
     let r = w.rng.next() * total;
     for (const k of WEAPONS) {
@@ -99,9 +108,9 @@ export class Brawl {
         if ((p.x - b.x) ** 2 + (p.z - b.z) ** 2 > W.boxes.pickupRadius ** 2) continue;
         const k = this.roll(p);
         p.weapon = k;
-        p.ammo = W[k].ammo;
+        p.ammo = W[k].ammo * (w.mod === 'ammo' ? TUNING.mods.ammo.mult : 1);
         p.fireCd = 0.15;
-        b.respawn = W.boxes.respawn;
+        b.respawn = W.boxes.respawn * (w.mod === 'boxfest' ? TUNING.mods.boxfest.respawnMult : 1);
         w.events.push({ t: 'boxPick', p: p.id, weapon: k, x: b.x, z: b.z });
         break;
       }
@@ -219,7 +228,7 @@ export class Brawl {
     const k = p.weapon;
     if (!k || p.fireCd > 0) return false;
     const c = W[k];
-    p.fireCd = c.cooldown;
+    p.fireCd = c.cooldown * (w.mod === 'rapid' ? TUNING.mods.rapid.cooldownMult : 1);
     // aim assist toward the best rival in front (a small cone when the player is aiming with the scope)
     const aim = (range: number, cone: number) => w.aimAt(p, range, aimed ? Math.min(cone, AIMED_CONE) : cone);
     if (k === 'blaster' || k === 'rocket') {
@@ -308,7 +317,7 @@ export class Brawl {
     }
     if (o.state === 'falling' || o.state === 'launched' || o.invuln > 0) return false;
     if (w.shielded(o, nx, nz)) return false;
-    o.hp = Math.max(0, o.hp - n);
+    o.hp = Math.max(0, o.hp - n * W.hitHp);
     if (by && by.id !== o.id) {
       o.lastHitBy = by.id;
       o.lastHitT = W.bubble.creditWindow;
@@ -333,7 +342,7 @@ export class Brawl {
     const w = this.w;
     const by = this.killer(o);
     if (by) {
-      by.bankedRound += W.bubble.koPoints;
+      by.bankedRound += W.bubble.koPoints * this.pointMult();
       by.kos++;
     }
     o.state = 'bubble';
@@ -352,7 +361,7 @@ export class Brawl {
   fell(o: Player) {
     const by = this.killer(o);
     if (by) {
-      by.bankedRound += W.bubble.koPoints;
+      by.bankedRound += W.bubble.koPoints * this.pointMult();
       by.kos++;
       this.w.events.push({ t: 'ko', victim: o.id, by: by.id, x: o.x, z: o.z });
     }
@@ -362,7 +371,7 @@ export class Brawl {
 
   private pop(o: Player, by: Player) {
     const w = this.w;
-    by.bankedRound += W.bubble.popPoints;
+    by.bankedRound += W.bubble.popPoints * this.pointMult();
     w.events.push({ t: 'pop', victim: o.id, by: by.id, x: o.x, z: o.z });
     this.free(o);
   }

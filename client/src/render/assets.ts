@@ -14,6 +14,26 @@ export interface HeroAsset {
 export interface Assets {
   heroes: Map<HeroId, HeroAsset>;
   env: Map<string, THREE.Object3D>;
+  /** Optional art packs already merged into `env` (see PACKS). */
+  packs: Set<string>;
+}
+
+/** Map art packs loaded on demand (not at boot): realistic maps keep their plain PBR materials. */
+const PACKS: Record<string, string> = { desert: 'assets/env_desert.glb' };
+
+/** Load a map's art pack into assets.env (once). */
+export async function loadPack(assets: Assets, name: string, onProgress: (f: number) => void = () => {}) {
+  if (assets.packs.has(name) || !PACKS[name]) return;
+  const g = await load(PACKS[name], onProgress);
+  g.scene.traverse((o) => {
+    if (o.name.startsWith('piece_')) assets.env.set(o.name.slice(6), o);
+    const m = o as THREE.Mesh;
+    if (m.isMesh) {
+      m.castShadow = true;
+      m.receiveShadow = true;
+    }
+  });
+  assets.packs.add(name);
 }
 
 const loader = new GLTFLoader();
@@ -123,7 +143,7 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
     const h = box.max.y - box.min.y || 2;
     heroes.set(id, { scene: g.scene, clips, scale: 1.8 / h });
   });
-  return { heroes, env };
+  return { heroes, env, packs: new Set<string>() };
 }
 
 /**

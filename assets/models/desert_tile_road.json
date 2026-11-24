@@ -1,0 +1,17 @@
+{
+  "name": "desert_tile_road",
+  "title": "Desert tile (concrete_floor_01)",
+  "source": "polyhaven",
+  "author": "Poly Haven",
+  "licence": "CC0",
+  "link": "https://polyhaven.com/a/concrete_floor_01",
+  "needsCredit": false,
+  "textures": [
+    "concrete_floor_01"
+  ],
+  "dimensions": [
+    4.8,
+    1.2,
+    4.8
+  ]
+}

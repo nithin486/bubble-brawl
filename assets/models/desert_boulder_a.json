@@ -1,0 +1,29 @@
+{
+  "name": "desert_boulder_a",
+  "query": "namaqualand boulder 03",
+  "title": "Namaqualand Boulder 03",
+  "source": "polyhaven",
+  "id": "namaqualand_boulder_03",
+  "link": "https://polyhaven.com/a/namaqualand_boulder_03",
+  "author": "Jenelle van Heerden, Dario Barresi",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 8998,
+  "trianglesOriginal": 64826,
+  "bytes": 211744,
+  "dimensions": [
+    2.403,
+    1.473,
+    3.063
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

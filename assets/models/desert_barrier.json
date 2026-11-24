@@ -1,0 +1,29 @@
+{
+  "name": "desert_barrier",
+  "query": "concrete road barrier",
+  "title": "Concrete Road Barrier",
+  "source": "polyhaven",
+  "id": "concrete_road_barrier",
+  "link": "https://polyhaven.com/a/concrete_road_barrier",
+  "author": "Amal Kumar",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 9000,
+  "trianglesOriginal": 60928,
+  "bytes": 187208,
+  "dimensions": [
+    1.545,
+    0.83,
+    0.639
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}
