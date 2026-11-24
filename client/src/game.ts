@@ -1327,10 +1327,22 @@ export class Game {
     const me = this.world.players[LOCAL];
     const fx = Math.sin(me.facing);
     const fz = Math.cos(me.facing);
+    // &native: real-world size, laid out in a row ahead (judge scale and style next to the heroes)
+    const native = PARAMS.has('native');
+    let side = 0;
     for (let i = 0; i < names.length; i++) {
-      const m = await loadModel(`assets/models/${names[i]}.glb`, { height: 1 });
-      const side = (i - (names.length - 1) / 2) * 1.8;
-      m.root.position.set(me.x + fx * 3.2 + fz * side, 0, me.z + fz * 3.2 - fx * side);
+      const [name, x, z, rot] = names[i].split(':');
+      const m = await loadModel(`assets/models/${name}.glb`, native ? {} : { height: 1 });
+      if (x !== undefined) m.root.position.set(+x, 0, +(z ?? 0));
+      else if (native) {
+        side += m.size.x / 2;
+        m.root.position.set(me.x + fx * 4 + fz * (side - 3), 0, me.z + fz * 4 - fx * (side - 3));
+        side += m.size.x / 2 + 0.6;
+      } else {
+        const off = (i - (names.length - 1) / 2) * 1.8;
+        m.root.position.set(me.x + fx * 3.2 + fz * off, 0, me.z + fz * 3.2 - fx * off);
+      }
+      if (rot) m.root.rotation.y = (+rot * Math.PI) / 180;
       this.stage.scene.add(m.root);
     }
   }

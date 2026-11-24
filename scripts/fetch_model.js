@@ -84,12 +84,22 @@ async function getJSON(url, headers = {}) {
   return r.json();
 }
 
-async function download(url, file, headers = {}) {
-  const r = await fetch(url, { headers: { ...UA, ...headers } });
-  if (!r.ok) throw new Error(`download failed ${r.status} — ${url.replace(/\?.*/, '')}`);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
-  return fs.statSync(file).size;
+async function download(url, file, headers = {}, expect = 0) {
+  // retry: big files through proxies sometimes arrive cut short
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const r = await fetch(url, { headers: { ...UA, ...headers } });
+      if (!r.ok) throw new Error(`download failed ${r.status} — ${url.replace(/\?.*/, '')}`);
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (expect && buf.length !== expect) throw new Error(`incomplete download (${buf.length} of ${expect} bytes) — ${path.basename(file)}`);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, buf);
+      return buf.length;
+    } catch (e) {
+      if (attempt >= 4) throw e;
+      await new Promise((res) => setTimeout(res, 800 * attempt));
+    }
+  }
 }
 
 /** How well a name + tags match the search words (0..1). */
@@ -121,6 +131,7 @@ async function searchPolyHaven(o) {
     if (t <= 0) continue;
     const tris = a.polycount ?? 0;
     let score = t * 100;
+    if (id.toLowerCase() === o.q.toLowerCase().replace(/\s+/g, '_')) score += 1000; // exact Poly Haven id
     score += tris && tris <= o.maxTris ? 15 : -Math.min(40, (tris - o.maxTris) / 1000);
     if (o.style === 'stylized') score -= 25; // photoreal scans clash with the cartoon look
     if (o.style === 'realistic') score += 15;
@@ -139,8 +150,8 @@ async function fetchPolyHaven(c, o, dir) {
   const res = resos.includes(want) ? want : resos.sort((a, b) => parseInt(a) - parseInt(b))[0];
   const g = files.gltf[res].gltf;
   const main = path.join(dir, path.basename(new URL(g.url).pathname));
-  let bytes = await download(g.url, main);
-  for (const [rel, f] of Object.entries(g.include ?? {})) bytes += await download(f.url, path.join(dir, rel));
+  let bytes = await download(g.url, main, {}, g.size);
+  for (const [rel, f] of Object.entries(g.include ?? {})) bytes += await download(f.url, path.join(dir, rel), {}, f.size);
   console.log(`  downloaded ${kb(bytes)} (glTF + ${Object.keys(g.include ?? {}).length} files, ${res} textures)`);
   return main;
 }
@@ -228,7 +239,7 @@ async function process3d(input, out, o) {
   const steps = [dedup(), prune(), weld()];
   if (!skinned) steps.push(flatten(), join()); // fewer draw calls for static props
   // over budget: simplify (static meshes only — skinned ones would tear)
-  if (!skinned && trisIn > o.maxTris) steps.push(simplify({ simplifier: MeshoptSimplifier, ratio: Math.max(0.05, o.maxTris / trisIn), error: 0.01 }));
+  if (!skinned && trisIn > o.maxTris) steps.push(simplify({ simplifier: MeshoptSimplifier, ratio: Math.max(0.01, o.maxTris / trisIn), error: 0.08 }));
   steps.push(textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [o.tex, o.tex], quality: 82 }));
   await doc.transform(...steps);
 
@@ -307,7 +318,10 @@ async function main() {
     process.exit(3);
   }
   // try the best one; if its download/processing fails, fall back to the next
-  for (const c of pickList.slice(0, 4)) {
+  // fall back only to near-equally good matches (never from "cannon" to "television")
+  const best = pickList[0].score;
+  const fallbacks = pickList.slice(0, 4).filter((c, i) => i === 0 || (best < 900 && c.score >= best * 0.8));
+  for (const c of fallbacks) {
     const dir = path.join(RAW, name);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
@@ -330,7 +344,7 @@ async function main() {
       console.log(`  in game: loadModel('assets/models/${name}.glb') — see client/src/render/models.ts`);
       return;
     } catch (e) {
-      console.warn(`  ✗ ${e.message} — trying the next match`);
+      console.warn(`  ✗ ${process.env.DEBUG ? e.stack : e.message} — trying the next match`);
     }
   }
   console.error('✗ could not download any of the top matches');

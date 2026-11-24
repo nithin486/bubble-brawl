@@ -1,0 +1,29 @@
+{
+  "name": "ph_barrel",
+  "query": "Barrel_01",
+  "title": "Barrel_01",
+  "source": "polyhaven",
+  "id": "Barrel_01",
+  "link": "https://polyhaven.com/a/Barrel_01",
+  "author": "Jorge Camacho",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 2682,
+  "trianglesOriginal": 2682,
+  "bytes": 143096,
+  "dimensions": [
+    0.563,
+    0.88,
+    0.563
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}
