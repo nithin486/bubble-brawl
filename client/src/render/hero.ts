@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { addOutlines } from './style.ts';
+import { icy } from './weapons-view.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { HeroAsset } from './assets.ts';
 import type { Player, WeaponKind } from '../../../shared/sim/types.ts';
@@ -13,12 +14,16 @@ const NON_KAYKIT: Partial<Record<WeaponKind, { len: number; y: number; rot: [num
   banana: { len: 0.55, y: 0, rot: [0, Math.PI / 2, 0.5] },
   hammer: { len: 0.95, y: -0.42, rot: [0, Math.PI / 2, 0] }, // held at the handle, head up
   hook: { len: 0.55, y: -0.3, rot: [Math.PI / 2, 0, 0] }, // hook points forward, rope coil in the hand
+  // guns are modelled along x: turn them to point forward (+z of the hand), grip a little behind the middle
+  blaster: { len: 0.75, y: 0, rot: [0, -Math.PI / 2, 0] },
+  rocket: { len: 0.95, y: 0, rot: [0, -Math.PI / 2, 0] },
+  freeze: { len: 0.4, y: 0, rot: [0, 0, 0] },
 };
 
 const HELD_PIECE: Record<WeaponKind, string> = {
-  blaster: 'weap_blaster',
-  rocket: 'weap_launcher',
-  freeze: 'weap_bomb',
+  blaster: 'weap_bubblegun',
+  rocket: 'weap_rocketl',
+  freeze: 'weap_icebomb',
   hook: 'weap_hook',
   hammer: 'weap_hammer',
   banana: 'weap_banana',
@@ -195,6 +200,7 @@ export class HeroView {
         }
       });
       const grip = NON_KAYKIT[want];
+      if (want === 'freeze') icy(o);
       if (grip) {
         // not a KayKit prop: size it for a hand, put the grip point in the palm, orient it
         const box = new THREE.Box3().setFromObject(o);

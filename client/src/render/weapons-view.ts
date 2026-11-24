@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
 import type { WeaponKind } from '../../../shared/sim/types.ts';
@@ -208,6 +209,19 @@ function questionTexture() {
   return t;
 }
 
+/** Tint a bomb model frosty blue (the Freeze Bomb). */
+export function icy(o: THREE.Object3D) {
+  o.traverse((x) => {
+    const mesh = x as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const m = (mesh.material as THREE.MeshStandardMaterial).clone();
+    m.color.multiply(new THREE.Color('#9fe6ff')).lerp(new THREE.Color('#bff4ff'), 0.35);
+    m.emissive = new THREE.Color('#3fb8ff');
+    m.emissiveIntensity = 0.35;
+    mesh.material = m;
+  });
+}
+
 /** Iridescent soap-bubble film: clear in the middle, rainbow thin-film rim, a hot specular glint. */
 function soapBubbleMaterial() {
   return new THREE.ShaderMaterial({
@@ -252,6 +266,9 @@ export class WeaponsView {
   private beamMat: THREE.ShaderMaterial;
   private bananaReady: Promise<Model> | null = null;
   private qTex = questionTexture();
+  private ringGeo: THREE.BufferGeometry | null = null;
+  /** Camera position (set by the game): boxes right in front of the lens hide so they never block the view. */
+  camPos: THREE.Vector3 | null = null;
   private pops: { s: THREE.Sprite; t: number; x: number; z: number }[] = [];
   private shotGeo = new THREE.SphereGeometry(1, 20, 14);
   private shotMats = {
@@ -369,7 +386,7 @@ export class WeaponsView {
               if (!mesh.isMesh) return;
               mesh.castShadow = true;
               const base = mesh.material as THREE.MeshStandardMaterial;
-              const mat = new THREE.MeshPhysicalMaterial({ clearcoat: 0.8, clearcoatRoughness: 0.15, roughness: 0.32, metalness: 0.05, envMapIntensity: 1.1 });
+              const mat = new THREE.MeshStandardMaterial({ roughness: 0.3, metalness: 0.05, envMapIntensity: 1.2, flatShading: true }); // light mesh (no normals): flat facets
               // the model's gold body becomes the purple box; its white question marks become glowing gold
               const isBody = base.color.b < 0.5;
               if (isBody) {
@@ -398,22 +415,20 @@ export class WeaponsView {
         // pickup zone on the floor: dashed gold ring + soft fill (this is where you must stand)
         const ring = new THREE.Group();
         const ringMat = new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-        for (let i = 0; i < 10; i++) {
-          const arc = new THREE.Mesh(new THREE.RingGeometry(0.98, 1.1, 8, 1, (i / 10) * Math.PI * 2, (Math.PI * 2) / 10 - 0.28), ringMat);
-          arc.rotation.x = -Math.PI / 2;
-          ring.add(arc);
+        {
+          // the dashed ring as ONE mesh (10 separate arcs were 10 draw calls per box)
+          this.ringGeo ??= mergeGeometries(
+            Array.from({ length: 10 }, (_, i) => new THREE.RingGeometry(0.98, 1.1, 8, 1, (i / 10) * Math.PI * 2, (Math.PI * 2) / 10 - 0.28).rotateX(-Math.PI / 2)),
+          );
+          ring.add(new THREE.Mesh(this.ringGeo, ringMat));
         }
         ring.position.y = 0.07;
         const fill = new THREE.Mesh(new THREE.CircleGeometry(0.98, 32), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.16, depthWrite: false, toneMapped: false }));
         fill.rotation.x = -Math.PI / 2;
         fill.position.y = 0.06;
-        // three little stars orbiting the chest
-        const orbit = [0, 1, 2].map(() => {
-          const sp = this.glowSprite('#fff2a8', 0.34);
-          sp.material.opacity = 0.95;
-          return sp;
-        });
-        root.add(glow, model, beam, q, ring, fill, ...orbit);
+        const orbit: THREE.Sprite[] = []; // (orbiting stars dropped: 3 extra draw calls per box)
+        void fill;
+        root.add(glow, model, beam, q, ring);
         root.position.set(b.x, 0, b.z);
         const view: BoxView = { root, model, beam, glow, q, ring, ringMat, fill, orbit, shown: true, pop: 1 };
         this.group.add(root);
@@ -426,8 +441,9 @@ export class WeaponsView {
         this.fx.ring(b.x, b.z, '#ffd84a', 1.9, 0.45, 0.45); // it lands with a ripple
       }
       v.shown = show;
-      v.root.visible = show;
-      if (!show) continue;
+      const nearCam = !!this.camPos && (this.camPos.x - b.x) ** 2 + (this.camPos.z - b.z) ** 2 < 3.2 * 3.2;
+      v.root.visible = show && !nearCam;
+      if (!show || nearCam) continue;
       v.pop = Math.min(1, v.pop + dt * 2.6);
       // drops in from above with a little overshoot
       const e = v.pop < 1 ? 1 - Math.pow(1 - v.pop, 3) : 1;
@@ -524,14 +540,15 @@ export class WeaponsView {
       let v = this.throws.get(t.id);
       if (!v) {
         // the same bomb he was holding (spins through the air); a plain ice ball only if the model is missing
-        const bomb = this.env.get('weap_bomb');
+        const bomb = this.env.get('weap_icebomb') ?? this.env.get('weap_bomb');
         let ball: THREE.Object3D;
         if (bomb) {
           ball = new THREE.Group();
           const m = bomb.clone(true);
-          m.position.set(0, -0.18, 0); // the model's pivot is its handle: centre it
+          icy(m);
+          m.position.set(0, -0.25, 0); // pivot at its base: centre it
           ball.add(m);
-          ball.scale.setScalar(2);
+          ball.scale.setScalar(1.2);
         } else {
           ball = new THREE.Mesh(this.shotGeo, this.iceMat);
           ball.scale.setScalar(0.3);

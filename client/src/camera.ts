@@ -58,6 +58,13 @@ export class CameraRig {
     return this.preset === 'third';
   }
 
+  /** Third-person look up/down (radians): + = look up / farther, - = look down. */
+  pitch = 0;
+  addPitch(d: number) {
+    if (!this.turns || !d) return;
+    this.pitch = Math.min(0.55, Math.max(-0.5, this.pitch + d));
+  }
+
   /** Manual turn (mouse / right-side drag / Q-E). */
   addYaw(d: number) {
     if (!this.turns || !d) return;
@@ -131,11 +138,16 @@ export class CameraRig {
       this.heightS += (this.heightMul - this.heightS) * Math.min(1, dt * 8);
       off.y *= this.heightS;
       off.z *= 1 + (this.heightS - 1) * 0.25;
+      // shooter-style pitch: looking down raises the camera over the hero, looking up lowers it behind the shoulder
+      off.y -= this.pitch * 3.2;
+      off.z += Math.abs(this.pitch) * 0.6;
     }
     const yaw = this.turns ? this.yaw : 0;
     off.applyAxisAngle(UP, yaw);
     this.camera.position.copy(this.target).add(off);
-    const look = new THREE.Vector3().copy(this.target).add(this.lookOffset.clone().applyAxisAngle(UP, yaw));
+    const lo = this.lookOffset.clone();
+    if (this.turns) lo.y += this.pitch * 7.5;
+    const look = new THREE.Vector3().copy(this.target).add(lo.applyAxisAngle(UP, yaw));
     look.y += this.zoom * 0.6;
     if (this.shakeT > 0) {
       this.shakeT -= dt;

@@ -127,6 +127,9 @@ const ENV = {
     ['weap_banana', path.join(root, 'assets/models/banana.glb')],
     ['weap_hammer', path.join(root, 'assets/models/weap_hammer.glb')],
     ['weap_hook', path.join(root, 'assets/models/weap_hook.glb')],
+    ['weap_bubblegun', path.join(root, 'assets/models/weap_bubblegun.glb')],
+    ['weap_rocketl', path.join(root, 'assets/models/weap_rocketl.glb')],
+    ['weap_icebomb', path.join(root, 'assets/models/weap_icebomb.glb')],
     ['mystery_cube', path.join(root, 'assets/models/mystery_cube.glb')],
   ],
   dungeon: [

@@ -17,9 +17,8 @@ export const INKED = LOOK === 'cel';
 
 /** Toy look: a PBR copy with a soft, slightly glossy plastic finish that picks up the environment map. */
 function toyOf(s: THREE.MeshStandardMaterial, hero: boolean): THREE.Material {
-  const m = hero
-    ? new THREE.MeshPhysicalMaterial({ clearcoat: 0.35, clearcoatRoughness: 0.35, sheen: 0.25, sheenRoughness: 0.6, sheenColor: new THREE.Color('#ffffff') })
-    : new THREE.MeshStandardMaterial();
+  // plain standard material for everything (physical clearcoat/sheen cost too much on phones and caused hitches)
+  const m = new THREE.MeshStandardMaterial();
   m.name = s.name;
   m.map = s.map;
   m.color.copy(s.color);

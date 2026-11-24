@@ -13,6 +13,7 @@ export class InputManager {
   enabled = true;
   /** Camera turn accumulated since the last read (radians). */
   private yaw = 0;
+  private pitch = 0;
   /** When true (third-person view) a click locks the mouse so it can turn the camera. */
   mouseLook = false;
   /** How far ahead the aim scope sits (metres); mouse up / down slides it. */
@@ -39,6 +40,7 @@ export class InputManager {
       this.mouse.t = performance.now();
       if (document.pointerLockElement === canvas) {
         this.yaw -= e.movementX * 0.0032;
+        this.pitch -= e.movementY * 0.0026; // mouse up = look up
       }
     });
     canvas.addEventListener('mousedown', (e) => {
@@ -78,7 +80,7 @@ export class InputManager {
   /** Drag-to-look from the touch look zone. */
   look(dx: number, dy = 0) {
     this.yaw -= dx * 0.0085;
-    void dy;
+    this.pitch -= dy * 0.006; // drag up = look up
   }
 
   /** Camera turn since last call (mouse, touch drag, Q/E). */
@@ -88,6 +90,13 @@ export class InputManager {
     if (this.keys.has('KeyQ')) y += dt * 2.6;
     if (this.keys.has('KeyE')) y -= dt * 2.6;
     return y;
+  }
+
+  /** Camera look up/down since last call. */
+  takePitch() {
+    const p = this.pitch;
+    this.pitch = 0;
+    return p;
   }
 
   releaseMouse() {

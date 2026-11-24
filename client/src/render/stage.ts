@@ -192,7 +192,7 @@ export class Stage {
   setQuality(q: Quality) {
     this.quality = q;
     const dpr = window.devicePixelRatio || 1;
-    this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.75 : 1.25)); // sharper: low res read as 'blurry'
+    this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1)); // sharper: low res read as 'blurry'
     this.sun.castShadow = q !== 'low';
     if (q === 'low' || (AO_ON && this.composer && (q === 'high') !== !!this.ao)) {
       // rebuild when AO availability changes
@@ -206,7 +206,7 @@ export class Stage {
       this.gradePass = null;
     } else if (!this.composer) {
       // MSAA inside the composer (the canvas' own antialias is lost once we render to targets)
-      const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true, samples: 4 });
+      const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true, samples: q === 'high' ? 4 : 2 });
       const composer = new EffectComposer(this.renderer, rt);
       composer.addPass(new RenderPass(this.scene, this.camera));
       if (LOOK === 'toy' && q === 'high' && AO_ON) {

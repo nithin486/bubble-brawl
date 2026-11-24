@@ -216,6 +216,26 @@ export class Game {
     if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
   }
 
+  private warmed = false;
+  /**
+   * Compile every shader the match will need up front (held weapons, mystery box, effects): otherwise the first
+   * pickup / first shot compiles a new GPU program mid-fight and the game freezes for a moment.
+   */
+  private warmShaders() {
+    if (this.warmed) return;
+    this.warmed = true;
+    const tmp = new THREE.Group();
+    tmp.position.set(0, -400, 0);
+    for (const [name, obj] of this.assets.env) if (name.startsWith('weap_') || name === 'mystery_cube' || name === 'chest_gold') tmp.add(obj.clone());
+    this.stage.scene.add(tmp);
+    try {
+      this.stage.renderer.compile(this.stage.scene, this.stage.camera);
+    } catch {
+      /* not fatal */
+    }
+    this.stage.scene.remove(tmp);
+  }
+
   private camPull = 1;
   private koStreak = 0;
   private koStreakT = -99;
@@ -396,6 +416,7 @@ export class Game {
     else this.powers.setWorld(this.world);
     if (!this.markers) this.markers = new Markers(this.stage.scene, this.assets.env, this.glowTex);
     else this.markers.setWorld();
+    this.warmShaders();
     this.robbedBy.clear();
     this.nemesis = -1;
     this.lastSay.clear();
@@ -519,9 +540,16 @@ export class Game {
     this.powers?.update(this.time);
     if (this.markers) {
       this.markers.aimHint = this.aimInfo;
+      this.markers.hideScope = this.rig.turns;
       this.markers.cam = this.stage.camera;
+      if (this.weapons) this.weapons.camPos = this.stage.camera.position;
     }
     this.markers?.update(this.world, this.world.players[LOCAL], this.time, this.mode === 'match');
+    {
+      const me = this.world.players[LOCAL];
+      const on = this.mode === 'match' && this.rig.turns && this.world.mode === 'weapons' && this.world.phase === 'playing' && me.state !== 'bubble' && me.state !== 'falling';
+      this.hud.crosshair(on, this.aimLocked, !!me.weapon);
+    }
     if (this.mode === 'match') this.chatterHunting();
     // trails: speed boots (yellow streaks), sticky fingers (pink sparkles), magnet (red bits)
     this.trailT -= dt;
@@ -565,6 +593,7 @@ export class Game {
     } else {
       if (this.mode === 'match' && this.input.enabled) {
         this.rig.addYaw(this.input.takeYaw(dt));
+        this.rig.addPitch(this.input.takePitch());
         const me2 = this.world.players[LOCAL];
         this.rig.autoFollow(dt, me2.facing, Math.max(0, this.lastStickFwd));
       }
@@ -1557,6 +1586,7 @@ export class Game {
   private lastStickFwd = 0;
   /** Where the local player is pointing this frame (camera centre line in 3rd person, cursor on desktop top-down). */
   private aimInfo: { heading: number; dist: number } | null = null;
+  private aimLocked = false;
   private aimRay = new THREE.Raycaster();
   private aimNdc = new THREE.Vector2();
 
@@ -1569,9 +1599,46 @@ export class Game {
       const cam = this.stage.camera;
       cam.getWorldDirection(this.v);
       if (Math.hypot(this.v.x, this.v.z) < 1e-4) return;
-      // steady aim: straight ahead of the camera to the weapon's full reach (the scope stops at walls and rivals);
-      // up/down mouse no longer slides it, which made the scope swim around
-      this.aimInfo = { heading: Math.atan2(this.v.x, this.v.z), dist: 30 };
+      // shooter aim: the crosshair is the screen centre; the shot goes to whatever is under it
+      // (a rival, a wall, a prop or the ground), so you can aim at any spot just by turning the camera
+      const o = cam.position;
+      const dir = this.v; // camera forward (already normalised)
+      const W = this.world;
+      let hitT = Infinity;
+      let locked = false;
+      for (const q of W.players) {
+        if (q === me || q.state === 'falling' || q.state === 'launched') continue;
+        // closest approach of the ray to the rival's chest
+        const cx = q.x - o.x;
+        const cy = q.y + 1.0 - o.y;
+        const cz = q.z - o.z;
+        const t = cx * dir.x + cy * dir.y + cz * dir.z;
+        if (t <= 0) continue;
+        const d2 = cx * cx + cy * cy + cz * cz - t * t;
+        const r = q.state === 'bubble' ? 1.3 : 0.85;
+        if (d2 < r * r && t < hitT) {
+          hitT = t;
+          locked = true;
+        }
+      }
+      if (!locked) {
+        // march the ray until it meets the ground / a deck or a big prop
+        for (let t = 1; t < 60; t += 0.5) {
+          const x = o.x + dir.x * t;
+          const y = o.y + dir.y * t;
+          const z = o.z + dir.z * t;
+          if (y <= W.terrain.heightAt(x, z) + 0.05 || (y < 2.6 && W.obstacles.some((b) => (x - b.x) ** 2 + (z - b.z) ** 2 < b.r * b.r))) {
+            hitT = t;
+            break;
+          }
+        }
+      }
+      const t = Number.isFinite(hitT) ? hitT : 40;
+      const tx = o.x + dir.x * t - me.x;
+      const tz = o.z + dir.z * t - me.z;
+      const dd = Math.hypot(tx, tz);
+      this.aimLocked = locked;
+      this.aimInfo = dd > 1 ? { heading: Math.atan2(tx, tz), dist: dd } : { heading: Math.atan2(dir.x, dir.z), dist: 30 };
       return;
     }
     // top-down views: the scope sits under the mouse pointer

@@ -8,7 +8,7 @@ import type { World } from './world.ts';
 const W = TUNING.weapons;
 const HERO_R = TUNING.hero.radius;
 /** Assist cone (degrees, total) when you aim with the scope: only a rival almost under it pulls the shot. */
-export const AIMED_CONE = 24;
+export const AIMED_CONE = 12;
 /** Assist cone without the scope: shots go where you face, with only a small snap onto a rival (was 150°, felt random). */
 export const AIM_CONE = 50;
 
@@ -259,7 +259,7 @@ export class Brawl {
       }
       this.throws.push({ id: this.nextId++, owner: p.id, fx: p.x, fz: p.z, tx, tz, t: 0, total: W.freeze.flight });
     } else if (k === 'hook') {
-      const t = w.findTarget(p, W.hook.range, W.hook.coneDeg * 2);
+      const t = w.findTarget(p, W.hook.range, aimed ? 24 : W.hook.coneDeg * 2);
       if (t) {
         p.facing = facingOf(t.x - p.x, t.z - p.z);
         const dx = t.x - p.x;

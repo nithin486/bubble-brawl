@@ -585,6 +585,22 @@ export class Hud {
     setTimeout(() => f.remove(), 3700);
   }
 
+  private xhair: HTMLElement | null = null;
+  private xState = '';
+  /** Shooter crosshair at the screen centre: white, red when a rival is under it, faint when unarmed. */
+  crosshair(on: boolean, locked: boolean, armed: boolean) {
+    const st = on ? `${locked ? 'l' : ''}${armed ? 'a' : ''}` : 'off';
+    if (st === this.xState) return;
+    this.xState = st;
+    if (!this.xhair) {
+      this.xhair = el('div', 'xhair', '<i></i><i></i><i></i><i></i><b></b>');
+      this.root.append(this.xhair);
+    }
+    this.xhair.style.display = on ? 'block' : 'none';
+    this.xhair.classList.toggle('locked', locked);
+    this.xhair.classList.toggle('armed', armed);
+  }
+
   private wcard: HTMLElement | null = null;
   /** Weapon pickup card: big icon, name and what it does (slides up above the buttons, 2.2 s). */
   weaponCard(kind: keyof typeof WEAPON_INFO) {
