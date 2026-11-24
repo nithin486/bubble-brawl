@@ -88,6 +88,8 @@ export class BotBrain {
     this.clock += dt;
     const me = w.players[this.id];
     if (w.phase !== 'playing' || me.state === 'falling' || me.state === 'launched') return NO_INPUT;
+    // trapped in a KO bubble: mash to break out
+    if (me.state === 'bubble') return { ...NO_INPUT, grab: this.rng.next() < (this.easy(w) ? 0.15 : 0.45) };
     this.thinkT -= dt;
     if (this.thinkT <= 0) {
       this.thinkT += 1 / B.thinkHz;
@@ -184,6 +186,7 @@ export class BotBrain {
   }
 
   private think(w: World, me: Player): Omit<Intent, 'due'> {
+    if (w.mode === 'weapons') return this.thinkWeapons(w, me);
     const easy = this.easy(w);
     const P = PERSONALITY[this.personality];
     const threshold = easy ? B.firstMatch.bankThreshold : Math.max(4, this.threshold + P.bankAdd);
@@ -359,17 +362,72 @@ export class BotBrain {
     return best;
   }
 
+  /** Weapons mode: grab a box, pick a fight at the right range for your weapon, pop bubbles. */
+  private thinkWeapons(w: World, me: Player): Omit<Intent, 'due'> {
+    const easy = this.easy(w);
+    const WP = TUNING.weapons;
+    const human = w.players[this.humanId];
+    this.targetId = -1;
+    const idle = { mode: 'idle' as Mode, dash: false, grab: false, skill: false };
+    if (!w.arena.safe(me.x, me.z)) return { ...idle, mode: 'flee', tx: me.x * 0.3, tz: me.z * 0.3, dash: me.dashCd <= 0 };
+    const dist = (o: { x: number; z: number }) => Math.hypot(o.x - me.x, o.z - me.z);
+    const canHit = (o: Player) => !(easy && o === human && !o.isBot);
+    // a bubble nearby = a free point
+    const bubble = w.players.filter((o) => o !== me && o.state === 'bubble' && dist(o) < 7).sort((a, b) => dist(a) - dist(b))[0];
+    if (bubble && !easy) {
+      const d = dist(bubble);
+      const shoot = me.weapon === 'blaster' || me.weapon === 'rocket';
+      return { mode: 'steal', tx: bubble.x, tz: bubble.z, dash: d > 3 && me.dashCd <= 0 && this.rng.next() < 0.3, grab: shoot ? d < 9 : d < 2.2, skill: false };
+    }
+    const rivals = w.players.filter((o) => o !== me && targetable(o) && o.state !== 'bubble' && canHit(o));
+    // no weapon: nearest box (or punch whoever is right here)
+    if (!me.weapon) {
+      const close = rivals.find((o) => dist(o) < 1.8);
+      if (close && me.grabCd <= 0 && this.rng.next() < (easy ? 0.2 : 0.6)) {
+        this.targetId = close.id;
+        return { ...idle, mode: 'steal', tx: close.x, tz: close.z, grab: true };
+      }
+      const boxes = w.brawl.boxes.filter((b) => b.respawn <= 0 && w.arena.solid(b.x, b.z));
+      const box = boxes.sort((a, b) => dist(a) - dist(b))[0];
+      if (box) return { ...idle, mode: 'collect', tx: box.x, tz: box.z, dash: dist(box) > 6 && me.dashCd <= 0 && this.rng.next() < 0.15, skill: this.wantSkill(w, me, rivals) };
+      this.wander += 0.4;
+      return { ...idle, tx: Math.sin(this.wander + this.id) * 5, tz: Math.cos(this.wander * 0.7 + this.id) * 5 };
+    }
+    // armed: hunt (spread targets out between bots, prefer the hurt and the leaders)
+    const score = (o: Player) => dist(o) - (WP.hp - o.hp) * 1.5 - o.bankedRound * 0.4 + huntersOf(w, o.id, this.id) * 3 + (o === human && !o.isBot ? -1 : 0);
+    const t = rivals.sort((a, b) => score(a) - score(b))[0];
+    if (!t) return { ...idle, tx: me.x, tz: me.z };
+    this.targetId = t.id;
+    const d = dist(t);
+    const k = me.weapon;
+    const want = k === 'blaster' ? 6 : k === 'rocket' ? 7 : k === 'hook' ? 6 : k === 'freeze' ? 6 : k === 'hammer' ? 1.6 : 4;
+    const inRange = k === 'blaster' ? d < 11 : k === 'rocket' ? d < 12 : k === 'hook' ? d < WP.hook.range - 1 : k === 'freeze' ? d < 8.5 : k === 'hammer' ? d < WP.hammer.radius : d < 5;
+    // keep the preferred distance: close in, or back off a little
+    const ux = (t.x - me.x) / (d || 1);
+    const uz = (t.z - me.z) / (d || 1);
+    let tx = t.x - ux * want;
+    let tz = t.z - uz * want;
+    // strafe a bit so they're harder to hit
+    const side = Math.sin(this.clock * 1.3 + this.id) * 1.6;
+    tx += -uz * side;
+    tz += ux * side;
+    // banana: drop it when someone is chasing right behind
+    const chaser = k === 'banana' && rivals.some((o) => dist(o) < 4 && (me.x - o.x) * Math.sin(me.facing) + (me.z - o.z) * Math.cos(me.facing) > 0);
+    const fire = (inRange || chaser) && me.fireCd <= 0 && this.rng.next() < (easy ? 0.25 : 0.7);
+    return { mode: 'steal', tx, tz, dash: d > 9 && me.dashCd <= 0 && this.rng.next() < 0.2, grab: fire, skill: this.wantSkill(w, me, rivals) };
+  }
+
   private wantSkill(w: World, me: Player, rivals: Player[]) {
     const ab = HEROES[me.hero].ability;
     if (ab === 'rattleBurst') {
       const r = TUNING.abilities.rattleBurst.radius;
       const near = rivals.filter((o) => len(o.x - me.x, o.z - me.z) < r - 0.3);
-      return near.length >= 2 || near.some((o) => o.carried >= 8);
+      return near.length >= 2 || near.some((o) => o.carried >= 8) || (w.mode === 'weapons' && near.length >= 1 && this.rng.next() < 0.4);
     }
     if (ab === 'groundSlam') {
       const c = TUNING.abilities.groundSlam;
       const hit = rivals.filter((o) => inCone(me, me.facing, o, c.range - 0.3, c.coneDeg + 30));
-      return hit.length >= 2 || hit.some((o) => o.carried >= 8);
+      return hit.length >= 2 || hit.some((o) => o.carried >= 8) || (w.mode === 'weapons' && hit.length >= 1 && this.rng.next() < 0.4);
     }
     return false; // stickyFingers is handled in steal mode
   }

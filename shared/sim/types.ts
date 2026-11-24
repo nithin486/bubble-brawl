@@ -1,7 +1,11 @@
 import type { HeroId, AbilityId } from '../config/heroes.ts';
 
 export type Phase = 'countdown' | 'playing' | 'roundEnd' | 'matchEnd';
-export type PState = 'normal' | 'dashing' | 'stagger' | 'stunned' | 'launched' | 'falling';
+export type PState = 'normal' | 'dashing' | 'stagger' | 'stunned' | 'launched' | 'falling' | 'bubble';
+
+export type GameMode = 'coins' | 'weapons';
+export type WeaponKind = 'blaster' | 'rocket' | 'banana' | 'freeze' | 'hook' | 'hammer';
+export const WEAPONS: WeaponKind[] = ['blaster', 'rocket', 'banana', 'freeze', 'hook', 'hammer'];
 
 /** One tick of player intent. Buttons are "pressed since last tick". */
 export interface Input {
@@ -66,6 +70,56 @@ export interface Player {
   /** Who last robbed/hit me, and for how much longer revenge counts. */
   robbedBy: number;
   robbedT: number;
+  // ---- weapons mode
+  hp: number;
+  weapon: WeaponKind | null;
+  ammo: number;
+  fireCd: number;
+  /** Seconds left trapped in a KO bubble. */
+  bubbleT: number;
+  lastHitBy: number;
+  lastHitT: number;
+  kos: number;
+}
+
+export interface MysteryBox {
+  id: number;
+  x: number;
+  z: number;
+  /** > 0: picked up, back in this many seconds. */
+  respawn: number;
+}
+
+export interface Projectile {
+  id: number;
+  kind: 'blaster' | 'rocket';
+  owner: number;
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+  /** Metres left before it fizzles. */
+  left: number;
+}
+
+export interface Mine {
+  id: number;
+  owner: number;
+  x: number;
+  z: number;
+  arm: number;
+  life: number;
+}
+
+export interface Throw {
+  id: number;
+  owner: number;
+  fx: number;
+  fz: number;
+  tx: number;
+  tz: number;
+  t: number;
+  total: number;
 }
 
 export interface Coin {
@@ -150,7 +204,7 @@ export type SimEvent =
   | { t: 'hazardHit'; kind: 'traffic' | 'bell'; p: number }
   | { t: 'jackpot'; n: number }
   | { t: 'steal'; from: number; to: number; n: number; sticky: boolean }
-  | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | 'traffic' | 'bell' | AbilityId; drop: number; x: number; z: number }
+  | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | 'traffic' | 'bell' | AbilityId | WeaponKind; drop: number; x: number; z: number }
   | { t: 'grab'; p: number; hit: boolean }
   | { t: 'grabStart'; p: number; facing: number }
   | { t: 'dodge'; p: number; from: number }
@@ -172,4 +226,14 @@ export type SimEvent =
   | { t: 'countdown'; n: number }
   | { t: 'roundStart'; round: number }
   | { t: 'roundEnd'; round: number; winner: number; lost: { p: number; n: number }[] }
-  | { t: 'matchEnd'; ranking: number[] };
+  | { t: 'matchEnd'; ranking: number[] }
+  | { t: 'boxPick'; p: number; weapon: WeaponKind; x: number; z: number }
+  | { t: 'fire'; p: number; weapon: WeaponKind; x: number; z: number; facing: number }
+  | { t: 'boom'; kind: 'rocket' | 'freeze' | 'hammer'; x: number; z: number; r: number; hits: number }
+  | { t: 'hook'; p: number; target: number; x: number; z: number }
+  | { t: 'slip'; p: number }
+  | { t: 'frozen'; p: number }
+  | { t: 'damage'; victim: number; by: number; n: number; hp: number }
+  | { t: 'ko'; victim: number; by: number; x: number; z: number }
+  | { t: 'pop'; victim: number; by: number; x: number; z: number }
+  | { t: 'escape'; p: number };

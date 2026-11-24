@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { WEAPON_INFO } from '../render/weapons-view.ts';
 import './hud.css';
 import type { World } from '../../../shared/sim/world.ts';
 import type { Player } from '../../../shared/sim/types.ts';
@@ -330,7 +331,39 @@ export class Hud {
       if (span.textContent !== v) span.textContent = v;
     });
 
-    if (me.carried !== this.lastCarry) {
+    if (world.mode === 'weapons') {
+      // health hearts + KO points instead of carried / banked coins
+      const hpKey = me.state === 'bubble' ? -1 : me.hp;
+      if (hpKey !== this.lastCarry) {
+        const full = TUNING.weapons.hp;
+        this.carryPill.innerHTML =
+          me.state === 'bubble'
+            ? `<span class="hearts">🫧</span><small>MASH TO ESCAPE!</small>`
+            : `<span class="hearts">${'<i class="hrt"></i>'.repeat(me.hp)}${'<i class="hrt off"></i>'.repeat(Math.max(0, full - me.hp))}</span><small>HEALTH</small>`;
+        this.carryPill.classList.toggle('low', me.hp === 1 && me.state !== 'bubble');
+        if (hpKey < this.lastCarry) this.bumpEl(this.carryPill);
+        this.lastCarry = hpKey;
+      }
+      const pts = me.bankedTotal + me.bankedRound;
+      if (pts !== this.lastBanked) {
+        this.bankPill.innerHTML = `<span style="font-size:20px">⭐</span>${pts} <small style="font-size:11px;font-family:var(--body);font-weight:900">POINTS</small>`;
+        if (pts > this.lastBanked && this.lastBanked >= 0) this.bumpEl(this.bankPill);
+        this.lastBanked = pts;
+      }
+      // action button: weapon + ammo, or a punch
+      const key = me.weapon ? `${me.weapon}:${me.ammo}` : 'punch';
+      if (this.btnGrab.dataset.w !== key) {
+        this.btnGrab.dataset.w = key;
+        const info = me.weapon ? WEAPON_INFO[me.weapon] : null;
+        this.btnGrab.classList.toggle('armed', !!info);
+        this.btnGrab.style.setProperty('--wc', info?.color ?? '');
+        const svg = this.btnGrab.querySelector('svg, .wicon');
+        const icon = info ? Object.assign(document.createElement('span'), { className: 'wicon', textContent: info.icon }) : null;
+        if (svg && icon) svg.replaceWith(icon);
+        else if (svg && !icon && svg.classList.contains('wicon')) svg.outerHTML = ICONS.grab;
+        this.btnGrab.querySelector('.lbl')!.textContent = info ? `x${me.ammo}` : 'PUNCH';
+      }
+    } else if (me.carried !== this.lastCarry) {
       this.carryPill.innerHTML = `<i class="coin-ico"></i>${me.carried}<small>CARRYING</small>`;
       if (me.carried > this.lastCarry) this.bumpEl(this.carryPill);
       this.lastCarry = me.carried;
@@ -386,7 +419,14 @@ export class Hud {
       t.root.style.left = '0';
       t.root.style.top = '0';
       const crown = p.id === world.crownId ? '👑' : '';
-      const c = p.carried > 0 ? `${crown}<i class="coin-ico"></i>${p.carried}` : crown;
+      const c =
+        world.mode === 'weapons'
+          ? p.state === 'bubble'
+            ? '<span class="tbub">POP ME!</span>'
+            : `<span class="thp">${'<i class="hrt"></i>'.repeat(p.hp)}${'<i class="hrt off"></i>'.repeat(Math.max(0, TUNING.weapons.hp - p.hp))}</span>`
+          : p.carried > 0
+            ? `${crown}<i class="coin-ico"></i>${p.carried}`
+            : crown;
       if (t.count.innerHTML !== c) t.count.innerHTML = c;
       // red "!" = this bot is coming for you; skull = your nemesis
       const threat = !!extra?.threats.has(p.id);

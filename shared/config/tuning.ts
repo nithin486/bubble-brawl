@@ -218,6 +218,37 @@ export const TUNING = {
   rewards: {
     firstRoundWinCoins: 100,
   },
+
+  /** Weapons mode: mystery boxes, 6 weapons, health and Bubble KO. */
+  weapons: {
+    hp: 3,
+    /** Punch (no weapon): uses the grab timings, does this much damage. */
+    punchDamage: 1,
+    boxes: { count: 6, respawn: 5, pickupRadius: 1.1 },
+    /** Box odds (relative). */
+    odds: { blaster: 3, rocket: 2, banana: 2, freeze: 1.5, hook: 2, hammer: 2 },
+    blaster: { ammo: 8, cooldown: 0.22, speed: 20, range: 14, damage: 1, knock: 0.7 },
+    rocket: { ammo: 2, cooldown: 0.6, speed: 15, range: 16, damage: 2, knock: 4, blast: 1.3 },
+    banana: { ammo: 3, cooldown: 0.4, trigger: 0.85, slip: 1.3, damage: 1, life: 25, arm: 0.6 },
+    freeze: { ammo: 1, cooldown: 0.5, throw: 7, flight: 0.7, radius: 2.8, freeze: 1.8, damage: 1 },
+    hook: { ammo: 2, cooldown: 0.5, range: 10, coneDeg: 30, damage: 1, pullTo: 1.3 },
+    hammer: { ammo: 3, cooldown: 0.7, windup: 0.25, radius: 2.7, damage: 2, knock: 3.2 },
+    /** Damage from hero skills and map events. */
+    skillDamage: { rattleBurst: 1, groundSlam: 1, stickyFingers: 1, bomb: 2, traffic: 2, bell: 1 },
+    bubble: {
+      /** Seconds trapped if nobody pops it. */
+      seconds: 3.5,
+      /** Each button mash shaves this much off. */
+      mash: 0.22,
+      rise: 2.2,
+      popRadius: 1.9,
+      koPoints: 1,
+      popPoints: 1,
+      /** A KO counts for whoever hit you within this many seconds (also falls). */
+      creditWindow: 6,
+    },
+    respawnInvulnerable: 1.5,
+  },
 } as const;
 
 export type Tuning = typeof TUNING;

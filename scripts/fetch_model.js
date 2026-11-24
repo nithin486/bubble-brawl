@@ -118,6 +118,8 @@ function textScore(q, name, tags) {
   return s / qw.length;
 }
 
+const BRANDS = /mario|nintendo|wii\b|zelda|pok[eé]mon|roblox|minecraft|fortnite|gorilla ?tag|brainrot|sonic|disney|marvel|star ?wars|halo\b|overwatch|valorant|league of legends|call of duty|gta\b|rockstar|sega\b|playstation|xbox|smash ?karts|brawl ?stars|clash|supercell|among ?us|fall ?guys/i;
+
 const STYLIZED = ['lowpoly', 'low', 'stylized', 'stylised', 'cartoon', 'toon', 'cute', 'handpainted', 'hand', 'game', 'gameready', 'kaykit', 'quaternius', 'kenney', 'chibi', 'casual'];
 
 // ------------------------------------------------------------------ Poly Haven
@@ -178,6 +180,8 @@ async function searchSketchfab(o) {
       seen.add(m.uid);
       const glb = m.archives?.glb;
       if (!glb) continue;
+      // ripped game assets are someone else's IP whatever licence the uploader picked
+      if (BRANDS.test(`${m.name} ${(m.tags ?? []).map((t) => t.name).join(' ')}`)) continue;
       const tags = (m.tags ?? []).map((t) => t.name);
       const t = textScore(o.q, m.name, tags);
       if (t <= 0) continue;

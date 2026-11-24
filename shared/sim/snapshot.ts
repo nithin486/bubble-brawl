@@ -1,9 +1,10 @@
 // Network snapshots: the host encodes what clients need to draw the world; clients apply them
 // onto a local World that they never tick. Coins are sent as deltas to keep mobile data low.
 import type { World } from './world.ts';
-import type { Coin, Hazard, PState, PowerKind, RoundMod, SimEvent, Phase } from './types.ts';
+import { WEAPONS, type Coin, type Hazard, type PState, type PowerKind, type RoundMod, type SimEvent, type Phase, type WeaponKind } from './types.ts';
 
-const STATES: PState[] = ['normal', 'dashing', 'stagger', 'stunned', 'launched', 'falling'];
+const STATES: PState[] = ['normal', 'dashing', 'stagger', 'stunned', 'launched', 'falling', 'bubble'];
+const WEAPON_IDS: (WeaponKind | null)[] = [null, ...WEAPONS];
 const PHASES: Phase[] = ['countdown', 'playing', 'roundEnd', 'matchEnd'];
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -27,6 +28,11 @@ export interface Snapshot {
   hz: Hazard[];
   ts: string; // tile states, one char per tile
   tf: number[]; // fallAt for warned tiles [index, fallAt, ...]
+  /** weapons mode: boxes [id,x,z,respawn], shots [id,kind,owner,x,z,vx,vz], mines [id,owner,x,z], throws [id,owner,fx,fz,tx,tz,t,total] */
+  wb?: number[][];
+  ws?: (number | string)[][];
+  wm?: number[][];
+  wt?: number[][];
   ev: SimEvent[];
 }
 
@@ -76,6 +82,7 @@ export class SnapshotEncoder {
         r1(p.dashCd), r1(p.grabCd), r1(p.skillCd), r1(p.invuln), r1(p.stickyT), r2(p.bankT),
         r1(p.magnetT), r1(p.speedT), r1(p.shieldT), p.combo, p.isBot ? 1 : 0,
         p.stats.steals, p.stats.stolen, p.stats.falls, p.stats.bestBank, p.stats.banks,
+        p.hp, WEAPON_IDS.indexOf(p.weapon), p.ammo, r1(p.fireCd), r1(p.bubbleT), p.kos,
       ]),
       ca: w.players.filter((p) => p.cast).map((p) => [p.id, p.cast!.kind, r2(p.cast!.t), r2(p.cast!.total)]),
       cu,
@@ -86,6 +93,14 @@ export class SnapshotEncoder {
       hz: w.hazards.map((h) => ({ ...h, x: r2(h.x), z: r2(h.z), warn: r2(h.warn), life: r2(h.life) })),
       ts,
       tf,
+      ...(w.mode === 'weapons'
+        ? {
+            wb: w.brawl.boxes.map((b) => [b.id, r2(b.x), r2(b.z), r1(b.respawn)]),
+            ws: w.brawl.projectiles.map((x) => [x.id, x.kind, x.owner, r2(x.x), r2(x.z), r1(x.vx), r1(x.vz)]),
+            wm: w.brawl.mines.map((m) => [m.id, m.owner, r2(m.x), r2(m.z)]),
+            wt: w.brawl.throws.map((t) => [t.id, t.owner, r2(t.fx), r2(t.fz), r2(t.tx), r2(t.tz), r2(t.t), r2(t.total)]),
+          }
+        : {}),
       ev: events,
     };
   }
@@ -133,6 +148,14 @@ export function applySnapshot(w: World, s: Snapshot, targets: { x: number; z: nu
     p.stats.falls = a[25];
     p.stats.bestBank = a[26];
     p.stats.banks = a[27];
+    if (a.length > 28) {
+      p.hp = a[28];
+      p.weapon = WEAPON_IDS[a[29]] ?? null;
+      p.ammo = a[30];
+      p.fireCd = a[31];
+      p.bubbleT = a[32];
+      p.kos = a[33];
+    }
     p.cast = null;
   });
   for (const c of s.ca) {
@@ -164,6 +187,13 @@ export function applySnapshot(w: World, s: Snapshot, targets: { x: number; z: nu
   w.powerups = s.pu.map((u) => ({ id: u[0] as number, kind: u[1] as PowerKind, x: u[2] as number, z: u[3] as number, age: u[4] as number }));
   w.bombs = s.bo.map((x) => ({ id: x[0], owner: x[1], x: x[2], z: x[3], fuse: x[4] }));
   w.hazards = s.hz;
+  if (s.wb) {
+    const br = w.brawl;
+    br.boxes = s.wb.map((b) => ({ id: b[0], x: b[1], z: b[2], respawn: b[3] }));
+    br.projectiles = (s.ws ?? []).map((x) => ({ id: x[0] as number, kind: x[1] as 'blaster' | 'rocket', owner: x[2] as number, x: x[3] as number, z: x[4] as number, vx: x[5] as number, vz: x[6] as number, left: 1 }));
+    br.mines = (s.wm ?? []).map((m) => ({ id: m[0], owner: m[1], x: m[2], z: m[3], arm: 0, life: 1 }));
+    br.throws = (s.wt ?? []).map((t) => ({ id: t[0], owner: t[1], fx: t[2], fz: t[3], tx: t[4], tz: t[5], t: t[6], total: t[7] }));
+  }
   w.arena.tiles.forEach((t, i) => {
     t.state = Number(s.ts[i] ?? 0) as 0 | 1 | 2;
   });

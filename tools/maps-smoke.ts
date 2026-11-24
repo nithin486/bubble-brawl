@@ -2,7 +2,7 @@
 import { World, BotBrain, Rng, MAPS, type Input, type MapId } from '../shared/sim/index.ts';
 import { TUNING } from '../shared/config/tuning.ts';
 for (const map of Object.keys(MAPS) as MapId[]) {
-  const w = new World(['bones', 'pinch', 'grizzle', 'bones', 'pinch', 'grizzle'].map((h, i) => ({ name: `P${i}`, hero: h as 'bones', isBot: i > 0 })), { seed: 3, map });
+  const w = new World(['bones', 'pinch', 'grizzle', 'bones', 'pinch', 'grizzle'].map((h, i) => ({ name: `P${i}`, hero: h as 'bones', isBot: i > 0 })), { seed: 3, map, mode: 'coins' });
   const rng = new Rng(9);
   const brains = w.players.map((p) => new BotBrain(p.id, new Rng(rng.int(1, 1e9)), 0));
   let steps = 0;
