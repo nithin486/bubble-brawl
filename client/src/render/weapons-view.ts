@@ -13,7 +13,7 @@ export const WEAPON_INFO: Record<WeaponKind, { name: string; icon: string; color
   banana: { name: 'BANANA TRAP', icon: '🍌', color: '#ffe14a', tip: 'Drops behind you' },
   freeze: { name: 'FREEZE BOMB', icon: '❄️', color: '#9fe8ff', tip: 'Freezes a crowd' },
   hook: { name: 'MAGNET HOOK', icon: '🧲', color: '#ff5f7a', tip: 'Yank them to you' },
-  hammer: { name: 'THUNDER HAMMER', icon: '🔨', color: '#ffd23f', tip: 'Smash around you' },
+  hammer: { name: 'THUNDER AXE', icon: '🪓', color: '#ffd23f', tip: 'Spin and smash around you' },
 };
 
 const W = TUNING.weapons;
@@ -117,13 +117,17 @@ export function weaponIcon(kind: WeaponKind, size = 128, badge = false): HTMLCan
       shape('#e6e6f0', () => g.roundRect(67, 34, 16, 18, 3), 6);
       break;
     case 'hammer':
-      shape('#a8642a', () => g.roundRect(44, 34, 13, 56, 5));
-      shape('#ffd23f', () => g.roundRect(18, 12, 64, 30, 8));
+      shape('#a8642a', () => g.roundRect(40, 14, 12, 78, 5)); // handle
+      shape('#ffd23f', () => {
+        // axe blade
+        g.moveTo(50, 16);
+        g.bezierCurveTo(78, 4, 98, 28, 92, 54);
+        g.bezierCurveTo(80, 46, 66, 46, 50, 50);
+        g.closePath();
+      });
       shape('#fff27a', () => {
-        g.moveTo(54, 18);
-        g.lineTo(44, 28);
-        g.lineTo(52, 28);
-        g.lineTo(46, 38);
+        g.moveTo(62, 22);
+        g.lineTo(80, 30);
       }, 3);
       break;
   }
@@ -154,8 +158,41 @@ interface BoxView {
   model: THREE.Object3D;
   beam: THREE.Mesh;
   glow: THREE.Sprite;
+  q: THREE.Sprite;
+  ring: THREE.Group;
+  ringMat: THREE.MeshBasicMaterial;
+  fill: THREE.Mesh;
+  orbit: THREE.Sprite[];
   shown: boolean;
   pop: number;
+}
+
+/** A glossy purple "?" badge (drawn, no fonts needed): tells players what the box is at a glance. */
+function questionTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(46, 40, 6, 64, 64, 60);
+  grad.addColorStop(0, '#b48cff');
+  grad.addColorStop(1, '#5a2fe0');
+  g.beginPath();
+  g.arc(64, 64, 56, 0, Math.PI * 2);
+  g.fillStyle = grad;
+  g.fill();
+  g.lineWidth = 8;
+  g.strokeStyle = '#ffffff';
+  g.stroke();
+  g.font = '900 84px "Lilita One", "Nunito", system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineWidth = 10;
+  g.strokeStyle = '#2a1580';
+  g.strokeText('?', 64, 70);
+  g.fillStyle = '#ffe14a';
+  g.fillText('?', 64, 70);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 /** Draws mystery boxes, shots, banana traps, freeze bombs, KO bubbles and what each hero holds. */
@@ -166,7 +203,7 @@ export class WeaponsView {
   private boxes = new Map<number, BoxView>();
   private shots = new Map<number, THREE.Mesh>();
   private mines = new Map<number, THREE.Object3D>();
-  private throws = new Map<number, { ball: THREE.Mesh; ring: THREE.Mesh }>();
+  private throws = new Map<number, { ball: THREE.Object3D; ring: THREE.Mesh }>();
   private bubbles: THREE.Mesh[] = [];
   private held: THREE.Sprite[] = [];
   private bubbleMat = bubbleMaterial();
@@ -175,6 +212,8 @@ export class WeaponsView {
   private env: Map<string, THREE.Object3D>;
   private beamMat: THREE.ShaderMaterial;
   private bananaReady: Promise<Model> | null = null;
+  private qTex = questionTexture();
+  private pops: { s: THREE.Sprite; t: number; x: number; z: number }[] = [];
   private shotGeo = new THREE.SphereGeometry(1, 14, 10);
   private shotMats = {
     blaster: new THREE.MeshBasicMaterial({ color: '#8ff4ff', transparent: true, opacity: 0.85, toneMapped: false }),
@@ -194,7 +233,7 @@ export class WeaponsView {
       uniforms: { time: { value: 0 } },
       vertexShader: 'varying vec2 vUv; varying float vD; void main(){ vUv = uv; vec4 mv = modelViewMatrix*vec4(position,1.0); vD = -mv.z; gl_Position = projectionMatrix*mv; }',
       // fades out up close: a column next to the camera must never wash the screen out
-      fragmentShader: 'varying vec2 vUv; varying float vD; uniform float time; void main(){ float a = pow(1.0 - vUv.y, 1.6) * (0.75 + 0.25*sin(vUv.y*18.0 - time*5.0)); a *= smoothstep(5.0, 14.0, vD); gl_FragColor = vec4(1.0, 0.82, 0.35, a * 0.4); }',
+      fragmentShader: 'varying vec2 vUv; varying float vD; uniform float time; void main(){ float a = pow(1.0 - vUv.y, 1.6) * (0.75 + 0.25*sin(vUv.y*18.0 - time*5.0)); a *= smoothstep(5.0, 14.0, vD); gl_FragColor = vec4(1.0, 0.82, 0.35, a * 0.22); }',
     });
     this.world = world;
     this.fx = fx;
@@ -234,6 +273,15 @@ export class WeaponsView {
     this.group.visible = world.mode === 'weapons';
   }
 
+  /** A box was opened: its weapon icon pops up out of it (called by the game on 'boxPick'). */
+  pickup(x: number, z: number, k: WeaponKind) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.weaponTex(k), transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    sp.position.set(x, 0.9, z);
+    sp.renderOrder = 9;
+    this.group.add(sp);
+    this.pops.push({ s: sp, t: 0, x, z });
+  }
+
   private weaponTex(k: WeaponKind) {
     const key = 'w:' + k;
     let t = this.iconTex.get(key);
@@ -265,8 +313,9 @@ export class WeaponsView {
       let v = this.boxes.get(b.id);
       if (!v) {
         const root = new THREE.Group();
-        const glow = this.glowSprite('#ffd84a', 2.8);
-        glow.position.y = 0.8;
+        const glow = this.glowSprite('#ffd84a', 1.7); // small warm halo only: a big one bleaches the chest on a bright map
+        glow.material.blending = THREE.NormalBlending;
+        glow.position.y = 0.7;
         // KayKit golden chest: same art family as the heroes
         const model = new THREE.Group();
         const src = this.env.get('chest_gold');
@@ -276,30 +325,87 @@ export class WeaponsView {
           model.add(c);
           addOutlines(c, 0.03 / 0.85);
         }
-        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.75, 7, 20, 1, true), this.beamMat);
-        beam.position.y = 3.5;
-        root.add(glow, model, beam);
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.4, 5.5, 20, 1, true), this.beamMat);
+        beam.position.y = 2.75;
+        // floating "?" badge
+        const q = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.qTex, transparent: true, depthWrite: false, toneMapped: false }));
+        q.scale.setScalar(0.95);
+        q.position.y = 2.0;
+        q.renderOrder = 7;
+        // pickup zone on the floor: dashed gold ring + soft fill (this is where you must stand)
+        const ring = new THREE.Group();
+        const ringMat = new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+        for (let i = 0; i < 10; i++) {
+          const arc = new THREE.Mesh(new THREE.RingGeometry(0.98, 1.1, 8, 1, (i / 10) * Math.PI * 2, (Math.PI * 2) / 10 - 0.28), ringMat);
+          arc.rotation.x = -Math.PI / 2;
+          ring.add(arc);
+        }
+        ring.position.y = 0.07;
+        const fill = new THREE.Mesh(new THREE.CircleGeometry(0.98, 32), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.16, depthWrite: false, toneMapped: false }));
+        fill.rotation.x = -Math.PI / 2;
+        fill.position.y = 0.06;
+        // three little stars orbiting the chest
+        const orbit = [0, 1, 2].map(() => {
+          const sp = this.glowSprite('#fff2a8', 0.34);
+          sp.material.opacity = 0.95;
+          return sp;
+        });
+        root.add(glow, model, beam, q, ring, fill, ...orbit);
         root.position.set(b.x, 0, b.z);
-        const view: BoxView = { root, model, beam, glow, shown: true, pop: 1 };
+        const view: BoxView = { root, model, beam, glow, q, ring, ringMat, fill, orbit, shown: true, pop: 1 };
         this.group.add(root);
         this.boxes.set(b.id, (v = view));
       }
       const tile = w.arena.tileAt(b.x, b.z);
       const show = b.respawn <= 0 && !!tile && tile.state !== 2;
-      if (show && !v.shown) v.pop = 0;
+      if (show && !v.shown) {
+        v.pop = 0;
+        this.fx.ring(b.x, b.z, '#ffd84a', 1.9, 0.45, 0.45); // it lands with a ripple
+      }
       v.shown = show;
       v.root.visible = show;
       if (!show) continue;
-      v.pop = Math.min(1, v.pop + dt * 3);
-      const s = v.pop < 1 ? Math.sin(v.pop * Math.PI * 0.5) * (1 + Math.sin(v.pop * Math.PI) * 0.3) : 1;
+      v.pop = Math.min(1, v.pop + dt * 2.6);
+      // drops in from above with a little overshoot
+      const e = v.pop < 1 ? 1 - Math.pow(1 - v.pop, 3) : 1;
+      const s = v.pop < 1 ? e * (1 + Math.sin(v.pop * Math.PI) * 0.25) : 1;
       v.root.scale.setScalar(s);
-      const bob = Math.sin(time * 2.4 + b.id) * 0.12;
-      v.model.position.y = 0.3 + bob;
-      v.model.rotation.y = time * 1.2 + b.id;
-      v.glow.material.opacity = 0.55 + Math.sin(time * 4 + b.id) * 0.15;
-      if (Math.random() < dt * 3) this.fx.sparkle(b.x + (Math.random() - 0.5) * 0.8, 0.9 + Math.random() * 0.6, b.z + (Math.random() - 0.5) * 0.8, '#ffe27a', 2);
+      const ph = time * 2.2 + b.id * 1.7;
+      v.model.position.y = 0.42 + Math.sin(ph) * 0.14 + (1 - e) * 2.2;
+      v.model.rotation.y = time * 0.9 + b.id;
+      v.model.rotation.z = Math.sin(ph * 0.8) * 0.07;
+      v.model.scale.set(1 + Math.sin(ph * 2) * 0.025, 1 - Math.sin(ph * 2) * 0.025, 1 + Math.sin(ph * 2) * 0.025);
+      v.glow.position.y = v.model.position.y + 0.3;
+      v.glow.material.opacity = 0.3 + Math.sin(time * 3 + b.id) * 0.08;
+      v.q.position.y = 1.95 + Math.sin(ph + 1) * 0.12;
+      v.q.scale.setScalar(0.9 + Math.sin(time * 3 + b.id) * 0.05);
+      v.ring.rotation.y = time * 0.5;
+      v.ringMat.opacity = 0.55 + Math.sin(time * 3 + b.id) * 0.18;
+      v.orbit.forEach((o, i) => {
+        const a2 = time * 1.8 + (i / 3) * Math.PI * 2 + b.id;
+        o.position.set(Math.cos(a2) * 0.85, 0.9 + Math.sin(a2 * 1.5) * 0.35, Math.sin(a2) * 0.85);
+        o.material.opacity = 0.6 + Math.sin(a2 * 2) * 0.35;
+      });
     }
     for (const [id, v] of this.boxes) if (!seenBox.has(id)) (this.group.remove(v.root), this.boxes.delete(id));
+
+    // ---- weapon icons rising out of an opened box
+    for (let i = this.pops.length - 1; i >= 0; i--) {
+      const p = this.pops[i];
+      p.t += dt;
+      const u = p.t / 1.1;
+      if (u >= 1) {
+        this.group.remove(p.s);
+        p.s.material.dispose();
+        this.pops.splice(i, 1);
+        continue;
+      }
+      const k = Math.min(1, u * 2.5);
+      const back = 1 + 2.7 * Math.pow(k - 1, 3) + 1.7 * Math.pow(k - 1, 2); // easeOutBack: overshoots, then settles
+      p.s.position.set(p.x, 0.9 + (1 - Math.pow(1 - u, 2)) * 1.9, p.z);
+      p.s.scale.setScalar(1.25 * back);
+      p.s.material.opacity = u < 0.65 ? 1 : 1 - (u - 0.65) / 0.35;
+    }
 
     // ---- shots
     const seenShot = new Set<number>();
@@ -344,8 +450,19 @@ export class WeaponsView {
       seenThrow.add(t.id);
       let v = this.throws.get(t.id);
       if (!v) {
-        const ball = new THREE.Mesh(this.shotGeo, this.iceMat);
-        ball.scale.setScalar(0.3);
+        // the same bomb he was holding (spins through the air); a plain ice ball only if the model is missing
+        const bomb = this.env.get('weap_bomb');
+        let ball: THREE.Object3D;
+        if (bomb) {
+          ball = new THREE.Group();
+          const m = bomb.clone(true);
+          m.position.set(0, -0.18, 0); // the model's pivot is its handle: centre it
+          ball.add(m);
+          ball.scale.setScalar(2);
+        } else {
+          ball = new THREE.Mesh(this.shotGeo, this.iceMat);
+          ball.scale.setScalar(0.3);
+        }
         const ring = new THREE.Mesh(new THREE.RingGeometry(W.freeze.radius - 0.15, W.freeze.radius, 48), this.ringMat);
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(t.tx, 0.06, t.tz);
@@ -354,6 +471,7 @@ export class WeaponsView {
       }
       const k = Math.min(1, t.t / t.total);
       v.ball.position.set(t.fx + (t.tx - t.fx) * k, 1 + Math.sin(k * Math.PI) * 3, t.fz + (t.tz - t.fz) * k);
+      v.ball.rotation.set(k * 14, k * 6, 0);
       v.ring.scale.setScalar(0.4 + k * 0.6);
     }
     for (const [id, v] of this.throws) if (!seenThrow.has(id)) (this.group.remove(v.ball, v.ring), this.throws.delete(id));

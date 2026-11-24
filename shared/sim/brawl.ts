@@ -7,6 +7,8 @@ import type { World } from './world.ts';
 
 const W = TUNING.weapons;
 const HERO_R = TUNING.hero.radius;
+/** Assist cone (degrees, total) when you aim with the scope: only a rival almost under it pulls the shot. */
+export const AIMED_CONE = 24;
 
 export type HitKind = 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers' | 'bomb' | 'traffic' | 'bell' | WeaponKind;
 
@@ -212,14 +214,14 @@ export class Brawl {
   // ------------------------------------------------------------------ firing
 
   /** The action button with a weapon in hand. Returns false if it didn't fire (cooldown). */
-  fire(p: Player): boolean {
+  fire(p: Player, aimed?: { d: number }): boolean {
     const w = this.w;
     const k = p.weapon;
     if (!k || p.fireCd > 0) return false;
     const c = W[k];
     p.fireCd = c.cooldown;
-    // aim assist toward the best rival in front
-    const aim = (range: number, cone: number) => w.aimAt(p, range, cone);
+    // aim assist toward the best rival in front (a small cone when the player is aiming with the scope)
+    const aim = (range: number, cone: number) => w.aimAt(p, range, aimed ? Math.min(cone, AIMED_CONE) : cone);
     if (k === 'blaster' || k === 'rocket') {
       const g = W[k];
       aim(g.range * 0.8, 150);
@@ -227,7 +229,7 @@ export class Brawl {
       this.projectiles.push({
         id: this.nextId++, kind: k, owner: p.id,
         x: p.x + dirX(p.facing) * 0.7, z: p.z + dirZ(p.facing) * 0.7,
-        vx: dirX(p.facing) * sp, vz: dirZ(p.facing) * sp, left: g.range,
+        vx: dirX(p.facing) * sp, vz: dirZ(p.facing) * sp, left: k === 'rocket' && aimed ? Math.min(g.range, Math.max(3, aimed.d)) : g.range,
       });
     } else if (k === 'banana') {
       // dropped behind you
@@ -236,8 +238,9 @@ export class Brawl {
       if (w.arena.solid(bx, bz)) this.mines.push({ id: this.nextId++, owner: p.id, x: bx, z: bz, arm: W.banana.arm, life: W.banana.life });
     } else if (k === 'freeze') {
       const t = aim(W.freeze.throw + 2, 150);
-      let tx = p.x + dirX(p.facing) * W.freeze.throw;
-      let tz = p.z + dirZ(p.facing) * W.freeze.throw;
+      const reach = aimed ? Math.min(W.freeze.throw + 3, Math.max(3, aimed.d)) : W.freeze.throw;
+      let tx = p.x + dirX(p.facing) * reach;
+      let tz = p.z + dirZ(p.facing) * reach;
       if (t) {
         tx = t.x + t.vx * W.freeze.flight * 0.6;
         tz = t.z + t.vz * W.freeze.flight * 0.6;

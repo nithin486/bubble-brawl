@@ -292,7 +292,7 @@ export class Game {
     // views
     for (const h of this.heroes) this.stage.scene.remove(h.root);
     this.heroes = this.world.players.map((p) => {
-      const hv = new HeroView(this.assets.heroes.get(p.hero)!, p, p.id === LOCAL && !attract, PLAYER_COLORS[p.id], this.glowTex);
+      const hv = new HeroView(this.assets.heroes.get(p.hero)!, p, p.id === LOCAL && !attract, PLAYER_COLORS[p.id], this.glowTex, this.assets.env);
       this.stage.scene.add(hv.root);
       return hv;
     });
@@ -355,6 +355,7 @@ export class Game {
       return;
     }
 
+    this.updateAim();
     // fixed-step simulation (hit-stop freezes it briefly — offline only; a shared match never pauses)
     const step = TUNING.sim.dt;
     const netClient = !!this.room && !this.room.isHost && this.mode === 'match';
@@ -430,6 +431,10 @@ export class Game {
       if (h.update(adt, this.time, frozen)) this.fx.dust(h.player.x, h.player.z);
     }
     this.powers?.update(this.time);
+    if (this.markers) {
+      this.markers.aimHint = this.aimInfo;
+      this.markers.cam = this.stage.camera;
+    }
     this.markers?.update(this.world, this.world.players[LOCAL], this.time, this.mode === 'match');
     if (this.mode === 'match') this.chatterHunting();
     // trails: speed boots (yellow streaks), sticky fingers (pink sparkles), magnet (red bits)
@@ -845,6 +850,7 @@ export class Game {
         const info = WEAPON_INFO[e.weapon];
         this.fx.emit(e.x, 0.9, e.z, { n: 26, color: ['#ffd84a', '#ffffff', info.color], speed: 5, up: 4, life: 0.5, size: 0.45 });
         this.fx.ring(e.x, e.z, info.color, 2.2, 0.35, 0.4);
+        this.weapons?.pickup(e.x, e.z, e.weapon);
         if (e.p === LOCAL) {
           this.sfx.power();
           this.hud.skillBanner(info.name, info.color);
@@ -859,6 +865,7 @@ export class Game {
         const H = hv(e.p);
         const anim = e.weapon === 'banana' ? 'Interact' : e.weapon === 'freeze' ? 'Throw' : e.weapon === 'hammer' ? '2H_Melee_Attack_Spin' : e.weapon === 'hook' ? 'Spellcast_Raise' : '1H_Ranged_Shoot';
         H.oneShot(anim, this.time, e.weapon === 'blaster' ? 2.2 : 1.6, 0.45);
+        H.onFire(e.weapon, this.time);
         const near = e.p === LOCAL || Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 14;
         if (near) this.sfx.shoot(e.weapon);
         if (e.weapon === 'blaster' || e.weapon === 'rocket') {
@@ -1431,9 +1438,39 @@ export class Game {
     const i = this.input.read();
     const w = this.rig.toWorld(i.mx, i.mz);
     this.lastStickFwd = -i.mz;
-    return { ...i, mx: w.x, mz: w.z };
+    return { ...i, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist };
   }
   private lastStickFwd = 0;
+  /** Where the local player is pointing this frame (camera centre in 3rd person, cursor on desktop top-down). */
+  private aimInfo: { heading: number; dist: number } | null = null;
+  private aimRay = new THREE.Raycaster();
+  private aimNdc = new THREE.Vector2();
+
+  private updateAim() {
+    this.aimInfo = null;
+    if (this.mode !== 'match' || this.world.mode !== 'weapons' || !this.input.enabled) return;
+    const me = this.world.players[LOCAL];
+    if (this.rig.turns) {
+      // third person: the mouse turns the camera (scope swings with it) and mouse up / down slides the scope farther / closer
+      const cam = this.stage.camera;
+      cam.getWorldDirection(this.v);
+      if (Math.hypot(this.v.x, this.v.z) < 1e-4) return;
+      this.aimInfo = { heading: Math.atan2(this.v.x, this.v.z), dist: this.input.aimDist };
+      return;
+    }
+    // top-down views: the scope sits under the mouse pointer
+    if (this.touch || performance.now() - this.input.mouse.t > 4000) return;
+    this.aimNdc.set((this.input.mouse.x / innerWidth) * 2 - 1, -((this.input.mouse.y / innerHeight) * 2 - 1));
+    this.aimRay.setFromCamera(this.aimNdc, this.stage.camera);
+    const o = this.aimRay.ray.origin;
+    const d = this.aimRay.ray.direction;
+    if (d.y > -0.02) return;
+    const t = (me.y - o.y) / d.y;
+    const hx = o.x + d.x * t - me.x;
+    const hz = o.z + d.z * t - me.z;
+    if (Math.hypot(hx, hz) < 0.4) return;
+    this.aimInfo = { heading: Math.atan2(hx, hz), dist: Math.hypot(hx, hz) };
+  }
 
   /** Is (x, z) standing between the camera and the point (fx, fz)? (any camera direction) */
   private prevPos: { x: number; y: number; z: number }[] = [];

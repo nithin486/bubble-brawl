@@ -2,12 +2,22 @@ import * as THREE from 'three';
 import { addOutlines } from './style.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { HeroAsset } from './assets.ts';
-import type { Player } from '../../../shared/sim/types.ts';
+import type { Player, WeaponKind } from '../../../shared/sim/types.ts';
 import { HEROES } from '../../../shared/config/heroes.ts';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import { angleDiff } from '../../../shared/sim/math.ts';
 
-const LOOPS = new Set(['Idle', 'Running_A', 'Walking_A', 'Jump_Idle', 'Interact', 'Cheer']);
+/** Which env piece (tools/extract-props.mjs) each weapon looks like in the hero's hand. */
+const HELD_PIECE: Record<WeaponKind, string> = {
+  blaster: 'weap_blaster',
+  rocket: 'weap_launcher',
+  freeze: 'weap_bomb',
+  hook: 'weap_wand',
+  hammer: 'weap_axe',
+  banana: 'weap_banana',
+};
+
+const LOOPS = new Set(['1H_Ranged_Aiming', '2H_Ranged_Aiming', '2H_Melee_Idle', 'Idle', 'Running_A', 'Walking_A', 'Jump_Idle', 'Interact', 'Cheer']);
 
 export class HeroView {
   root = new THREE.Group();
@@ -42,7 +52,8 @@ export class HeroView {
   fadeTarget = 1;
   private baseScale: number;
 
-  constructor(asset: HeroAsset, player: Player, isLocal: boolean, color: string, glowTex: THREE.Texture) {
+  constructor(asset: HeroAsset, player: Player, isLocal: boolean, color: string, glowTex: THREE.Texture, env?: Map<string, THREE.Object3D>) {
+    this.env = env ?? null;
     this.player = player;
     this.isLocal = isLocal;
     this.model = skeletonClone(asset.scene);
@@ -85,6 +96,7 @@ export class HeroView {
         m.add(x);
       }
     this.root.add(this.model);
+    this.handR = this.model.getObjectByName('handslotr') ?? this.model.getObjectByName('handslot.r') ?? null; // (the glTF loader strips the dot from node names)
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const [name, clip] of asset.clips) {
       const a = this.mixer.clipAction(clip);
@@ -152,6 +164,61 @@ export class HeroView {
     this.yaw = player.facing;
   }
 
+  /** Show the weapon he is carrying in his right hand (hidden for a moment at the instant of a throw). */
+  private syncHeld(kind: WeaponKind | null, now: number) {
+    const gone = (now >= this.hideFrom && now < this.hideUntil) || this.player.state === 'falling' || this.player.state === 'bubble';
+    const want = gone ? null : kind;
+    if (want === this.heldKind) return;
+    if (this.heldKind) {
+      const o = this.heldObjs.get(this.heldKind);
+      if (o) o.visible = false;
+    }
+    this.heldKind = want;
+    if (!want) return;
+    let o = this.heldObjs.get(want);
+    if (!o) {
+      const src = this.env?.get(HELD_PIECE[want]);
+      if (!src || !this.handR) return;
+      o = src.clone(true);
+      o.traverse((m) => {
+        const mesh = m as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = true;
+          mesh.frustumCulled = false;
+        }
+      });
+      if (want === 'banana') {
+        // not a KayKit prop: centre it, size it to a banana in a hand, tilt it
+        const box = new THREE.Box3().setFromObject(o);
+        const size = box.getSize(new THREE.Vector3());
+        const k = 0.55 / (Math.max(size.x, size.y, size.z) || 1) / this.baseScale;
+        const c = box.getCenter(new THREE.Vector3());
+        const holder = new THREE.Group();
+        o.position.sub(c);
+        holder.add(o);
+        holder.scale.setScalar(k);
+        holder.rotation.set(0, Math.PI / 2, 0.5);
+        holder.position.set(0, 0.08, 0);
+        o = holder;
+      }
+      addOutlines(o, 0.014 / this.baseScale);
+      this.handR.add(o);
+      this.heldObjs.set(want, o);
+    }
+    o.visible = true;
+  }
+
+  /** A weapon was just used: throws and drops let go of it part-way through the animation. */
+  onFire(kind: WeaponKind, now: number) {
+    if (kind === 'freeze') {
+      this.hideFrom = now + 0.3;
+      this.hideUntil = now + 0.75;
+    } else if (kind === 'banana') {
+      this.hideFrom = now + 0.2;
+      this.hideUntil = now + 0.6;
+    }
+  }
+
   play(name: string, fade = 0.12, timeScale = 1) {
     const a = this.actions.get(name);
     if (!a) return;
@@ -201,6 +268,13 @@ export class HeroView {
   /** Interpolated draw position (set by the game each frame); null = use the sim position. */
   view: { x: number; y: number; z: number } | null = null;
   private lean = 0;
+  // ---- the weapon in his hand
+  private env: Map<string, THREE.Object3D> | null;
+  private handR: THREE.Object3D | null = null;
+  private heldObjs = new Map<WeaponKind, THREE.Object3D>();
+  private heldKind: WeaponKind | null = null;
+  private hideFrom = 0;
+  private hideUntil = 0;
   private facePivot = new THREE.Group();
 
   update(dt: number, now: number, hitStop: boolean): boolean {
@@ -248,9 +322,15 @@ export class HeroView {
           this.dustT = 0.22;
           footstep = true;
         }
-      } else this.play('Idle', 0.18);
+      } else {
+        // standing still with a weapon: the matching ready stance
+        const w = p.weapon;
+        const want = w === 'blaster' || w === 'hook' ? '1H_Ranged_Aiming' : w === 'rocket' ? '2H_Ranged_Aiming' : w === 'hammer' ? '2H_Melee_Idle' : 'Idle';
+        this.play(this.actions.has(want) ? want : 'Idle', 0.18);
+      }
     }
     if (!hitStop) this.mixer.update(dt);
+    this.syncHeld(p.weapon, now);
 
     // squash & stretch
     this.squash *= Math.exp(-dt * 10);

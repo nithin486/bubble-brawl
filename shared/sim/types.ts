@@ -14,6 +14,10 @@ export interface Input {
   dash: boolean;
   grab: boolean;
   skill: boolean;
+  /** Where the player is pointing (facing angle, atan2(x, z)): mouse / camera aim. Used when a weapon fires. */
+  aim?: number;
+  /** Distance to the aim point in metres (rocket / bomb land there). */
+  aimD?: number;
   /** Bots only: first-match handicap — walk through the bank without banking. */
   skipBank?: boolean;
 }
