@@ -31,8 +31,8 @@
 .hero-name h2 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 54px; line-height: 1; -webkit-text-stroke: 8px #3a1fb0; paint-order: stroke fill; text-shadow: 0 6px 0 #1d0d52; }
 .role { display: inline-block; margin-top: 6px; font-weight: 900; font-size: 13px; letter-spacing: 2px; padding: 3px 12px; border-radius: 10px; background: #1d0d52b0; box-shadow: 0 0 0 2px #ffffff40; }
 .ability { position: absolute; left: 50%; bottom: calc(18px + var(--safe-b)); transform: translateX(-50%); width: min(440px, 46vw);
-  display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-radius: 20px; background: linear-gradient(180deg, #ffffff26, #ffffff10);
-  box-shadow: 0 0 0 2px #ffffff40, 0 6px 18px #1d0d5260; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-radius: 20px; background: linear-gradient(180deg, #4a2fb8d8, #2a1580e6);
+  box-shadow: 0 0 0 2px #ffffff40, 0 6px 18px #1d0d5260; }
 .ability .ic { width: 52px; height: 52px; flex: none; border-radius: 16px; display: grid; place-items: center; background: radial-gradient(circle at 50% 35%, #8fff7a, #2fbf3a 70%); box-shadow: inset 0 -4px 0 #0003, 0 3px 0 #1d0d52; }
 .ability .ic svg { width: 32px; height: 32px; }
 .ability b { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--yellow); display: block; }
@@ -77,7 +77,7 @@
 
 /* how to play */
 .howto { position: absolute; left: calc(24px + var(--safe-l)); bottom: calc(26px + var(--safe-b)); width: 280px; padding: 14px 16px; border-radius: 22px;
-  background: linear-gradient(180deg, #ffffff2a, #ffffff12); box-shadow: 0 0 0 2px #ffffff40, 0 6px 18px #1d0d5260; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  background: linear-gradient(180deg, #4a2fb8d8, #2a1580e6); box-shadow: 0 0 0 2px #ffffff40, 0 6px 18px #1d0d5260; }
 .howto h3 { margin: 0 0 8px; font-family: var(--display); font-weight: 400; font-size: 22px; color: var(--yellow); text-shadow: 0 3px 0 #1d0d52; }
 .step { display: flex; gap: 10px; align-items: center; margin: 7px 0; font-weight: 900; font-size: 14px; line-height: 1.2; }
 .step .n { width: 40px; height: 40px; flex: none; border-radius: 13px; display: grid; place-items: center; box-shadow: inset 0 -3px 0 #0003, 0 3px 0 #1d0d52; }

@@ -14,6 +14,16 @@ const GradeShader = {
       vec3 g = mix(vec3(l), c.rgb, sat); g = (g - 0.5) * con + 0.5; gl_FragColor = vec4(clamp(g, 0.0, 1.0), c.a); }`,
 };
 
+/** Kills NaN / Infinity / absurd HDR values before bloom: one bad pixel otherwise smears into black boxes. */
+const CleanShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      bool bad = any(isnan(c)) || any(isinf(c));
+      gl_FragColor = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(clamp(c.rgb, 0.0, 12.0), 1.0); }`,
+};
+
 export type Quality = 'low' | 'medium' | 'high';
 
 export const isTouch = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -35,7 +45,7 @@ export class Stage {
 
   constructor(parent: HTMLElement, quality: Quality) {
     this.quality = quality;
-    this.renderer = new THREE.WebGLRenderer({ antialias: quality !== 'low', powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: quality !== 'low', stencil: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -78,7 +88,7 @@ export class Stage {
     this.sun = new THREE.DirectionalLight('#fff0d4', 2.2);
     this.sun.position.set(-12, 26, 14);
     this.sun.castShadow = true;
-    const sm = quality === 'high' ? 2048 : 1024;
+    const sm = quality === 'high' ? 4096 : 2048;
     this.sun.shadow.mapSize.set(sm, sm);
     const sc = this.sun.shadow.camera;
     sc.left = -18;
@@ -89,7 +99,7 @@ export class Stage {
     sc.far = 70;
     this.sun.shadow.bias = -0.0008;
     this.sun.shadow.normalBias = 0.03;
-    this.sun.shadow.radius = 3;
+    this.sun.shadow.radius = 4;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
     const rim = new THREE.DirectionalLight('#9fd8ff', 0.7);
@@ -141,8 +151,9 @@ export class Stage {
       this.composer = null;
       this.bloom = null;
     } else if (!this.composer) {
-      const composer = new EffectComposer(this.renderer);
+      const composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true }));
       composer.addPass(new RenderPass(this.scene, this.camera));
+      composer.addPass(new ShaderPass(CleanShader));
       this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), this.bloomCfg.strength, 0.5, this.bloomCfg.threshold);
       composer.addPass(this.bloom);
       composer.addPass(new OutputPass());

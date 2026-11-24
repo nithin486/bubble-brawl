@@ -17,18 +17,20 @@ export const SEE = {
   seeCam: { value: new THREE.Vector3() },
   seeFocus: { value: new THREE.Vector3() },
   seeOn: { value: 0 },
-  seeR: { value: 1.5 },
+  seeR: { value: 1.0 },
 };
 
 const SEE_VERT_HEAD = 'varying vec3 vSeeWP;\n';
 const SEE_VERT = 'vSeeWP = (modelMatrix * vec4(transformed, 1.0)).xyz;\n';
 const SEE_FRAG_HEAD = 'varying vec3 vSeeWP; uniform vec3 seeCam; uniform vec3 seeFocus; uniform float seeOn; uniform float seeR;\n';
 const SEE_FRAG = `
-  if (seeOn > 0.5 && vSeeWP.y > 0.3 && vSeeWP.y < seeFocus.y + 5.0) {
-    vec2 sa = seeCam.xz; vec2 sab = seeFocus.xz - sa;
-    float st = clamp(dot(vSeeWP.xz - sa, sab) / max(dot(sab, sab), 1e-4), 0.0, 1.0);
-    float sd = length(vSeeWP.xz - (sa + sab * st));
-    if (st > 0.02 && st < 0.96 && sd < seeR) {
+  if (seeOn > 0.5 && vSeeWP.y > 0.3) {
+    // true 3D test: only geometry close to the camera→hero line (and below the hero's head) blocks the view,
+    // so a deck wall or ramp the camera looks OVER is never dithered away
+    vec3 sa = seeCam; vec3 sab = seeFocus - sa;
+    float st = clamp(dot(vSeeWP - sa, sab) / max(dot(sab, sab), 1e-4), 0.0, 1.0);
+    float sd = length(vSeeWP - (sa + sab * st));
+    if (st > 0.02 && st < 0.94 && sd < seeR && vSeeWP.y < seeFocus.y + 2.5) {
       vec2 sq = mod(floor(gl_FragCoord.xy), 2.0);
       if (sq.x + sq.y > 0.5) discard; // keep 1 pixel in 4: you see through, the object is still hinted
     }
@@ -153,7 +155,7 @@ export function mergeParts(parts: Part[], seeThrough: boolean): THREE.Mesh[] {
     const geo = list.length === 1 ? list[0].geo.clone() : mergeGeometries(list.map((p) => p.geo));
     if (!geo) continue;
     const src = list[0].mat;
-    const mesh = new THREE.Mesh(geo, seeThrough ? seeThroughOf(src) : src);
+    const mesh = new THREE.Mesh(geo, seeThrough && list[0].shadow ? seeThroughOf(src) : src); // floor pieces (ramps, decks: no shadow/collision) never fade
     mesh.castShadow = list[0].shadow;
     mesh.receiveShadow = true;
     meshes.push(mesh);

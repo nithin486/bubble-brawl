@@ -57,7 +57,33 @@ export class HeroView {
         this.mats.push(mat);
       }
     });
-    this.ink = addOutlines(this.model, 0.022 / asset.scale);
+    this.ink = addOutlines(this.model, 0.016 / asset.scale);
+    // real shadows from the hero (not just a blob), and for you an x-ray silhouette when cover hides you
+    // stencil: the hero's visible pixels are marked; the silhouette draws only where it is NOT marked (= hidden behind cover)
+    const xray = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, depthFunc: THREE.GreaterDepth, depthWrite: false, toneMapped: false, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp });
+    if (isLocal) for (const m of this.mats) Object.assign(m, { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
+    const skins: THREE.Mesh[] = [];
+    this.model.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && !m.userData.outline) {
+        m.castShadow = true;
+        skins.push(m);
+      }
+    });
+    if (isLocal)
+      for (const m of skins) {
+        const sk = m as THREE.SkinnedMesh;
+        let x: THREE.Mesh;
+        if (sk.isSkinnedMesh) {
+          const k = new THREE.SkinnedMesh(sk.geometry, xray);
+          k.bind(sk.skeleton, sk.bindMatrix);
+          x = k;
+        } else x = new THREE.Mesh(m.geometry, xray);
+        x.frustumCulled = false;
+        x.renderOrder = 20;
+        x.userData.outline = true; // not a real part: skipped by outlines / material lists
+        m.add(x);
+      }
     this.root.add(this.model);
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const [name, clip] of asset.clips) {
@@ -80,16 +106,12 @@ export class HeroView {
     this.ring.renderOrder = 2;
     this.root.add(this.ring);
     if (isLocal) {
-      const arrow = new THREE.Mesh(
-        new THREE.ConeGeometry(0.16, 0.32, 3),
-        new THREE.MeshBasicMaterial({ color, toneMapped: false }),
-      );
+      // facing pointer: shows where your attack / skill will go (turns with the hero)
+      const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 3), new THREE.MeshBasicMaterial({ color, toneMapped: false }));
       arrow.rotation.x = Math.PI / 2;
-      arrow.position.set(0, 0.04, 1.0);
-      arrow.scale.y = 1;
-      this.ring.add(arrow);
-      arrow.rotation.set(-Math.PI / 2, 0, 0);
-      arrow.position.set(0, 0.95, 0);
+      arrow.position.set(0, 0.04, 1.05);
+      this.facePivot.add(arrow);
+      this.root.add(this.facePivot);
     }
     // soft contact shadow so heroes feel grounded even on low quality
     this.shadowBlob = new THREE.Mesh(
@@ -176,9 +198,15 @@ export class HeroView {
   }
 
   /** Returns true when a footstep puff should spawn. */
+  /** Interpolated draw position (set by the game each frame); null = use the sim position. */
+  view: { x: number; y: number; z: number } | null = null;
+  private lean = 0;
+  private facePivot = new THREE.Group();
+
   update(dt: number, now: number, hitStop: boolean): boolean {
     const p = this.player;
-    this.root.position.set(p.x, p.y, p.z);
+    const v = this.view ?? p;
+    this.root.position.set(v.x, v.y, v.z);
     if (this.jumpT > 0) {
       this.jumpT = Math.max(0, this.jumpT - dt);
       const k = 1 - this.jumpT / this.jumpDur;
@@ -192,7 +220,13 @@ export class HeroView {
       this.tumble -= step;
       this.yaw += step;
     }
+    // lean into the run (and settle back when stopping): reads as weight, not sliding
+    const spd = Math.min(1.3, Math.hypot(p.vx, p.vz) / TUNING.hero.walkSpeed);
+    this.lean += ((p.state === 'normal' ? spd * 0.13 : 0) - this.lean) * Math.min(1, dt * 9);
+    this.model.rotation.order = 'YXZ';
+    this.model.rotation.x = this.lean;
     this.model.rotation.y = this.yaw;
+    this.facePivot.rotation.y = this.yaw;
 
     let footstep = false;
     const speed = Math.hypot(p.vx, p.vz);
@@ -256,7 +290,7 @@ export class HeroView {
     const air = p.y > 0.05 || p.state === 'falling';
     this.ring.visible = !air;
     this.shadowBlob.visible = p.state !== 'falling';
-    this.shadowBlob.position.y = 0.02 - p.y;
+    this.shadowBlob.position.y = 0.02 - v.y;
     this.shadowBlob.scale.setScalar(Math.max(0.4, 1 - p.y * 0.15));
     return footstep;
   }

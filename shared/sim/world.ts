@@ -444,12 +444,16 @@ export class World {
     const T3 = this.terrain;
     if (!T3.flat) {
       const from = T3.heightAt(ox, oz);
-      if (!T3.canStep(from, p.x, p.z)) {
-        if (T3.canStep(from, p.x, oz)) {
+      const R = T.hero.radius;
+      // the whole body must stay out of cliffs (not just the centre point); never worse than before, so nobody gets stuck
+      const was = T3.breach(from, ox, oz, R);
+      const ok = (x: number, z: number) => T3.canStep(from, x, z) && T3.breach(from, x, z, R) <= was;
+      if (!ok(p.x, p.z)) {
+        if (ok(p.x, oz)) {
           p.z = oz;
           p.vz = 0;
           p.kz = 0;
-        } else if (T3.canStep(from, ox, p.z)) {
+        } else if (ok(ox, p.z)) {
           p.x = ox;
           p.vx = 0;
           p.kx = 0;

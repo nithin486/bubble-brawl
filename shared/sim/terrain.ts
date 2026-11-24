@@ -79,6 +79,17 @@ export class Terrain {
     return this.flat || this.heightAt(x, z) - from <= STEP_MAX;
   }
 
+  /** How many of 8 points around a body of radius r (centred at x, z) are inside a cliff higher than a step from `from`. 0 = clear. */
+  breach(from: number, x: number, z: number, r: number): number {
+    if (this.flat) return 0;
+    let n = 0;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      if (this.heightAt(x + Math.sin(a) * r, z + Math.cos(a) * r) - from > STEP_MAX) n++;
+    }
+    return n;
+  }
+
   /** Walking a→b would climb a cliff somewhere along the line? (dropping down is fine) */
   blocked(ax: number, az: number, bx: number, bz: number): boolean {
     if (this.flat) return false;

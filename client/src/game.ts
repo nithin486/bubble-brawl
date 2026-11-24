@@ -382,6 +382,7 @@ export class Game {
             if (peer && i !== LOCAL) inputs[i] = this.room!.takeInput(peer) ?? NO_INPUT;
           });
         const prevRound = this.world.round;
+        this.prevPos = this.world.players.map((q) => ({ x: q.x, y: q.y, z: q.z }));
         this.world.tick(step, inputs);
         if (this.room?.isHost && this.mode === 'match') this.pending.push(...this.world.events);
         if (this.world.round !== prevRound) this.brains.forEach((b) => b.newRound());
@@ -404,6 +405,8 @@ export class Game {
     }
 
     // views
+    // draw between the last two sim steps: smooth on 90/120 Hz screens and when a frame is late
+    this.lerpA = this.room && !this.room.isHost ? 1 : Math.min(1, this.acc / step);
     // crowd readability: fade bots standing in front of you, ease the camera out, calm the glows
     {
       const me = this.world.players[LOCAL];
@@ -423,6 +426,7 @@ export class Game {
     const frozen = this.hitStop > 0;
     const adt = this.slowT > 0 ? dt * this.slowScale : dt;
     for (const h of this.heroes) {
+      h.view = this.visPos(h.player.id);
       if (h.update(adt, this.time, frozen)) this.fx.dust(h.player.x, h.player.z);
     }
     this.powers?.update(this.time);
@@ -443,7 +447,7 @@ export class Game {
       if (this.wellWarnT > 0) this.fx.emit(J.x, 1.6, J.z, { n: 4, color: ['#7ff3ff', '#ffffff', '#ffe27a'], speed: 1.2, up: 5, life: 0.7, size: 0.4, gravity: 6, spread: 0.8 });
     }
     if (this.wellWarnT > 0) this.wellWarnT -= dt;
-    this.island.focus = this.mode === 'match' ? this.v.set(this.world.players[LOCAL].x, 0, this.world.players[LOCAL].z).clone() : null;
+    this.island.focus = this.mode === 'match' ? this.v.set(this.world.players[LOCAL].x, this.world.players[LOCAL].y, this.world.players[LOCAL].z).clone() : null;
     this.island.blocks = (x, z, fx, fz) => this.blocksView(x, z, fx, fz, 1.9);
     this.island.camPos = this.stage.camera.position;
     this.island.update(dt, this.time);
@@ -452,7 +456,8 @@ export class Game {
     this.weapons?.update(dt, this.time);
     this.fx.update(dt);
     const me = this.world.players[LOCAL];
-    let focus = this.v.set(me.x, me.state === 'falling' || me.state === 'launched' ? 0 : me.y, me.z);
+    const mv = this.visPos(LOCAL) ?? me;
+    let focus = this.v.set(mv.x, me.state === 'falling' || me.state === 'launched' ? 0 : mv.y, mv.z);
     if (this.world.phase === 'matchEnd') {
       const w = this.world.players[this.world.ranking()[0]];
       focus = this.v.set(w.x, 0, w.z);
@@ -1431,6 +1436,18 @@ export class Game {
   private lastStickFwd = 0;
 
   /** Is (x, z) standing between the camera and the point (fx, fz)? (any camera direction) */
+  private prevPos: { x: number; y: number; z: number }[] = [];
+  private lerpA = 1;
+  /** Position to draw a player at: blended between the previous and current sim step (null = draw as is). */
+  private visPos(id: number) {
+    const q = this.world.players[id];
+    const a = this.prevPos[id];
+    if (!a || this.lerpA >= 1) return null;
+    if (q.state === 'falling' || q.state === 'launched' || Math.hypot(q.x - a.x, q.z - a.z) > 2) return null;
+    const t = this.lerpA;
+    return { x: a.x + (q.x - a.x) * t, y: a.y + (q.y - a.y) * t, z: a.z + (q.z - a.z) * t };
+  }
+
   private blocksView(x: number, z: number, fx: number, fz: number, width: number) {
     const c = this.stage.camera.position;
     const vx = fx - c.x;

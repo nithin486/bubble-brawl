@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { World } from '../../../shared/sim/world.ts';
 import type { MapId, Obstacle } from '../../../shared/config/maps.ts';
-import { SPOKES, spokeTile } from '../../../shared/config/maps.ts';
+import { SPOKES, spokeTile, CANDY_K } from '../../../shared/config/maps.ts';
 import { hexToWorld, key } from '../../../shared/sim/arena.ts';
 import type { Rng } from '../../../shared/sim/math.ts';
 
@@ -65,11 +65,11 @@ const CANDY_TILE_Y = -1; // candy tiles are 1 m thick, grounded at y = 0: top su
 const candy: Theme = {
   id: 'candy',
   sky: { top: '#6fd0ff', mid: '#ffb3e6', horizon: '#fff2c9', bottom: '#ffd0ee' },
-  fog: { color: '#ffd9f0', near: 110, far: 300 },
-  bloom: { strength: 0.32, threshold: 0.97 },
-  hemi: { sky: '#fff3fb', ground: '#d79ac2', intensity: 0.8 },
-  sun: { color: '#fff0d4', intensity: 1.7, pos: [-14, 24, 12] },
-  exposure: 0.82,
+  fog: { color: '#f3d3ee', near: 55, far: 210 }, // soft haze: far candy fades into the sky, near stays crisp
+  bloom: { strength: 0.3, threshold: 0.97 },
+  hemi: { sky: '#fff3fb', ground: '#b87fae', intensity: 0.58 },
+  sun: { color: '#ffe9c4', intensity: 2.5, pos: [-16, 22, 11] }, // warm low sun: long readable shadows
+  exposure: 0.9,
   clouds: { color: '#ffffff', emissive: '#ffd6f0', intensity: 0.5 },
   waterfalls: false,
   bubbles: true,
@@ -109,31 +109,31 @@ const candy: Theme = {
         add('candy_sundae', 1.2, 0, 0, 0, DECK);
         break;
       case 'deckpillar':
-        add('candy_pillar', 0.9, 0, 0, 0, DECK);
+        add('candy_pillar', 0.7, 0, 0, 0, DECK);
         break;
       case 'pillar':
-        add('candy_pillar', 1);
+        add('candy_pillar', 0.7);
         break;
       case 'gumdrop':
-        add(['candy_gumdrop_red', 'candy_gumdrop_green', 'candy_gumdrop_blue'][Math.abs(Math.round(o.x + o.z)) % 3], 1);
+        add(['candy_gumdrop_red', 'candy_gumdrop_green', 'candy_gumdrop_blue'][Math.abs(Math.round(o.x + o.z)) % 3], CANDY_K);
         break;
       case 'cupcake':
-        add('candy_cupcake', 1);
+        add('candy_cupcake', CANDY_K);
         break;
       case 'icecream':
-        add('candy_icecream', 1);
+        add('candy_icecream', CANDY_K);
         break;
       case 'cake':
-        add('candy_cake', 1);
+        add('candy_cake', CANDY_K);
         break;
       case 'choco':
-        add('candy_choco', 1, 0, 0, o.rot);
+        add('candy_choco', CANDY_K, 0, 0, Math.PI / 2); // model runs along x; collision circles run along the prop's z
         break;
       case 'sundae':
         add('candy_sundae', 1);
         break;
       case 'swirl':
-        add('candy_swirl', 1);
+        add('candy_swirl', CANDY_K);
         break;
     }
   },
