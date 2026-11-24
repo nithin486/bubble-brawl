@@ -74,6 +74,7 @@ const SPEED = Number(PARAMS.get('speed')) || 1;
 const UNLOCKS: { hero: HeroId; afterMatches: number }[] = [
   { hero: 'pinch', afterMatches: 1 },
   { hero: 'grizzle', afterMatches: 2 },
+  { hero: 'ranger', afterMatches: 3 },
 ];
 
 type TutStep = 'move' | 'coins' | 'bank' | 'done';

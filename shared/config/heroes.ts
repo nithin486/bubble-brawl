@@ -2,13 +2,15 @@
 // Ability numbers live in tuning.ts.
 
 export type AbilityId = 'rattleBurst' | 'stickyFingers' | 'groundSlam';
-export type HeroId = 'bones' | 'pinch' | 'grizzle';
+export type HeroId = 'bones' | 'pinch' | 'grizzle' | 'ranger';
 
 export interface HeroDef {
   id: HeroId;
   name: string;
   role: string;
   model: string; // file in assets/heroes
+  /** Custom hero packed by its own script (tools/pack-*.mjs) straight into client/public/assets/hero_<id>.glb. */
+  external?: boolean;
   /** Mesh nodes to delete (each KayKit model ships every weapon). */
   hide: string[];
   ability: AbilityId;
@@ -60,6 +62,20 @@ export const HEROES: Record<HeroId, HeroDef> = {
     grabAnim: 'Unarmed_Melee_Attack_Punch_B',
     color: '#9dff7a',
   },
+  ranger: {
+    id: 'ranger',
+    name: 'Ranger',
+    role: 'Balanced',
+    model: 'bubble_hero', // assets/characters/bubble_hero (Blender build) -> tools/pack-bubble-hero.mjs
+    external: true,
+    hide: [],
+    ability: 'rattleBurst', // PLACEHOLDER: reuse Bones' ability until the Ranger gets its own
+    abilityName: 'Bubble Burst',
+    abilityText: 'Pop a bubble ring around you: rivals are shoved back and each drops a coin.',
+    abilityAnim: 'Spellcast_Raise',
+    grabAnim: 'Unarmed_Melee_Attack_Punch_A',
+    color: '#ff9a2e',
+  },
 };
 
 export const HERO_IDS = Object.keys(HEROES) as HeroId[];
@@ -90,4 +106,8 @@ export const KEEP_ANIMS = [
   '2H_Melee_Idle',
   'Throw',
   '2H_Melee_Attack_Spin',
+  '1H_Ranged_Shooting',
+  'Jump_Start',
+  'Jump_Land',
+  'Spellcast_Shoot',
 ] as const;

@@ -68,6 +68,13 @@ async function compress(doc, file) {
 
 // ---------- heroes ----------
 for (const hero of Object.values(HEROES)) {
+  if (hero.external) {
+    // custom hero: packed by its own script (tools/pack-bubble-hero.mjs) into assets/characters/<name>/hero_<id>.glb
+    const packed = path.join(root, 'assets/characters', hero.model, `hero_${hero.id}.glb`);
+    if (fs.existsSync(packed)) fs.copyFileSync(packed, path.join(out, `hero_${hero.id}.glb`));
+    else console.warn(`missing ${packed}: run node tools/pack-bubble-hero.mjs`);
+    continue;
+  }
   const src = path.join(root, 'assets/heroes', `${hero.model}.glb`);
   const dst = path.join(out, `hero_${hero.id}.glb`);
   if (fresh(dst, [src, path.join(root, 'shared/config/heroes.ts')])) continue;
