@@ -4,6 +4,7 @@ import { TUNING } from '../config/tuning.ts';
 import { HEROES, type HeroId } from '../config/heroes.ts';
 import { Arena } from './arena.ts';
 import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng } from './math.ts';
+import { Terrain } from './terrain.ts';
 import { MAPS, type MapDef, type MapId, type Obstacle } from '../config/maps.ts';
 import { Brawl } from './brawl.ts';
 import { NO_INPUT, type GameMode, type Hazard, type RoundMod, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
@@ -29,6 +30,8 @@ export class World {
   coins: Coin[] = [];
   map: MapDef;
   arena: Arena;
+  /** Walkable ramps and decks (flat for maps without any). */
+  terrain!: Terrain;
   /** Solid obstacles of this map (decorations excluded). */
   obstacles: Obstacle[];
   bank: Bank;
@@ -62,8 +65,9 @@ export class World {
     this.brawl = new Brawl(this);
     this.rng = new Rng(opts.seed ?? (Math.random() * 2 ** 31) | 0);
     this.firstMatch = !!opts.firstMatch;
-    this.map = MAPS[opts.map ?? 'downtown'];
+    this.map = MAPS[opts.map ?? 'candy'];
     this.arena = new Arena(this.map.shape);
+    this.terrain = new Terrain(this.map.terrain);
     this.obstacles = this.map.obstacles.filter((o) => o.r > 0);
     this.players = setups.map((s, i) => newPlayer(i, s));
     for (const p of this.map.pads) {
@@ -400,6 +404,8 @@ export class World {
       }
     }
 
+    const ox = p.x;
+    const oz = p.z;
     // controlled movement never walks you off the island
     const nx = p.x + moveX * dt;
     const nz = p.z + moveZ * dt;
@@ -432,6 +438,29 @@ export class World {
     if (this.pushOut(p, T.hero.radius) && k > 0.05) {
       p.kx *= 0.3;
       p.kz *= 0.3;
+    }
+
+    // height: cliffs block you (slide along them); ramps and dropping down are free
+    const T3 = this.terrain;
+    if (!T3.flat) {
+      const from = T3.heightAt(ox, oz);
+      if (!T3.canStep(from, p.x, p.z)) {
+        if (T3.canStep(from, p.x, oz)) {
+          p.z = oz;
+          p.vz = 0;
+          p.kz = 0;
+        } else if (T3.canStep(from, ox, p.z)) {
+          p.x = ox;
+          p.vx = 0;
+          p.kx = 0;
+        } else {
+          p.x = ox;
+          p.z = oz;
+          p.vx = p.vz = p.kx = p.kz = 0;
+        }
+      }
+      const h = T3.heightAt(p.x, p.z);
+      p.y = h > p.y ? Math.min(h, p.y + 9 * dt) : Math.max(h, p.y - 16 * dt);
     }
 
     if (!this.arena.solid(p.x, p.z)) {
@@ -996,10 +1025,17 @@ export class World {
     let x = 0;
     let z = 0;
     for (let i = 0; i < 20; i++) {
-      const a = this.rng.next() * Math.PI * 2;
-      const r = this.rng.next() * Math.min(4, this.arena.safeRadius - 3);
-      x = Math.sin(a) * r;
-      z = Math.cos(a) * r;
+      if (this.map.terrain) {
+        // big maps: come back at one of the start spots (always flat ground)
+        const st = this.map.starts[Math.floor(this.rng.next() * this.map.starts.length)];
+        x = st.x + (this.rng.next() - 0.5) * 3;
+        z = st.z + (this.rng.next() - 0.5) * 3;
+      } else {
+        const a = this.rng.next() * Math.PI * 2;
+        const r = this.rng.next() * Math.min(4, this.arena.safeRadius - 3);
+        x = Math.sin(a) * r;
+        z = Math.cos(a) * r;
+      }
       if (this.arena.safe(x, z) && this.clear(x, z, 0.6) && this.players.every((o) => o === p || (o.x - x) ** 2 + (o.z - z) ** 2 > 2)) break;
     }
     p.x = x;

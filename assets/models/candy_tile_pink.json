@@ -1,0 +1,29 @@
+{
+  "name": "candy_tile_pink",
+  "query": "",
+  "title": "candy_tile_pink (Blender)",
+  "source": "file",
+  "id": "candy_tile_pink.glb",
+  "link": "",
+  "author": "Bubble Brawl",
+  "authorLink": "",
+  "licence": "own work",
+  "needsCredit": false,
+  "triangles": 120,
+  "trianglesOriginal": 120,
+  "bytes": 3244,
+  "dimensions": [
+    4.8,
+    1,
+    4.8
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

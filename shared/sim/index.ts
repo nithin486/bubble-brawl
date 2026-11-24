@@ -5,3 +5,4 @@ export * from './arena.ts';
 export * from '../config/maps.ts';
 export * from './math.ts';
 export * from './snapshot.ts';
+export * from './terrain.ts';

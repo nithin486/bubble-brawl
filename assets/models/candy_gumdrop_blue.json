@@ -1,0 +1,29 @@
+{
+  "name": "candy_gumdrop_blue",
+  "query": "",
+  "title": "candy_gumdrop_blue (Blender)",
+  "source": "file",
+  "id": "candy_gumdrop_blue.glb",
+  "link": "",
+  "author": "Bubble Brawl",
+  "authorLink": "",
+  "licence": "own work",
+  "needsCredit": false,
+  "triangles": 324,
+  "trianglesOriginal": 324,
+  "bytes": 3660,
+  "dimensions": [
+    3.545,
+    2.61,
+    3.6
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

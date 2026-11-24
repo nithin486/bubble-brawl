@@ -2,12 +2,16 @@ import * as THREE from 'three';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
-export type CamPreset = 'third' | 'far' | 'close' | 'action';
+export type CamPreset = 'third' | 'far' | 'close' | 'action' | 'bird';
+/** Presets a player can pick (bird is a dev view). */
+export type PlayerCam = Exclude<CamPreset, 'bird'>;
 /** Camera views the player can pick in Settings. */
 export const CAM_PRESETS: Record<CamPreset, { label: string; offset: [number, number, number]; look: [number, number, number]; lead: number; fov: number }> = {
   third: { label: 'BEHIND (3RD PERSON)', offset: [0, 3.5, 6.3], look: [0, 0.9, -6], lead: 0.12, fov: 58 },
   far: { label: 'TOP · FAR', offset: [0, 11, 10], look: [0, 0.8, -1.2], lead: 0.35, fov: 45 },
   close: { label: 'TOP · CLOSE', offset: [0, 8.2, 6.6], look: [0, 0.9, -1.4], lead: 0.45, fov: 46 },
+  /** Dev view (?cam=bird): the whole big map from above. */
+  bird: { label: 'BIRD (DEV)', offset: [0, 62, 38], look: [0, 0, -4], lead: 0, fov: 50 },
   action: { label: 'TOP · ACTION', offset: [0, 5.6, 7.4], look: [0, 1.3, -3.2], lead: 0.6, fov: 52 },
 };
 
@@ -105,7 +109,7 @@ export class CameraRig {
   update(dt: number, focus: THREE.Vector3, lead: THREE.Vector3) {
     // critically damped smooth-damp toward focus + lead (settles in ~0.5 s)
     const goal = new THREE.Vector3().copy(focus).addScaledVector(lead, this.leadK);
-    goal.y = 0;
+    goal.y = focus.y * 0.8;
     const omega = 2 / (this.turns ? 0.12 : 0.28);
     const x = omega * dt;
     const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);

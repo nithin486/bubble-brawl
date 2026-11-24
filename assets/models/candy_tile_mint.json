@@ -1,0 +1,29 @@
+{
+  "name": "candy_tile_mint",
+  "query": "",
+  "title": "candy_tile_mint (Blender)",
+  "source": "file",
+  "id": "candy_tile_mint.glb",
+  "link": "",
+  "author": "Bubble Brawl",
+  "authorLink": "",
+  "licence": "own work",
+  "needsCredit": false,
+  "triangles": 120,
+  "trianglesOriginal": 120,
+  "bytes": 3264,
+  "dimensions": [
+    4.8,
+    1,
+    4.8
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

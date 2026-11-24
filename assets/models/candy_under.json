@@ -1,0 +1,29 @@
+{
+  "name": "candy_under",
+  "query": "",
+  "title": "candy_under (Blender)",
+  "source": "file",
+  "id": "candy_under.glb",
+  "link": "",
+  "author": "Bubble Brawl",
+  "authorLink": "",
+  "licence": "own work",
+  "needsCredit": false,
+  "triangles": 28,
+  "trianglesOriginal": 28,
+  "bytes": 2184,
+  "dimensions": [
+    4.25,
+    2.2,
+    4.25
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

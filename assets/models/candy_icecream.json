@@ -1,0 +1,29 @@
+{
+  "name": "candy_icecream",
+  "query": "",
+  "title": "Ice Cream",
+  "source": "file",
+  "id": "candy_icecream.glb",
+  "link": "https://poly.pizza/m/iZiAPq7Sne",
+  "author": "Quaternius",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 1278,
+  "trianglesOriginal": 1278,
+  "bytes": 24892,
+  "dimensions": [
+    3.891,
+    7,
+    3.891
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

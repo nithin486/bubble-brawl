@@ -27,7 +27,7 @@ export class Brawl {
     const w = this.w;
     const n = Math.round(W.boxes.count * w.coinScale);
     const cands = w.arena.tiles
-      .filter((t) => t.d < w.map.shape.radius - 2.5 && t.d > 2 && w.clear(t.x, t.z, 1.2))
+      .filter((t) => t.d < w.map.shape.radius - 2.5 && t.d > 2 && w.clear(t.x, t.z, 1.2) && w.terrain.flatAround(t.x, t.z, 3.2))
       .map((t) => ({ x: t.x, z: t.z }));
     // farthest-point sampling: boxes far from each other
     const out: { x: number; z: number }[] = [];

@@ -31,6 +31,7 @@ export class Stage {
   private sunOffset = new THREE.Vector3(-12, 26, 14);
   /** Vertical field of view (set by the camera preset). */
   fovBase = 45;
+  private bloomCfg = { strength: 0.55, threshold: 0.82 };
 
   constructor(parent: HTMLElement, quality: Quality) {
     this.quality = quality;
@@ -101,7 +102,12 @@ export class Stage {
   }
 
   /** Sky, fog and lights for a map theme. */
-  applyTheme(t: { sky: { top: string; mid: string; horizon: string; bottom: string }; fog: { color: string; near: number; far: number }; hemi: { sky: string; ground: string; intensity: number }; sun: { color: string; intensity: number; pos: [number, number, number] }; exposure: number }) {
+  applyTheme(t: { sky: { top: string; mid: string; horizon: string; bottom: string }; fog: { color: string; near: number; far: number }; hemi: { sky: string; ground: string; intensity: number }; sun: { color: string; intensity: number; pos: [number, number, number] }; exposure: number; bloom?: { strength: number; threshold: number } }) {
+    this.bloomCfg = t.bloom ?? { strength: 0.55, threshold: 0.82 };
+    if (this.bloom) {
+      this.bloom.strength = this.bloomCfg.strength;
+      this.bloom.threshold = this.bloomCfg.threshold;
+    }
     const u = this.skyMat.uniforms;
     u.top.value.set(t.sky.top);
     u.mid.value.set(t.sky.mid);
@@ -137,7 +143,7 @@ export class Stage {
     } else if (!this.composer) {
       const composer = new EffectComposer(this.renderer);
       composer.addPass(new RenderPass(this.scene, this.camera));
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.5, 0.82);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), this.bloomCfg.strength, 0.5, this.bloomCfg.threshold);
       composer.addPass(this.bloom);
       composer.addPass(new OutputPass());
       composer.addPass(new ShaderPass(GradeShader));
