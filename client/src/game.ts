@@ -180,6 +180,20 @@ export class Game {
     this.fx = new Fx(stage.scene, this.glowTex);
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
     this.showcase = new Showcase(assets);
+    {
+      // home screen: drag anywhere on the 3D view to turn the hero (all sides, and up to a top view)
+      const cv = this.stage.renderer.domElement;
+      let last: { x: number; y: number } | null = null;
+      cv.addEventListener('pointerdown', (e) => {
+        if (this.mode === 'home') last = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('pointermove', (e) => {
+        if (!last || this.mode !== 'home') return;
+        this.showcase.orbit(e.clientX - last.x, e.clientY - last.y);
+        last = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('pointerup', () => (last = null));
+    }
     const forced = PARAMS.get('map');
     if (forced && forced in MAPS) {
       this.mapId = forced as MapId;
@@ -200,6 +214,45 @@ export class Game {
     if (invite && !AUTOPLAY) setTimeout(() => this.openFriends(invite.toUpperCase().slice(0, 5)), 300);
     requestAnimationFrame(this.frame);
     if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
+  }
+
+  private camPull = 1;
+  private koStreak = 0;
+  private koStreakT = -99;
+  /**
+   * Third-person camera never sits inside a wall, a deck or a big prop: walk the line from the hero to the camera
+   * and pull the camera in front of the first thing that blocks it (fast in, slow back out).
+   */
+  private keepCameraOutOfWalls(dt: number, focus: THREE.Vector3) {
+    const cam = this.stage.camera.position;
+    const w = this.world;
+    const fx = focus.x;
+    const fy = focus.y + 1.3;
+    const fz = focus.z;
+    const dx = cam.x - fx;
+    const dy = cam.y - fy;
+    const dz = cam.z - fz;
+    let hit = 1;
+    const tall = w.map.obstacles.filter((o) => o.r >= 0.8 && Math.abs(o.x - fx) < 14 && Math.abs(o.z - fz) < 14);
+    for (let i = 1; i <= 14 && hit === 1; i++) {
+      const t = 0.12 + (i / 14) * 0.88;
+      const x = fx + dx * t;
+      const y = fy + dy * t;
+      const z = fz + dz * t;
+      if (w.terrain.heightAt(x, z) > y - 0.35) hit = t;
+      else
+        for (const o of tall)
+          if (y < 3.2 && (x - o.x) ** 2 + (z - o.z) ** 2 < (o.r + 0.35) ** 2) {
+            hit = t;
+            break;
+          }
+    }
+    const want = hit < 1 ? Math.max(0.5, hit - 0.1) : 1;
+    this.camPull += (want - this.camPull) * Math.min(1, dt * (want < this.camPull ? 14 : 2.5));
+    if (this.camPull < 0.999) {
+      cam.set(fx + dx * this.camPull, fy + dy * this.camPull + (1 - this.camPull) * 3.2, fz + dz * this.camPull); // rise over the wall
+      this.stage.camera.lookAt(fx, fy, fz);
+    }
   }
 
   // ---------------------------------------------------------------- setup
@@ -512,10 +565,14 @@ export class Game {
     } else {
       if (this.mode === 'match' && this.input.enabled) {
         this.rig.addYaw(this.input.takeYaw(dt));
+        // vertical look: aiming close tilts the camera up to a top view, aiming far lowers it behind the hero
+        const ad = this.input.aimDist;
+        this.rig.heightMul = ad < 8 ? 1 + ((8 - ad) / 5) * 0.9 : 1 - ((ad - 8) / 8) * 0.45;
         const me2 = this.world.players[LOCAL];
         this.rig.autoFollow(dt, me2.facing, Math.max(0, this.lastStickFwd));
       }
       this.rig.update(dt, focus, this.lead);
+      this.keepCameraOutOfWalls(dt, focus);
     }
     // keep the shadow camera on the action
     this.stage.aimSun(focus.x, focus.z);
@@ -902,6 +959,7 @@ export class Game {
         if (e.p === LOCAL) {
           this.sfx.power();
           this.hud.skillBanner(info.name, info.color);
+          this.hud.weaponCard(e.weapon);
           if (this.weaponTips.has(e.weapon) === false) {
             this.weaponTips.add(e.weapon);
             this.hud.tip(`${info.name}: ${info.tip} · press ${this.touch ? 'the big button' : 'J or click'} to use`, 3.5);
@@ -970,12 +1028,23 @@ export class Game {
         this.fx.ring(e.x, e.z, '#b38cff', 2.6, 0.4, 0.4);
         if (e.by === LOCAL) {
           this.sfx.win();
-          this.hud.skillBanner(`KO! +${TUNING.weapons.bubble.koPoints}`, '#ffd23f');
+          // KO streaks: chain knockouts within 6 s for a bigger call-out
+          this.koStreak = this.time - this.koStreakT < 6 ? this.koStreak + 1 : 1;
+          this.koStreakT = this.time;
+          const call = ['', 'KO!', 'DOUBLE KO!', 'TRIPLE KO!', 'MEGA KO!'][this.koStreak] ?? 'UNSTOPPABLE!';
+          this.hud.skillBanner(`${call} +${TUNING.weapons.bubble.koPoints}`, this.koStreak > 1 ? '#ff5fd2' : '#ffd23f');
+          if (this.koStreak > 1) {
+            this.hud.banner(call, 'pink');
+            this.hud.flash('#ff5fd255', 0.35);
+            this.rig.punch(4);
+            this.hud.feed(`🔥 <b>You</b> are on a ${this.koStreak}× KO streak!`);
+          }
           this.hud.floater(this.pos(LOCAL, 2.8), cam, `+${TUNING.weapons.bubble.koPoints}`, 'plus');
           this.slowMo(0.35, 0.3);
           this.roundStats.steals++;
         } else if (e.victim === LOCAL) {
           this.sfx.lose();
+          this.koStreak = 0;
           this.hud.banner(e.by >= 0 ? `${w.players[e.by].name} KO'd you — MASH to escape!` : 'KO! MASH to escape!', 'red');
           this.rig.shake(0.5);
         }
@@ -1407,7 +1476,7 @@ export class Game {
     this.tutT = 0;
     const key = (k: string) => `<span class="key">${k}</span>`;
     if (s === 'move') this.hud.prompt(this.touch ? 'Drag on the left to MOVE' : `${key('W')}${key('A')}${key('S')}${key('D')} to move`);
-    else if (this.world.mode === 'weapons' && s === 'coins') this.hud.prompt('Grab a 🎁 mystery box!');
+    else if (this.world.mode === 'weapons' && s === 'coins') this.hud.prompt('Grab a ❓ mystery box!');
     else if (this.world.mode === 'weapons' && s === 'bank') this.hud.prompt(this.touch ? 'Tap the BIG button to attack!' : `Press ${key('J')} or click to attack!`);
     else if (s === 'coins') this.hud.prompt('Grab the coins!');
     else if (s === 'bank') this.hud.prompt('Bank it! Stand in the <i class="bub-ico"></i> bubble');
@@ -1598,7 +1667,7 @@ export class Game {
           quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
           inMatch: this.mode === 'match',
           camera: CAM_PRESETS[this.rig.preset].label,
-          canUnlockAll: (!!import.meta.env.VITE_PACKED || PARAMS.has('dev')) && this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
+          canUnlockAll: this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
         },
         {
           resume: () => this.setPaused(false),

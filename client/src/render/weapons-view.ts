@@ -3,17 +3,16 @@ import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
 import type { WeaponKind } from '../../../shared/sim/types.ts';
 import { loadModel, type Model } from './models.ts';
-import { addOutlines } from './style.ts';
 import type { Fx } from './fx.ts';
 
 /** Names, colours and icons for the six weapons (HUD, banners, pickups). */
 export const WEAPON_INFO: Record<WeaponKind, { name: string; icon: string; color: string; tip: string }> = {
-  blaster: { name: 'BUBBLE BLASTER', icon: '🫧', color: '#5fe3ff', tip: 'Rapid shots' },
-  rocket: { name: 'ROCKET GLOVE', icon: '🥊', color: '#ff7a3d', tip: 'Big boom, 2 damage' },
-  banana: { name: 'BANANA TRAP', icon: '🍌', color: '#ffe14a', tip: 'Drops behind you' },
-  freeze: { name: 'FREEZE BOMB', icon: '❄️', color: '#9fe8ff', tip: 'Freezes a crowd' },
-  hook: { name: 'MAGNET HOOK', icon: '🧲', color: '#ff5f7a', tip: 'Yank them to you' },
-  hammer: { name: 'THUNDER AXE', icon: '🪓', color: '#ffd23f', tip: 'Spin and smash around you' },
+  blaster: { name: 'BUBBLE BLASTER', icon: '🫧', color: '#5fe3ff', tip: 'Rapid bubble shots' },
+  rocket: { name: 'ROCKET LAUNCHER', icon: '🚀', color: '#ff7a3d', tip: 'Big boom, 2 damage' },
+  banana: { name: 'BANANA TRAP', icon: '🍌', color: '#ffe14a', tip: 'Drop it behind you: chasers slip' },
+  freeze: { name: 'FREEZE BOMB', icon: '❄️', color: '#9fe8ff', tip: 'Throw it: freezes everyone it hits' },
+  hook: { name: 'GRAPPLE HOOK', icon: '🪝', color: '#ff5f7a', tip: 'Hook a rival and yank them to you' },
+  hammer: { name: 'THUNDER HAMMER', icon: '🔨', color: '#ffd23f', tip: 'Smash the ground around you' },
 };
 
 const W = TUNING.weapons;
@@ -105,29 +104,43 @@ export function weaponIcon(kind: WeaponKind, size = 128, badge = false): HTMLCan
       shape('#7fdcff', () => circle(50, 50, 12), 6);
       break;
     case 'hook':
-      g.lineWidth = 26;
+      // grappling hook: rope coming in from the top, a shank and two curved prongs
+      g.lineCap = 'round';
+      g.lineWidth = 12;
       g.strokeStyle = INK;
       g.beginPath();
-      g.arc(50, 46, 26, Math.PI, 0, true);
+      g.moveTo(50, 8);
+      g.lineTo(50, 60);
       g.stroke();
-      g.lineWidth = 15;
-      g.strokeStyle = '#ff4d6d';
+      g.lineWidth = 6;
+      g.strokeStyle = '#d9a066';
       g.stroke();
-      shape('#e6e6f0', () => g.roundRect(17, 34, 16, 18, 3), 6);
-      shape('#e6e6f0', () => g.roundRect(67, 34, 16, 18, 3), 6);
+      for (const sx of [-1, 1]) {
+        g.beginPath();
+        g.moveTo(50, 62);
+        g.quadraticCurveTo(50 + sx * 34, 70, 50 + sx * 30, 40);
+        g.lineWidth = 16;
+        g.strokeStyle = INK;
+        g.stroke();
+        g.lineWidth = 9;
+        g.strokeStyle = '#e6e6f0';
+        g.stroke();
+      }
+      shape('#ff4d6d', () => circle(50, 64, 10), 6);
       break;
     case 'hammer':
-      shape('#a8642a', () => g.roundRect(40, 14, 12, 78, 5)); // handle
-      shape('#ffd23f', () => {
-        // axe blade
-        g.moveTo(50, 16);
-        g.bezierCurveTo(78, 4, 98, 28, 92, 54);
-        g.bezierCurveTo(80, 46, 66, 46, 50, 50);
+      shape('#a8642a', () => g.roundRect(44, 34, 12, 60, 5)); // handle
+      shape('#ffd23f', () => g.roundRect(16, 12, 68, 30, 9)); // hammer head
+      shape('#fff27a', () => g.roundRect(22, 16, 56, 6, 3), 3);
+      // lightning bolt
+      shape('#5fe3ff', () => {
+        g.moveTo(54, 18);
+        g.lineTo(44, 30);
+        g.lineTo(52, 30);
+        g.lineTo(46, 40);
+        g.lineTo(60, 26);
+        g.lineTo(52, 26);
         g.closePath();
-      });
-      shape('#fff27a', () => {
-        g.moveTo(62, 22);
-        g.lineTo(80, 30);
       }, 3);
       break;
   }
@@ -339,26 +352,41 @@ export class WeaponsView {
       let v = this.boxes.get(b.id);
       if (!v) {
         const root = new THREE.Group();
-        const glow = this.glowSprite('#ffd84a', 1.7); // small warm halo only: a big one bleaches the chest on a bright map
+        const glow = this.glowSprite('#a98cff', 2.1); // small warm halo only: a big one bleaches the chest on a bright map
         glow.material.blending = THREE.NormalBlending;
         glow.position.y = 0.7;
-        // KayKit golden chest (same art family as the heroes); on the realistic desert map a real military ammo crate
+        // Mystery box (Subway Surfers style): glossy purple-blue cube with gold question marks, floating and spinning
         const model = new THREE.Group();
-        const real = false; // every map uses the stylized gold chest
-        const src = this.env.get(real ? 'desert_ammo' : 'chest_gold');
+        const src = this.env.get('mystery_cube') ?? this.env.get('chest_gold');
         if (src) {
           const c = src.clone();
-          c.scale.setScalar(real ? 4.4 : 0.85);
-          if (real)
+          const isCube = this.env.has('mystery_cube');
+          c.scale.setScalar(isCube ? 0.95 : 0.85);
+          if (isCube) {
+            c.position.y = -0.05;
             c.traverse((m) => {
               const mesh = m as THREE.Mesh;
               if (!mesh.isMesh) return;
-              const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-              mat.color.setScalar(2.6); // the scanned olive paint is very dark: lift it so the crate reads from afar
+              mesh.castShadow = true;
+              const base = mesh.material as THREE.MeshStandardMaterial;
+              const mat = new THREE.MeshPhysicalMaterial({ clearcoat: 0.8, clearcoatRoughness: 0.15, roughness: 0.32, metalness: 0.05, envMapIntensity: 1.1 });
+              // the model's gold body becomes the purple box; its white question marks become glowing gold
+              const isBody = base.color.b < 0.5;
+              if (isBody) {
+                mat.color.set('#5b3bff');
+                mat.emissive.set('#2a12a8');
+                mat.emissiveIntensity = 0.35;
+              } else {
+                mat.color.set('#ffd23f');
+                mat.emissive.set('#ffb000');
+                mat.emissiveIntensity = 0.9;
+                mat.metalness = 0.4;
+                mat.roughness = 0.22;
+              }
               mesh.material = mat;
             });
+          }
           model.add(c);
-          if (!real) addOutlines(c, 0.03 / 0.85);
         }
         const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.4, 5.5, 20, 1, true), this.beamMat);
         beam.position.y = 2.75;

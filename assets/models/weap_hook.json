@@ -1,0 +1,29 @@
+{
+  "name": "weap_hook",
+  "query": "cartoon grappling hook",
+  "title": "Cartoon Grappling Hook",
+  "source": "sketchfab",
+  "id": "47e3c1f1071846e78d25db9233a0a44f",
+  "link": "https://sketchfab.com/3d-models/none-47e3c1f1071846e78d25db9233a0a44f",
+  "author": "Matt LeMoine",
+  "authorLink": "https://sketchfab.com/Matt_LeMoine",
+  "licence": "CC Attribution",
+  "needsCredit": true,
+  "triangles": 2188,
+  "trianglesOriginal": 2188,
+  "bytes": 94676,
+  "dimensions": [
+    0.538,
+    0.6,
+    0.328
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": 0.6,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

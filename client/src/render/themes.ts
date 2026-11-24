@@ -68,8 +68,9 @@ export interface Theme {
 const CANDY_TILE_Y = -1; // candy tiles are 1 m thick, grounded at y = 0: top surface at world y = 0
 const candy: Theme = {
   id: 'candy',
-  sky: { top: '#6fd0ff', mid: '#ffb3e6', horizon: '#fff2c9', bottom: '#ffd0ee' },
-  fog: { color: '#f3d3ee', near: 55, far: 210 }, // soft haze: far candy fades into the sky, near stays crisp
+  // clear summer sky: deep blue overhead, light at the horizon; haze only very far away
+  sky: { top: '#1f7cf2', mid: '#62b4ff', horizon: '#dff1ff', bottom: '#ffd0ee' },
+  fog: { color: '#cfe7ff', near: 120, far: 320 },
   bloom: { strength: 0.3, threshold: 0.97 },
   hemi: { sky: '#fff3fb', ground: '#b87fae', intensity: 0.58 },
   sun: { color: '#ffe9c4', intensity: 2.5, pos: [-16, 22, 11] }, // warm low sun: long readable shadows
@@ -649,7 +650,7 @@ const desert: Theme = {
         // a ridge of stylized sandstone along the collision row (prop's z axis)
         for (let k = -1; k <= 1; k++) {
           const h = dhash(o.x + k, o.z - k);
-          add('desert_boulder_a', 2.6 + h * 0.9, (h - 0.5) * 0.6, k * 2.9, h * 6.28);
+          add('desert_boulder_a', 2.4 + h * 0.3, (h - 0.5) * 0.3, k * 2.9, h * 6.28); // ~3.6–4 m: the size of the collision circles
         }
         break;
       case 'dboulder':

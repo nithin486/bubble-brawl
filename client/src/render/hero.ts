@@ -8,12 +8,19 @@ import { TUNING } from '../../../shared/config/tuning.ts';
 import { angleDiff } from '../../../shared/sim/math.ts';
 
 /** Which env piece (tools/extract-props.mjs) each weapon looks like in the hero's hand. */
+/** Held props that are not KayKit (no built-in grip): length in metres, grip point, rotation in the hand. */
+const NON_KAYKIT: Partial<Record<WeaponKind, { len: number; y: number; rot: [number, number, number] }>> = {
+  banana: { len: 0.55, y: 0, rot: [0, Math.PI / 2, 0.5] },
+  hammer: { len: 0.95, y: -0.42, rot: [0, Math.PI / 2, 0] }, // held at the handle, head up
+  hook: { len: 0.55, y: -0.3, rot: [Math.PI / 2, 0, 0] }, // hook points forward, rope coil in the hand
+};
+
 const HELD_PIECE: Record<WeaponKind, string> = {
   blaster: 'weap_blaster',
   rocket: 'weap_launcher',
   freeze: 'weap_bomb',
-  hook: 'weap_wand',
-  hammer: 'weap_axe',
+  hook: 'weap_hook',
+  hammer: 'weap_hammer',
   banana: 'weap_banana',
 };
 
@@ -187,17 +194,20 @@ export class HeroView {
           mesh.frustumCulled = false;
         }
       });
-      if (want === 'banana') {
-        // not a KayKit prop: centre it, size it to a banana in a hand, tilt it
+      const grip = NON_KAYKIT[want];
+      if (grip) {
+        // not a KayKit prop: size it for a hand, put the grip point in the palm, orient it
         const box = new THREE.Box3().setFromObject(o);
         const size = box.getSize(new THREE.Vector3());
-        const k = 0.55 / (Math.max(size.x, size.y, size.z) || 1) / this.baseScale;
+        const k = grip.len / (Math.max(size.x, size.y, size.z) || 1) / this.baseScale;
         const c = box.getCenter(new THREE.Vector3());
+        // grip.y: 0 = hold at the centre, -0.5 = hold at the bottom end (a hammer's handle)
+        c.y += size.y * grip.y;
         const holder = new THREE.Group();
         o.position.sub(c);
         holder.add(o);
         holder.scale.setScalar(k);
-        holder.rotation.set(0, Math.PI / 2, 0.5);
+        holder.rotation.set(...grip.rot);
         holder.position.set(0, 0.08, 0);
         o = holder;
       }

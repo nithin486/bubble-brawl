@@ -539,3 +539,14 @@ body.cam-third .tag.me .tn{display:none}
 .big-btn.alt { background: var(--blue-hi); box-shadow: inset 0 0 0 2.5px #ffffff90, inset 0 4px 0 #ffffffa0, 0 6px 0 #0d2f78, 0 10px 20px #0a102c70; }
 .toggle button { border-radius: 999px; }
 .banner { filter: drop-shadow(0 6px 12px #0a102c80); }
+
+/* weapon pickup card */
+.wcard { position: absolute; left: 50%; bottom: calc(86px + var(--safe-b)); transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 18px 8px 8px;
+  border-radius: 999px; background: linear-gradient(180deg, #2a3f86f2, #16204ff2); box-shadow: inset 0 0 0 2.5px var(--wc, #fff), 0 0 24px color-mix(in srgb, var(--wc, #fff) 50%, transparent), 0 6px 16px #0a102c80;
+  animation: wcin .35s cubic-bezier(.2, 1.4, .4, 1); transition: opacity .35s, transform .35s; pointer-events: none; white-space: nowrap; }
+.wcard img { width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #ffffff, color-mix(in srgb, var(--wc, #fff) 60%, #16204f)); padding: 4px; box-shadow: inset 0 0 0 2px #fff; }
+.wcard b { display: block; font: 400 22px var(--display); color: var(--wc, #fff); text-shadow: 0 2px 0 #0a102c; letter-spacing: .5px; }
+.wcard span { display: block; font-weight: 900; font-size: 13px; opacity: .95; }
+.wcard.out { opacity: 0; transform: translateX(-50%) translateY(10px); }
+@keyframes wcin { from { opacity: 0; transform: translateX(-50%) translateY(30px) scale(.7); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+@media (max-height: 520px) { .wcard { bottom: calc(64px + var(--safe-b)); padding: 5px 14px 5px 5px; } .wcard img { width: 40px; height: 40px; } .wcard b { font-size: 17px; } .wcard span { font-size: 11px; } }

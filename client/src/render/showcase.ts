@@ -34,6 +34,19 @@ export class Showcase {
   screenX = 0;
   screenY = 0;
   drag = 0;
+  /** Orbit elevation (radians): drag up/down to look at the hero from below the waist up to straight overhead. */
+  pitch = 0.13;
+  pitchTarget = 0.13;
+
+  /** Set once the player drags the hero. */
+  touched = false;
+
+  /** Drag on the hero stage: sideways spins, vertical orbits up to an overhead view. */
+  orbit(dx: number, dy: number) {
+    this.touched = true;
+    this.drag = dx * 0.012;
+    this.pitchTarget = Math.min(1.5, Math.max(-0.15, this.pitchTarget + dy * 0.008));
+  }
 
   constructor(assets: Assets) {
     this.assets = assets;
@@ -99,9 +112,11 @@ export class Showcase {
     for (const v of this.views) v.mixer.update(dt);
     this.spin += this.drag;
     this.drag *= 0.9;
+    this.pitch += (this.pitchTarget - this.pitch) * Math.min(1, dt * 10);
     const single = this.views.length === 1;
     for (const v of this.views) {
-      v.model.rotation.y = (single ? 0.35 + Math.sin(this.t * 0.6) * 0.25 : 0.2) + this.spin;
+      // idle sway only until the player starts turning the hero by hand
+      v.model.rotation.y = (single && !this.touched ? 0.35 + Math.sin(this.t * 0.6) * 0.25 : 0.2) + this.spin;
     }
   }
 
@@ -123,8 +138,10 @@ export class Showcase {
     // frame by height so the hero keeps the same size on any screen
     this.camera.fov = single ? 26 : 30;
     const dist = single ? 11 : 14;
-    this.camera.position.set(0, single ? 2.6 : 2.6, dist);
-    this.camera.lookAt(0, single ? 1.2 : 1.2, 0);
+    // orbit around the hero's chest: any side (drag sideways) and any height up to a top view (drag up/down)
+    const p = single ? this.pitch : 0.13;
+    this.camera.position.set(0, 1.2 + Math.sin(p) * dist, Math.cos(p) * dist);
+    this.camera.lookAt(0, 1.2, 0);
     // shift the picture so the group sits at screenX/screenY
     this.camera.setViewOffset(w, h, (-this.screenX * w) / 2, (this.screenY * h) / 2, w, h);
     this.camera.updateProjectionMatrix();

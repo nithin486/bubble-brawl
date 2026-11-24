@@ -1,0 +1,29 @@
+{
+  "name": "mystery_cube",
+  "query": "question mark box",
+  "title": "Yellow Question Box",
+  "source": "sketchfab",
+  "id": "6f9d9a9878eb4f7793c279eab4be5368",
+  "link": "https://sketchfab.com/3d-models/none-6f9d9a9878eb4f7793c279eab4be5368",
+  "author": "becduino",
+  "authorLink": "https://sketchfab.com/becduino",
+  "licence": "CC Attribution",
+  "needsCredit": true,
+  "triangles": 6148,
+  "trianglesOriginal": 6148,
+  "bytes": 89944,
+  "dimensions": [
+    1.34,
+    1,
+    1.34
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": 1,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

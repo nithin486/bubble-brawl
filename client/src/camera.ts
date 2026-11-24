@@ -46,6 +46,10 @@ export class CameraRig {
   /** Desired vertical FOV for this preset (Stage keeps aspect handling). */
   presetFov = 45;
 
+  /** Vertical look (third person): 1 = default; bigger = higher, more top-down; smaller = lower, looking farther. */
+  heightMul = 1;
+  private heightS = 1;
+
   /** Camera yaw (radians). 0 = looking toward -z. Only the third-person view turns. */
   yaw = 0;
   private manualT = 9;
@@ -123,6 +127,11 @@ export class CameraRig {
     const crowdK = this.turns ? 0.12 : 0.28;
     const off = new THREE.Vector3().copy(this.offset).multiplyScalar((1 - this.zoom * 0.45) * (1 + this.crowdS * crowdK));
     off.y -= this.zoom * 1.2;
+    if (this.turns) {
+      this.heightS += (this.heightMul - this.heightS) * Math.min(1, dt * 8);
+      off.y *= this.heightS;
+      off.z *= 1 + (this.heightS - 1) * 0.25;
+    }
     const yaw = this.turns ? this.yaw : 0;
     off.applyAxisAngle(UP, yaw);
     this.camera.position.copy(this.target).add(off);

@@ -168,10 +168,13 @@ export class Stage {
       this.sun.intensity = t.sun.intensity * 1.15;
       this.hemi.intensity = t.hemi.intensity * 0.72;
       // bloom only on real HDR highlights (glows, muzzle flashes), never on pale ground
-      this.bloomCfg = { strength: Math.max(this.bloomCfg.strength, 0.35), threshold: Math.max(this.bloomCfg.threshold, 1.05) };
+      this.bloomCfg = { strength: Math.min(this.bloomCfg.strength, 0.22), threshold: Math.max(this.bloomCfg.threshold, 1.1) };
       if (this.bloom) { this.bloom.strength = this.bloomCfg.strength; this.bloom.threshold = this.bloomCfg.threshold; }
       this.rim.intensity = 1.1;
       this.renderer.toneMappingExposure = t.exposure * 0.96;
+      // clear weather: haze only at the far horizon, never over the arena
+      fog.near = Math.max(fog.near, 110);
+      fog.far = Math.max(fog.far, 300);
       this.gradeCfg = { sat: (t.grade?.sat ?? 1.18) * 1.06, con: t.grade?.con ?? 1.06 };
       if (this.gradePass) {
         this.gradePass.uniforms.sat.value = this.gradeCfg.sat;
@@ -189,7 +192,7 @@ export class Stage {
   setQuality(q: Quality) {
     this.quality = q;
     const dpr = window.devicePixelRatio || 1;
-    this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1));
+    this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.75 : 1.25)); // sharper: low res read as 'blurry'
     this.sun.castShadow = q !== 'low';
     if (q === 'low' || (AO_ON && this.composer && (q === 'high') !== !!this.ao)) {
       // rebuild when AO availability changes
@@ -203,7 +206,7 @@ export class Stage {
       this.gradePass = null;
     } else if (!this.composer) {
       // MSAA inside the composer (the canvas' own antialias is lost once we render to targets)
-      const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true, samples: q === 'high' ? 4 : 2 });
+      const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true, samples: 4 });
       const composer = new EffectComposer(this.renderer, rt);
       composer.addPass(new RenderPass(this.scene, this.camera));
       if (LOOK === 'toy' && q === 'high' && AO_ON) {
@@ -222,7 +225,7 @@ export class Stage {
       this.gradePass = new ShaderPass(GradeShader);
       this.gradePass.uniforms.sat.value = this.gradeCfg.sat;
       this.gradePass.uniforms.con.value = this.gradeCfg.con;
-      this.gradePass.uniforms.vig.value = LOOK === 'toy' ? 0.55 : 0;
+      this.gradePass.uniforms.vig.value = 0; // no vignette: players read it as blur
       composer.addPass(this.gradePass);
       this.composer = composer;
     }

@@ -125,6 +125,9 @@ const ENV = {
       .sort()
       .map((f) => [f.slice(0, -4), path.join(root, 'assets/props', f)]),
     ['weap_banana', path.join(root, 'assets/models/banana.glb')],
+    ['weap_hammer', path.join(root, 'assets/models/weap_hammer.glb')],
+    ['weap_hook', path.join(root, 'assets/models/weap_hook.glb')],
+    ['mystery_cube', path.join(root, 'assets/models/mystery_cube.glb')],
   ],
   dungeon: [
     ['coin', path.join(root, 'assets/env/dungeon/coin.gltf.glb')],

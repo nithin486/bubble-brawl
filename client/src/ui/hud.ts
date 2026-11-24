@@ -64,7 +64,7 @@ export const MOD_INFO: Record<string, { name: string; text: string; icon: string
   // weapons-mode twists
   rapid: { name: 'RAPID FIRE', text: 'Every weapon reloads twice as fast', icon: '🔫', color: '#5fe3ff' },
   ammo: { name: 'DOUBLE AMMO', text: 'Every box gives you twice the ammo', icon: '🎒', color: '#9dff7a' },
-  rockets: { name: 'ROCKET PARTY', text: 'Every mystery box is a Rocket Glove — boom!', icon: '🚀', color: '#ff7a3d' },
+  rockets: { name: 'ROCKET PARTY', text: 'Every mystery box is a Rocket Launcher — boom!', icon: '🚀', color: '#ff7a3d' },
   blasters: { name: 'BLASTER BASH', text: 'Every mystery box is a Bubble Blaster', icon: '🫧', color: '#5fe3ff' },
   frost: { name: 'DEEP FREEZE', text: 'Every mystery box is a Freeze Bomb — keep moving!', icon: '❄️', color: '#9fe8ff' },
   boxfest: { name: 'BOX FEST', text: 'Mystery boxes come back almost instantly', icon: '🎁', color: '#ffd84a' },
@@ -583,6 +583,19 @@ export class Hud {
     while (this.feedEl.children.length > 4) this.feedEl.lastElementChild!.remove();
     setTimeout(() => f.classList.add('out'), 3200);
     setTimeout(() => f.remove(), 3700);
+  }
+
+  private wcard: HTMLElement | null = null;
+  /** Weapon pickup card: big icon, name and what it does (slides up above the buttons, 2.2 s). */
+  weaponCard(kind: keyof typeof WEAPON_INFO) {
+    const info = WEAPON_INFO[kind];
+    this.wcard?.remove();
+    const c = el('div', 'wcard', `<img src="${weaponIcon(kind, 128).toDataURL()}"><div><b>${info.name}</b><span>${info.tip}</span></div>`);
+    c.style.setProperty('--wc', info.color);
+    this.root.append(c);
+    this.wcard = c;
+    setTimeout(() => c.classList.add('out'), 2000);
+    setTimeout(() => c.remove(), 2400);
   }
 
   /** A short hint near the middle of the screen. */

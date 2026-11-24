@@ -9,6 +9,8 @@ const W = TUNING.weapons;
 const HERO_R = TUNING.hero.radius;
 /** Assist cone (degrees, total) when you aim with the scope: only a rival almost under it pulls the shot. */
 export const AIMED_CONE = 24;
+/** Assist cone without the scope: shots go where you face, with only a small snap onto a rival (was 150°, felt random). */
+export const AIM_CONE = 50;
 
 export type HitKind = 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers' | 'bomb' | 'traffic' | 'bell' | WeaponKind;
 
@@ -230,10 +232,11 @@ export class Brawl {
     const c = W[k];
     p.fireCd = c.cooldown * (w.mod === 'rapid' ? TUNING.mods.rapid.cooldownMult : 1);
     // aim assist toward the best rival in front (a small cone when the player is aiming with the scope)
-    const aim = (range: number, cone: number) => w.aimAt(p, range, aimed ? Math.min(cone, AIMED_CONE) : cone);
+    // bots keep a wider snap (they can't fine-aim a stick), players get precise shots
+    const aim = (range: number, cone: number) => w.aimAt(p, range, aimed ? Math.min(cone, AIMED_CONE) : p.isBot ? 110 : cone);
     if (k === 'blaster' || k === 'rocket') {
       const g = W[k];
-      aim(g.range * 0.8, 150);
+      aim(g.range * 0.8, AIM_CONE);
       const sp = g.speed;
       this.projectiles.push({
         id: this.nextId++, kind: k, owner: p.id,
@@ -246,7 +249,7 @@ export class Brawl {
       const bz = p.z - dirZ(p.facing) * 1.0;
       if (w.arena.solid(bx, bz)) this.mines.push({ id: this.nextId++, owner: p.id, x: bx, z: bz, arm: W.banana.arm, life: W.banana.life });
     } else if (k === 'freeze') {
-      const t = aim(W.freeze.throw + 2, 150);
+      const t = aim(W.freeze.throw + 2, AIM_CONE);
       const reach = aimed ? Math.min(W.freeze.throw + 3, Math.max(3, aimed.d)) : W.freeze.throw;
       let tx = p.x + dirX(p.facing) * reach;
       let tz = p.z + dirZ(p.facing) * reach;
