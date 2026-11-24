@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { World } from '../../../shared/sim/world.ts';
 import type { MapId, Obstacle } from '../../../shared/config/maps.ts';
-import { SPOKES, spokeTile, CANDY_K, DESERT } from '../../../shared/config/maps.ts';
+import { SPOKES, spokeTile, CANDY_K, DESERT, bgTile, bgBridgeAxis } from '../../../shared/config/maps.ts';
 import { hexToWorld, key } from '../../../shared/sim/arena.ts';
 import type { Rng } from '../../../shared/sim/math.ts';
 
@@ -34,6 +34,8 @@ export interface TilePlan {
   scale: [number, number, number];
   y: number;
   color?: THREE.Color;
+  /** Underside size factor (default 1; ~0 = none, e.g. under a bridge). */
+  underScale?: number;
 }
 
 export interface Theme {
@@ -711,4 +713,185 @@ const desert: Theme = {
   },
 };
 
-export const THEMES: Record<MapId, Theme> = { candy, downtown, city, spooky, village, desert };
+
+// =================================================================== Bubblegum Islands (the premium map)
+
+/** Tiny deterministic hash for tile tints. */
+const bghash = (a: number, b: number) => {
+  const h = Math.sin(a * 91.3 + b * 47.7) * 43758.5453;
+  return h - Math.floor(h);
+};
+
+/** Iridescent soap bubbles rising round the fountain: one Points draw call, animated on the GPU. */
+function fountainBubbles(): THREE.Points {
+  const N = 170;
+  const pos = new Float32Array(N * 3);
+  const seed = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) {
+    const a = bghash(i, 1) * Math.PI * 2;
+    const r = 0.8 + bghash(i, 2) * 7.5;
+    pos[i * 3] = Math.cos(a) * r;
+    pos[i * 3 + 1] = bghash(i, 3) * 16;
+    pos[i * 3 + 2] = Math.sin(a) * r;
+    seed[i * 2] = bghash(i, 4);
+    seed[i * 2 + 1] = 0.4 + bghash(i, 5) * 0.9;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('seed', new THREE.BufferAttribute(seed, 2));
+  const m = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { time: { value: 0 }, scale: { value: 300 } },
+    vertexShader: `uniform float time; uniform float scale; attribute vec2 seed; varying float vS; varying float vA;
+      void main(){
+        vec3 p = position;
+        p.y = 1.3 + mod(p.y + time * (0.7 + seed.y * 0.8), 16.0);
+        p.x += sin(time * 0.6 + seed.x * 40.0) * 0.5; p.z += cos(time * 0.5 + seed.x * 30.0) * 0.5;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        vS = seed.x; vA = smoothstep(0.0, 2.0, p.y - 1.3) * smoothstep(16.0, 11.0, p.y - 1.3);
+        gl_PointSize = (0.16 + 0.34 * seed.x) * scale / -mv.z;
+      }`,
+    fragmentShader: `varying float vS; varying float vA;
+      void main(){
+        vec2 c = gl_PointCoord - 0.5; float d = length(c) * 2.0;
+        if (d > 1.0) discard;
+        float rim = smoothstep(0.55, 0.95, d) * (1.0 - smoothstep(0.95, 1.0, d));
+        vec3 irid = 0.55 + 0.45 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + vS + d * 0.6));
+        float glint = smoothstep(0.35, 0.0, length(c - vec2(-0.18, 0.2)));
+        gl_FragColor = vec4(irid * rim + vec3(glint), (0.12 + rim * 0.55 + glint * 0.6) * vA);
+      }`,
+  });
+  const pts = new THREE.Points(g, m);
+  pts.position.y = 1.2;
+  pts.frustumCulled = false;
+  pts.renderOrder = 5;
+  pts.onBeforeRender = (r) => {
+    m.uniforms.time.value = performance.now() / 1000;
+    m.uniforms.scale.value = r.domElement.height * 0.9;
+  };
+  return pts;
+}
+
+const bubblegum: Theme = {
+  id: 'bubblegum',
+  // dreamy daylight: saturated blue up high melting into pink candy haze at the horizon
+  sky: { top: '#3f7dff', mid: '#8cc8ff', horizon: '#ffe3f4', bottom: '#ffb8e2' },
+  fog: { color: '#ffc4e6', near: 110, far: 360 },
+  bloom: { strength: 0.26, threshold: 0.98 },
+  hemi: { sky: '#f6e8ff', ground: '#b878d0', intensity: 0.46 },
+  sun: { color: '#fff0d2', intensity: 2.3, pos: [-18, 24, 12] },
+  exposure: 0.84,
+  grade: { sat: 1.22, con: 1.12 },
+  clouds: { color: '#ffffff', emissive: '#ffd0ee', intensity: 0.55 },
+  waterfalls: false,
+  bubbles: true,
+  under: { piece: 'bg_under', sx: 1, sy: 1, sz: 1, y: -3.6, chunkY: -3.6 },
+  core: [
+    { y: -4.8, r: 14, s: 0.95 },
+    { y: -6.2, r: 10, s: 0.9 },
+    { y: -7.6, r: 6, s: 0.85 },
+  ],
+  tiles(world) {
+    return world.arena.tiles.map((t) => {
+      const i = t.q;
+      const j = t.r;
+      const kind = bgTile(i, j);
+      const even = (i + j) % 2 === 0;
+      const tint = 0.95 + bghash(i, j) * 0.08;
+      const color = new THREE.Color(tint, tint, tint);
+      if (kind === 'bridge') {
+        const axis = bgBridgeAxis(i, j);
+        return { piece: 'bg_bridge', rot: axis === 'x' ? Math.PI / 2 : 0, scale: [1, 1, 1] as [number, number, number], y: -1, color: new THREE.Color(1, 1, 1), underScale: 0.0001 };
+      }
+      const piece =
+        kind === 'island'
+          ? Math.max(Math.abs(i), Math.abs(j)) <= 1
+            ? 'bg_tile_pink'
+            : (i === 0 || j === 0)
+              ? 'bg_tile_cream'
+              : even
+                ? 'bg_tile_mint'
+                : 'bg_tile_mint2'
+          : kind === 'sat'
+            ? even
+              ? 'bg_tile_sky'
+              : 'bg_tile_sky2'
+            : even
+              ? 'bg_tile_lilac'
+              : 'bg_tile_lilac2';
+      return { piece, rot: Math.floor(bghash(j, i) * 4) * (Math.PI / 2), scale: [1, 1, 1] as [number, number, number], y: -1, color };
+    });
+  },
+  prop(o, add, glow) {
+    const DECK = 1.2;
+    switch (o.kind) {
+      case 'bgplaza':
+        add('bg_plaza', 1);
+        break;
+      case 'bgramp':
+        add('bg_ramp', 1);
+        break;
+      case 'bgramp4':
+        add('bg_ramp4', 1);
+        break;
+      case 'bgblock':
+        add('bg_block', 1);
+        break;
+      case 'bgfountain':
+        add('bg_fountain', 1, 0, 0, 0, DECK);
+        glow('#ff9ad8', 7, 0, DECK + 7.6, 0);
+        break;
+      case 'bggumball':
+        add('bg_gumball', 1);
+        break;
+      case 'bgmush_pink':
+        add('bg_mush_pink', 0.78);
+        break;
+      case 'bgmush_aqua':
+        add('bg_mush_aqua', 0.78);
+        break;
+      case 'bgmush_lilac':
+        add('bg_mush_lilac', 0.78);
+        break;
+      case 'bgcry_pink':
+        add('bg_cry_pink', 1);
+        glow('#ff8fd0', 3.2, 0, 1.4, 0);
+        break;
+      case 'bgcry_aqua':
+        add('bg_cry_aqua', 1);
+        glow('#7fe8ff', 3.2, 0, 1.4, 0);
+        break;
+      case 'bgcry_lilac':
+        add('bg_cry_lilac', 1);
+        glow('#c2a0ff', 3.2, 0, 1.4, 0);
+        break;
+      case 'bgpillar':
+        add('bg_pillar', 1);
+        break;
+      case 'bglamp':
+        add('bg_lamp', 1);
+        glow('#ffdca0', 2.6, 0, 2.5, 0.2);
+        break;
+      case 'bgboulder':
+        add('bg_boulder', 1);
+        break;
+    }
+  },
+  extras(ctx) {
+    ctx.add(fountainBubbles());
+  },
+  backdrop(ctx) {
+    // a whole archipelago: floating islands with waterfalls, a candy castle and crystal gardens, big ones far away for depth
+    const spots: [string, number, number, number, number][] = [
+      // [piece, angle, distance, y, scale]
+      ['bg_islet_a', 0.45, 62, -7, 1.1], ['bg_islet_b', 1.15, 88, -11, 1.5], ['bg_islet_c', 1.9, 66, -5, 1.0], ['bg_islet_a', 2.55, 98, -16, 1.8],
+      ['bg_islet_b', 3.2, 70, -8, 1.15], ['bg_islet_c', 3.85, 100, -14, 1.8], ['bg_islet_a', 4.5, 64, -6, 1.05], ['bg_islet_b', 5.2, 96, -20, 2.0],
+      ['bg_islet_c', 5.85, 74, -9, 1.25], ['bg_islet_b', 0.0, 130, -26, 2.6], ['bg_islet_a', 2.1, 140, -30, 2.8], ['bg_islet_c', 4.2, 135, -28, 2.7],
+    ];
+    spots.forEach(([piece, a, d, y, s], k) => ctx.place(piece, Math.sin(a) * d, y, Math.cos(a) * d, s, bghash(k, 7) * 6.28));
+  },
+};
+
+export const THEMES: Record<MapId, Theme> = { candy, downtown, city, spooky, village, desert, bubblegum };

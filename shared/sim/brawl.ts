@@ -21,6 +21,9 @@ export class Brawl {
   throws: Throw[] = [];
   private w: World;
   private nextId = 1;
+  private clock = 0;
+  /** Player id -> time until which weapon stuns (freeze, banana slip) can't catch them again: no stun-locking. */
+  private stunImmune = new Map<number, number>();
 
   constructor(w: World) {
     this.w = w;
@@ -57,6 +60,7 @@ export class Brawl {
     this.projectiles = [];
     this.mines = [];
     this.throws = [];
+    this.stunImmune.clear();
     for (const p of this.w.players) {
       p.hp = W.hp;
       p.weapon = null;
@@ -90,10 +94,21 @@ export class Brawl {
     return 'blaster';
   }
 
+  /** Stun a player with a weapon (freeze / slip) unless they only just recovered from one. Returns true if it took. */
+  private stun(o: Player, seconds: number, ev: 'slip' | 'frozen') {
+    if ((this.stunImmune.get(o.id) ?? 0) > this.clock || (o.state as string) === 'bubble') return false;
+    o.state = 'stunned';
+    o.stateT = seconds;
+    this.stunImmune.set(o.id, this.clock + seconds + W.stunImmunity);
+    this.w.events.push({ t: ev, p: o.id });
+    return true;
+  }
+
   // ------------------------------------------------------------------ per tick
 
   tick(dt: number) {
     const w = this.w;
+    this.clock += dt;
     for (const p of w.players) {
       p.fireCd = Math.max(0, p.fireCd - dt);
       p.lastHitT = Math.max(0, p.lastHitT - dt);
@@ -185,11 +200,7 @@ export class Brawl {
         const sp = Math.hypot(o.vx, o.vz);
         const nx = sp > 0.5 ? o.vx / sp : dirX(o.facing);
         const nz = sp > 0.5 ? o.vz / sp : dirZ(o.facing);
-        if (this.damage(o, by.id === o.id ? null : by, 'banana', c.damage, nx, nz, 1.8) && (o.state as string) !== 'bubble') {
-          o.state = 'stunned';
-          o.stateT = c.slip;
-          w.events.push({ t: 'slip', p: o.id });
-        }
+        if (this.damage(o, by.id === o.id ? null : by, 'banana', c.damage, nx, nz, 1.8)) this.stun(o, c.slip, 'slip');
         break;
       }
     }
@@ -212,11 +223,7 @@ export class Brawl {
         const dx = o.x - t.tx;
         const dz = o.z - t.tz;
         const d = Math.hypot(dx, dz) || 1;
-        if (this.damage(o, by, 'freeze', c.damage, dx / d, dz / d, 0.3) && (o.state as string) !== 'bubble') {
-          o.state = 'stunned';
-          o.stateT = c.freeze;
-          w.events.push({ t: 'frozen', p: o.id });
-        }
+        if (this.damage(o, by, 'freeze', c.damage, dx / d, dz / d, 0.3)) this.stun(o, c.freeze, 'frozen');
       }
       w.events.push({ t: 'boom', kind: 'freeze', x: t.tx, z: t.tz, r: c.radius, hits });
     }
@@ -260,21 +267,30 @@ export class Brawl {
       this.throws.push({ id: this.nextId++, owner: p.id, fx: p.x, fz: p.z, tx, tz, t: 0, total: W.freeze.flight });
     } else if (k === 'hook') {
       const t = w.findTarget(p, W.hook.range, aimed ? 24 : W.hook.coneDeg * 2);
-      if (t) {
+      // line of sight: the cable stops at the first wall, rock or mushroom in the way
+      const blockedAt = t ? this.cableBlock(p.x, p.z, t.x, t.z) : null;
+      if (t && !blockedAt) {
         p.facing = facingOf(t.x - p.x, t.z - p.z);
         const dx = t.x - p.x;
         const dz = t.z - p.z;
         const d = Math.hypot(dx, dz) || 1;
-        // yank to just in front of you
-        const tx = p.x + (dx / d) * W.hook.pullTo;
-        const tz = p.z + (dz / d) * W.hook.pullTo;
-        if (w.arena.solid(tx, tz) && w.clear(tx, tz, HERO_R)) {
-          t.x = tx;
-          t.z = tz;
+        // yank towards you, a step at a time, and stop at the last good spot: never through a wall or off the island
+        const goal = Math.max(W.hook.pullTo, 0);
+        let px = t.x;
+        let pz = t.z;
+        for (let s = 0.4; s <= d - goal + 0.001; s += 0.4) {
+          const nx = t.x - (dx / d) * s;
+          const nz = t.z - (dz / d) * s;
+          if (!w.arena.safe(nx, nz) || !w.clear(nx, nz, HERO_R) || !w.terrain.canStep(w.terrain.heightAt(px, pz), nx, nz)) break;
+          px = nx;
+          pz = nz;
         }
+        t.x = px;
+        t.z = pz;
         w.events.push({ t: 'hook', p: p.id, target: t.id, x: t.x, z: t.z });
         this.damage(t, p, 'hook', W.hook.damage, -dx / d, -dz / d, 0.2);
-      } else w.events.push({ t: 'hook', p: p.id, target: -1, x: p.x + dirX(p.facing) * W.hook.range, z: p.z + dirZ(p.facing) * W.hook.range });
+      } else if (t && blockedAt) w.events.push({ t: 'hook', p: p.id, target: -1, x: blockedAt.x, z: blockedAt.z });
+      else w.events.push({ t: 'hook', p: p.id, target: -1, x: p.x + dirX(p.facing) * W.hook.range, z: p.z + dirZ(p.facing) * W.hook.range });
     } else if (k === 'hammer') {
       p.cast = { kind: 'skill', t: W.hammer.windup, total: W.hammer.windup };
       (p.cast as { hammer?: boolean }).hammer = true;
@@ -286,6 +302,17 @@ export class Brawl {
       p.ammo = 0;
     }
     return true;
+  }
+
+  /** First point along a→b where an obstacle (rock, tree, rail) blocks a hook cable, or null if the line is clear. */
+  private cableBlock(ax: number, az: number, bx: number, bz: number): { x: number; z: number } | null {
+    const d = Math.hypot(bx - ax, bz - az);
+    for (let s = 0.5; s < d - 0.3; s += 0.4) {
+      const x = ax + ((bx - ax) * s) / d;
+      const z = az + ((bz - az) * s) / d;
+      if (!this.w.clear(x, z, 0.05)) return { x, z };
+    }
+    return null;
   }
 
   /** Thunder Hammer lands (after its wind-up). */

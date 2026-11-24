@@ -192,12 +192,19 @@ const desertInputs = fs
   .sort()
   .map((f) => [f.slice(0, -4), path.join(root, 'assets/models', f)]);
 if (desertInputs.length) await mergeEnv(desertInputs, path.join(out, 'env_desert.glb'), 'env_desert');
+// Bubblegum Islands: own Blender pieces (assets/models/bg_*.glb), loaded only when that map is chosen
+const bgInputs = fs
+  .readdirSync(path.join(root, 'assets/models'))
+  .filter((f) => f.startsWith('bg_') && f.endsWith('.glb'))
+  .sort()
+  .map((f) => [f.slice(0, -4), path.join(root, 'assets/models', f)]);
+if (bgInputs.length) await mergeEnv(bgInputs, path.join(out, 'env_bubblegum.glb'), 'env_bubblegum');
 // Models fetched by scripts/fetch_model.js are already game-ready: copy them as they are.
 const modelsSrc = path.join(root, 'assets/models');
 if (fs.existsSync(modelsSrc)) {
   const dst = path.join(out, 'models');
   fs.mkdirSync(dst, { recursive: true });
-  const glbs = fs.readdirSync(modelsSrc).filter((f) => f.endsWith('.glb') && !f.startsWith('desert_')); // desert pieces ship inside env_desert.glb
+  const glbs = fs.readdirSync(modelsSrc).filter((f) => f.endsWith('.glb') && !f.startsWith('desert_') && !f.startsWith('bg_')); // map pieces ship inside env_desert.glb / env_bubblegum.glb
   for (const f of glbs) if (!fresh(path.join(dst, f), [path.join(modelsSrc, f)])) fs.copyFileSync(path.join(modelsSrc, f), path.join(dst, f));
   if (glbs.length) console.log(`models ${glbs.length} → assets/models`);
 }

@@ -19,7 +19,7 @@ export interface Assets {
 }
 
 /** Map art packs loaded on demand (not at boot): realistic maps keep their plain PBR materials. */
-const PACKS: Record<string, string> = { desert: 'assets/env_desert.glb' };
+const PACKS: Record<string, string> = { desert: 'assets/env_desert.glb', bubblegum: 'assets/env_bubblegum.glb' };
 
 /** Load a map's art pack into assets.env (once). */
 export async function loadPack(assets: Assets, name: string, onProgress: (f: number) => void = () => {}) {

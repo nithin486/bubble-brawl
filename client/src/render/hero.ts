@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { addOutlines } from './style.ts';
-import { icy } from './weapons-view.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { HeroAsset } from './assets.ts';
 import type { Player, WeaponKind } from '../../../shared/sim/types.ts';
@@ -10,14 +9,15 @@ import { angleDiff } from '../../../shared/sim/math.ts';
 
 /** Which env piece (tools/extract-props.mjs) each weapon looks like in the hero's hand. */
 /** Held props that are not KayKit (no built-in grip): length in metres, grip point, rotation in the hand. */
-const NON_KAYKIT: Partial<Record<WeaponKind, { len: number; y: number; rot: [number, number, number] }>> = {
-  banana: { len: 0.55, y: 0, rot: [0, Math.PI / 2, 0.5] },
-  hammer: { len: 0.95, y: -0.42, rot: [0, Math.PI / 2, 0] }, // held at the handle, head up
-  hook: { len: 0.55, y: -0.3, rot: [Math.PI / 2, 0, 0] }, // hook points forward, rope coil in the hand
-  // guns are modelled along x: turn them to point forward (+z of the hand), grip a little behind the middle
-  blaster: { len: 0.75, y: 0, rot: [0, -Math.PI / 2, 0] },
-  rocket: { len: 0.95, y: 0, rot: [0, -Math.PI / 2, 0] },
-  freeze: { len: 0.4, y: 0, rot: [0, 0, 0] },
+const NON_KAYKIT: Partial<Record<WeaponKind, { len: number; at: [number, number, number]; rot: [number, number, number] }>> = {
+  // Blender-made props (tools/blender/weapons): modelled with the muzzle on +x, y up. `at` = the grip point in model units
+  // (metres in the model), which is moved into the palm; `len` = the longest side in metres once held.
+  banana: { len: 0.5, at: [0, 0.16, 0], rot: [0, Math.PI / 2, 0.3] },
+  hammer: { len: 1.0, at: [0, -0.12, 0], rot: [0, Math.PI / 2, 0] }, // held at the handle, head up
+  hook: { len: 0.62, at: [-0.1, -0.14, 0], rot: [0, -Math.PI / 2, 0] },
+  blaster: { len: 0.66, at: [-0.05, -0.14, 0], rot: [0, -Math.PI / 2, 0] },
+  rocket: { len: 0.95, at: [-0.1, -0.2, 0], rot: [0, -Math.PI / 2, 0] },
+  freeze: { len: 0.36, at: [0, 0.2, 0], rot: [0, 0, 0] },
 };
 
 const HELD_PIECE: Record<WeaponKind, string> = {
@@ -200,15 +200,12 @@ export class HeroView {
         }
       });
       const grip = NON_KAYKIT[want];
-      if (want === 'freeze') icy(o);
       if (grip) {
         // not a KayKit prop: size it for a hand, put the grip point in the palm, orient it
         const box = new THREE.Box3().setFromObject(o);
         const size = box.getSize(new THREE.Vector3());
         const k = grip.len / (Math.max(size.x, size.y, size.z) || 1) / this.baseScale;
-        const c = box.getCenter(new THREE.Vector3());
-        // grip.y: 0 = hold at the centre, -0.5 = hold at the bottom end (a hammer's handle)
-        c.y += size.y * grip.y;
+        const c = new THREE.Vector3(...grip.at);
         const holder = new THREE.Group();
         o.position.sub(c);
         holder.add(o);

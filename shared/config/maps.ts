@@ -4,10 +4,10 @@ import { TUNING } from './tuning.ts';
 import { hexToWorld, type ArenaShape } from '../sim/arena.ts';
 import type { TerrainDef } from '../sim/terrain.ts';
 
-export type MapId = 'candy' | 'downtown' | 'city' | 'spooky' | 'village' | 'desert';
+export type MapId = 'candy' | 'downtown' | 'city' | 'spooky' | 'village' | 'desert' | 'bubblegum';
 
 /** Maps whose art ships in a separate asset pack, loaded only when the map is chosen (see client/src/render/assets.ts). */
-export const MAP_PACK: Partial<Record<MapId, string>> = { desert: 'desert' };
+export const MAP_PACK: Partial<Record<MapId, string>> = { desert: 'desert', bubblegum: 'bubblegum' };
 
 export interface Obstacle {
   x: number;
@@ -443,6 +443,138 @@ function desert(): MapDef {
   };
 }
 
+
+// ------------------------------------------------------------------ Bubblegum Islands (the premium map)
+
+/** Tile edge of the Bubblegum Islands (m). */
+export const BG_S = 4;
+/** Which grid cells exist: a big central island, four satellite islands on the axes, four corner islets, joined by bridges. */
+export function bgTile(i: number, j: number): 'island' | 'sat' | 'islet' | 'bridge' | null {
+  const a = Math.abs(i);
+  const b = Math.abs(j);
+  if (i * i + j * j <= 13) return 'island';
+  if ((a >= 5 && a <= 7 && b <= 1) || (b >= 5 && b <= 7 && a <= 1)) return 'sat';
+  if (a >= 4 && a <= 6 && b >= 4 && b <= 6 && !(a === 6 && b === 6)) return 'islet';
+  if ((a === 4 && j === 0) || (b === 4 && i === 0)) return 'bridge';
+  if ((a === 6 && b >= 2 && b <= 3) || (b === 6 && a >= 2 && a <= 3)) return 'bridge';
+  return null;
+}
+/** Bridge direction: 'x' runs along the x axis. */
+export function bgBridgeAxis(i: number, j: number): 'x' | 'z' {
+  const a = Math.abs(i);
+  const b = Math.abs(j);
+  if (a === 4 && j === 0) return 'x';
+  if (b === 4 && i === 0) return 'z';
+  return a === 6 ? 'z' : 'x';
+}
+
+/**
+ * ~64 m across, 133 tiles. Built around what the hero can actually do (walk 6 m/s, hero radius 0.45, no jumping):
+ *  - central island with a raised octagon plaza (10 m, 1.2 m up) and the Bubblegum Fountain; four gentle ramps (3.2 m wide)
+ *  - four satellite islands on the axes (low, open fights around a candy mushroom), reached over 4 m bridges (rails = walls, 2.5 m of room)
+ *  - four corner islets with a raised nest each (ramps from two sides) joined to the satellites by 8 m bridges: a ring route round the outside
+ *  - open air between the islands: edges are dangerous, bridges are not
+ * Collision circles match the visuals (assets/models/bg_*.glb). Everything is symmetric so no side is better.
+ */
+function bubblegum(): MapDef {
+  const S = BG_S;
+  const o: Obstacle[] = [];
+  const P = (kind: string, x: number, z: number, r: number, rot = 0, hidden = false) => o.push({ kind, x, z, r, rot, hidden });
+  const decks: TerrainDef['decks'] = [];
+  const ramps: TerrainDef['ramps'] = [];
+  const quad = (x: number, z: number) => [[x, z], [-x, z], [x, -z], [-x, -z]];
+  const ascend = (dx: number, dz: number) => Math.atan2(dx, dz);
+  const H = 1.2;
+
+  // ---- central plaza: an octagon = a 10 m square plus the same square turned 45 degrees
+  decks.push({ x: 0, z: 0, w: 10, d: 10, h: H }, { x: 0, z: 0, w: 10, d: 10, h: H, rot: Math.PI / 4 });
+  P('bgplaza', 0, 0, 0);
+  for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    const x = -dx * 8;
+    const z = -dz * 8;
+    ramps.push({ x, z, rot: ascend(dx, dz), w: 3.2, len: 6, h: H });
+    P('bgramp', x, z, 0, ascend(dx, dz));
+  }
+  // fountain: the pool is solid; the lollipop posts and crystals around it get small hidden circles
+  P('bgfountain', 0, 0, 2.7);
+  for (let k = 0; k < 8; k++) {
+    const a = (k * Math.PI) / 4 + Math.PI / 8;
+    P('bgfountain', Math.sin(a) * 3.35, Math.cos(a) * 3.35, 0.27, 0, true);
+  }
+  for (const [x, z] of quad(2.75, 2.75)) P('bgfountain', x, z, 0.5, 0, true);
+
+  // ---- central island ground: gumball machines on the diagonals, mushrooms, crystals, gate pillars at the bridges
+  // (every gap between two things is at least 1.4 m: heroes are 0.9 m wide and bots must never wedge)
+  for (const [x, z] of quad(8.4, 8.4)) P('bggumball', x, z, 1.0, x * 0.3);
+  const mush = ['bgmush_pink', 'bgmush_aqua', 'bgmush_lilac'];
+  quad(10.6, 3.8).forEach(([x, z], i) => P(mush[i % 3], x, z, 0.5, x * 0.5));
+  quad(3.8, 10.6).forEach(([x, z], i) => P(mush[(i + 1) % 3], x, z, 0.5, z * 0.5));
+  quad(11.8, 7.0).forEach(([x, z], i) => P(i % 2 ? 'bgcry_pink' : 'bgcry_aqua', x, z, 0.95, x));
+  quad(7.0, 11.8).forEach(([x, z], i) => P(i % 2 ? 'bgcry_aqua' : 'bgcry_lilac', x, z, 0.95, z));
+  for (const [x, z] of [[13.6, 2.3], [13.6, -2.3], [-13.6, 2.3], [-13.6, -2.3], [2.3, 13.6], [-2.3, 13.6], [2.3, -13.6], [-2.3, -13.6]]) P('bgpillar', x, z, 0.5, x + z);
+
+  // ---- satellite islands (low, open): a mushroom in the middle, gumballs and rock candy for cover
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const cx = dx * 24;
+    const cz = dz * 24;
+    const px = dz; // across the island
+    const pz = dx;
+    P(mush[(dx + dz + 4) % 3], cx, cz, 0.5, dx);
+    P('bgcry_lilac', cx - dx * 2.8, cz - dz * 2.8, 0.95, dx + dz);
+    for (const s of [1, -1]) {
+      P('bggumball', cx - dx * 2.4 + px * 4.2 * s, cz - dz * 2.4 + pz * 4.2 * s, 1.0, s);
+      P('bgboulder', cx + dx * 4 + px * 3.4 * s, cz + dz * 4 + pz * 3.4 * s, 1.15, s * 2);
+    }
+  }
+
+  // ---- corner islets: a raised nest (4 m block) on the outer edge, reached by two ramps whose low ends touch real ground:
+  //      one from the bridge side (the bridge runs straight up it), one from inside the islet
+  for (const [cx, cz] of quad(20, 20)) {
+    const sx = Math.sign(cx);
+    const sz = Math.sign(cz);
+    decks.push({ x: sx * 20, z: sz * 24, w: 4, d: 4, h: H });
+    P('bgblock', sx * 20, sz * 24, 0);
+    ramps.push({ x: sx * 16, z: sz * 24, rot: ascend(sx, 0), w: 3.2, len: 4, h: H });
+    P('bgramp4', sx * 16, sz * 24, 0, ascend(sx, 0));
+    ramps.push({ x: sx * 20, z: sz * 20, rot: ascend(0, sz), w: 3.2, len: 4, h: H });
+    P('bgramp4', sx * 20, sz * 20, 0, ascend(0, sz));
+    P('bggumball', sx * 16, sz * 19.2, 1.0, sx);
+    P('bgcry_pink', sx * 24.6, sz * 20.4, 0.95, sx);
+    P('bgmush_aqua', sx * 20.4, sz * 15.6, 0.5, sz);
+    P('bglamp', sx * 23.4, sz * 14.4, 0.25, Math.atan2(-sx, -sz));
+  }
+
+  // ---- bridges: the rails are real walls (hidden circles), 2.5 m of room between them
+  for (let i = -7; i <= 7; i++)
+    for (let j = -7; j <= 7; j++) {
+      if (bgTile(i, j) !== 'bridge') continue;
+      const ax = bgBridgeAxis(i, j);
+      P('bgbridge', i * S, j * S, 0, ax === 'x' ? Math.PI / 2 : 0);
+      for (const side of [-1, 1])
+        for (const t of [-1.7, -0.6, 0.6, 1.7]) {
+          const x = ax === 'x' ? i * S + t : i * S + side * 1.55;
+          const z = ax === 'x' ? j * S + side * 1.55 : j * S + t;
+          P('bgbridge', x, z, 0.3, 0, true);
+        }
+    }
+
+  const bank = [[0, 26], [0, -26], [26, 0], [-26, 0], [15, 15], [-15, 15], [15, -15], [-15, -15]];
+  return {
+    id: 'bubblegum',
+    name: 'Bubblegum Islands',
+    blurb: 'Floating candy islands around a giant bubblegum fountain: hold the plaza, flank over the bridges, hide in the mushrooms.',
+    shape: { grid: 'square', tileSize: S, radius: 33.5, mask: (i, j) => bgTile(i, j) !== null, narrow: (i, j) => bgTile(i, j) === 'bridge' },
+    keepRadius: 17,
+    coinScale: 2.4,
+    bankSpots: bank.map(([x, z]) => ({ x, z })),
+    starts: ring(8, 10.6, Math.PI / 8),
+    pads: [],
+    jackpot: { x: 0, z: 0, name: 'Bubblegum Fountain' },
+    obstacles: o,
+    terrain: { decks, ramps },
+  };
+}
+
 // ------------------------------------------------------------------ Village (the first map)
 
 /** Spoke directions (road axes): 30° + 60°·k in facing convention (atan2(x, z)). */
@@ -498,6 +630,6 @@ function village(): MapDef {
   };
 }
 
-export const MAPS: Record<MapId, MapDef> = { candy: candy(), downtown: downtown(), city: city(), spooky: spooky(), village: village(), desert: desert() };
+export const MAPS: Record<MapId, MapDef> = { candy: candy(), downtown: downtown(), city: city(), spooky: spooky(), village: village(), desert: desert(), bubblegum: bubblegum() };
 /** Maps offered to players: Candy Town is the one premium map (older maps stay defined for tests/replays). */
-export const MAP_ROTATION: MapId[] = ['candy', 'desert'];
+export const MAP_ROTATION: MapId[] = ['bubblegum', 'candy', 'desert'];

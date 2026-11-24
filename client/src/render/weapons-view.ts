@@ -545,7 +545,6 @@ export class WeaponsView {
         if (bomb) {
           ball = new THREE.Group();
           const m = bomb.clone(true);
-          icy(m);
           m.position.set(0, -0.25, 0); // pivot at its base: centre it
           ball.add(m);
           ball.scale.setScalar(1.2);

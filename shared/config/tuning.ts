@@ -254,6 +254,8 @@ export const TUNING = {
       creditWindow: 6,
     },
     respawnInvulnerable: 1.5,
+    /** After a freeze or banana slip ends you can't be stunned again for this long (no stun-locking). */
+    stunImmunity: 1.2,
   },
 } as const;
 

@@ -41,10 +41,11 @@ export function bakePiece(piece: THREE.Object3D): { geo: THREE.BufferGeometry; m
       const c = (mats[i] as THREE.MeshStandardMaterial).color;
       const n = g.getAttribute('position').count;
       const arr = new Float32Array(n * 3);
+      const vc = g.getAttribute('color') as THREE.BufferAttribute | undefined; // baked in Blender: keep it, tinted by the material colour
       for (let k = 0; k < n; k++) {
-        arr[k * 3] = c.r;
-        arr[k * 3 + 1] = c.g;
-        arr[k * 3 + 2] = c.b;
+        arr[k * 3] = c.r * (vc ? vc.getX(k) : 1);
+        arr[k * 3 + 1] = c.g * (vc ? vc.getY(k) : 1);
+        arr[k * 3 + 2] = c.b * (vc ? vc.getZ(k) : 1);
       }
       g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
     });
@@ -283,7 +284,8 @@ export class ArenaView {
 
   private setUnder(i: number, x: number, dy: number, z: number, scale: number, q?: THREE.Quaternion) {
     const U = this.theme.under;
-    this.under.setMatrixAt(i, tmpM.compose(tmpP.set(x, U.y - (this.theme.id === 'village' ? 1 : 0) + dy, z), q ?? tmpQ.identity(), tmpS.set(U.sx * scale, U.sy * scale, U.sz * scale)));
+    const us = scale * (this.views[i]?.plan.underScale ?? 1);
+    this.under.setMatrixAt(i, tmpM.compose(tmpP.set(x, U.y - (this.theme.id === 'village' ? 1 : 0) + dy, z), q ?? tmpQ.identity(), tmpS.set(U.sx * us, U.sy * us, U.sz * us)));
   }
 
   /** Floating ground chunk for the backdrop (top tiles + stepped rock below). */
