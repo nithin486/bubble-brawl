@@ -514,7 +514,9 @@ export class Hud {
 
     // buttons: cooldown rings
     this.cooldown(this.btnSkill, me.skillCd, TUNING.abilities[HEROES[me.hero].ability].cooldown, true);
-    this.cooldown(this.btnGrab, me.grabCd, TUNING.grab.cooldown, false);
+    // weapon in hand: the ring shows the weapon's own cooldown (fire rate), not the punch's
+    if (me.weapon) this.cooldown(this.btnGrab, me.fireCd, TUNING.weapons[me.weapon].cooldown, false);
+    else this.cooldown(this.btnGrab, me.grabCd, TUNING.grab.cooldown, false);
     this.cooldown(this.btnDash, me.dashCd, TUNING.dash.cooldown, false);
     this.btnSkill.classList.toggle('ready', me.skillCd <= 0 && playing);
     void now;

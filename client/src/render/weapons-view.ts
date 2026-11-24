@@ -255,7 +255,7 @@ export class WeaponsView {
   private fx: Fx;
   private boxes = new Map<number, BoxView>();
   private shots = new Map<number, THREE.Mesh>();
-  private mines = new Map<number, THREE.Object3D>();
+  private mines = new Map<number, { g: THREE.Group; lamp: { mat: THREE.MeshStandardMaterial | null }; armed: boolean; born: number }>();
   private throws = new Map<number, { ball: THREE.Object3D; ring: THREE.Mesh }>();
   private bubbles: THREE.Mesh[] = [];
   private held: THREE.Sprite[] = [];
@@ -303,7 +303,7 @@ export class WeaponsView {
     this.world = world;
     for (const b of this.boxes.values()) this.group.remove(b.root);
     for (const m of this.shots.values()) this.group.remove(m);
-    for (const m of this.mines.values()) this.group.remove(m);
+    for (const m of this.mines.values()) this.group.remove(m.g);
     for (const t of this.throws.values()) this.group.remove(t.ball, t.ring);
     this.boxes.clear();
     this.shots.clear();
@@ -488,25 +488,40 @@ export class WeaponsView {
 
     // ---- shots
     const seenShot = new Set<number>();
+    const terrain = w.terrain;
     for (const s of br.projectiles) {
       seenShot.add(s.id);
+      const gy = terrain.heightAt(s.x, s.z) + 1.05; // shots fly at chest height over plazas and ramps too
       let m = this.shots.get(s.id);
       if (!m) {
-        m = new THREE.Mesh(this.shotGeo, this.shotMats[s.kind]);
-        m.scale.setScalar(s.kind === 'rocket' ? 0.32 : 0.34);
+        if (s.kind === 'rocket' && this.env.has('weap_missile')) {
+          // the Blender missile (same one the launcher is loaded with), flying nose-first
+          const holder = new THREE.Group();
+          const model = this.env.get('weap_missile')!.clone(true);
+          model.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).castShadow = false) : 0));
+          holder.add(model);
+          holder.scale.setScalar(1.15);
+          holder.rotation.y = Math.atan2(-s.vz, s.vx);
+          m = holder as unknown as THREE.Mesh;
+        } else {
+          m = new THREE.Mesh(this.shotGeo, this.shotMats[s.kind]);
+          m.scale.setScalar(s.kind === 'rocket' ? 0.32 : 0.34);
+        }
         m.userData.born = performance.now();
         this.group.add(m);
         this.shots.set(s.id, m);
       }
-      m.position.set(s.x, 1.05, s.z);
+      m.position.set(s.x, gy, s.z);
       if (s.kind !== 'rocket') {
         // wobbly soap film: squash and stretch a little as it flies, grows in from the muzzle
         const t = (performance.now() - m.userData.born) / 1000;
         const k = 0.34 * Math.min(1, 0.45 + t * 6);
         m.scale.set(k * (1 + Math.sin(t * 19) * 0.07), k * (1 - Math.sin(t * 19) * 0.06), k * (1 + Math.cos(t * 23) * 0.06));
       }
-      if (s.kind === 'rocket') this.fx.emit(s.x, 1.05, s.z, { n: 2, color: ['#ff8a3d', '#ffd23f', '#aaaaaa'], speed: 1, up: 0.5, life: 0.35, size: 0.5 });
-      else if (Math.random() < 0.4) this.fx.emit(s.x, 1.05, s.z, { n: 1, color: '#bff8ff', speed: 0.4, up: 0.2, life: 0.25, size: 0.25 });
+      if (s.kind === 'rocket') {
+        const back = 0.35 / (Math.hypot(s.vx, s.vz) || 1);
+        this.fx.emit(s.x - s.vx * back, gy, s.z - s.vz * back, { n: 2, color: ['#ff8a3d', '#ffd23f', '#aaaaaa'], speed: 1, up: 0.5, life: 0.35, size: 0.5 });
+      } else if (Math.random() < 0.4) this.fx.emit(s.x, gy, s.z, { n: 1, color: '#bff8ff', speed: 0.4, up: 0.2, life: 0.25, size: 0.25 });
     }
     for (const [id, m] of this.shots)
       if (!seenShot.has(id)) {
@@ -514,7 +529,7 @@ export class WeaponsView {
         this.shots.delete(id);
         // blaster shots burst into droplets where they stop
         if (m.material === this.shotMats.blaster) {
-          this.fx.emit(m.position.x, 1.05, m.position.z, { n: 12, color: ['#bff8ff', '#ffffff', '#ffe0fb', '#d8fff0'], speed: 3.6, up: 1.2, life: 0.38, size: 0.28 });
+          this.fx.emit(m.position.x, m.position.y, m.position.z, { n: 12, color: ['#bff8ff', '#ffffff', '#ffe0fb', '#d8fff0'], speed: 3.6, up: 1.2, life: 0.38, size: 0.28 });
           this.fx.ring(m.position.x, m.position.z, '#dffbff', 0.9, 0.22, 0.35);
         }
       }
@@ -523,15 +538,51 @@ export class WeaponsView {
     const seenMine = new Set<number>();
     for (const n of br.mines) {
       seenMine.add(n.id);
-      if (this.mines.has(n.id)) continue;
-      const g = new THREE.Group();
-      g.position.set(n.x, 0.02, n.z);
-      g.rotation.y = n.id * 2.3;
-      void this.bananaReady?.then((m) => g.add(m.root.clone(true)));
-      this.group.add(g);
-      this.mines.set(n.id, g);
+      let v = this.mines.get(n.id);
+      if (!v) {
+        const g = new THREE.Group();
+        g.position.set(n.x, terrain.heightAt(n.x, n.z) + 0.02, n.z);
+        g.rotation.y = n.id * 2.3;
+        const lamp: { mat: THREE.MeshStandardMaterial | null } = { mat: null };
+        void this.bananaReady?.then((m) => {
+          const root = m.root.clone(true);
+          root.traverse((o) => {
+            const mesh = o as THREE.Mesh;
+            if (mesh.isMesh && (mesh.material as THREE.Material).name === 'bn_green') {
+              lamp.mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+              mesh.material = lamp.mat;
+            }
+          });
+          g.add(root);
+        });
+        this.group.add(g);
+        this.mines.set(n.id, (v = { g, lamp, armed: false, born: performance.now() }));
+      }
+      // drop-in bounce, then the lamp: red and blinking while it arms, steady green when armed (and a pop ring)
+      const age = (performance.now() - v.born) / 1000;
+      v.g.position.y = terrain.heightAt(n.x, n.z) + 0.02 + Math.max(0, Math.sin(Math.min(1, age * 3.2) * Math.PI)) * 0.35;
+      v.g.scale.setScalar(Math.min(1, 0.4 + age * 4));
+      const armed = n.arm <= 0;
+      if (armed && !v.armed) {
+        v.armed = true;
+        this.fx.ring(n.x, n.z, '#7dff8a', 1.3, 0.35, 0.3);
+        this.fx.emit(n.x, terrain.heightAt(n.x, n.z) + 0.4, n.z, { n: 6, color: ['#7dff8a', '#ffffff'], speed: 1.6, up: 1.5, life: 0.35, size: 0.28 });
+      }
+      if (v.lamp.mat) {
+        const m = v.lamp.mat;
+        if (!armed) {
+          const on = Math.sin(age * 22) > 0;
+          m.color.set(on ? '#ff3a3a' : '#661010');
+          m.emissive.set('#ff2020');
+          m.emissiveIntensity = on ? 2.6 : 0.1;
+        } else {
+          m.color.set('#6dff7a');
+          m.emissive.set('#2bff55');
+          m.emissiveIntensity = 1.4 + Math.sin(age * 5) * 0.5;
+        }
+      }
     }
-    for (const [id, g] of this.mines) if (!seenMine.has(id)) (this.group.remove(g), this.mines.delete(id));
+    for (const [id, v] of this.mines) if (!seenMine.has(id)) (this.group.remove(v.g), this.mines.delete(id));
 
     // ---- freeze bombs in the air + where they'll land
     const seenThrow = new Set<number>();
@@ -554,12 +605,12 @@ export class WeaponsView {
         }
         const ring = new THREE.Mesh(new THREE.RingGeometry(W.freeze.radius - 0.15, W.freeze.radius, 48), this.ringMat);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(t.tx, 0.06, t.tz);
+        ring.position.set(t.tx, w.terrain.heightAt(t.tx, t.tz) + 0.06, t.tz);
         this.group.add(ball, ring);
         this.throws.set(t.id, (v = { ball, ring }));
       }
       const k = Math.min(1, t.t / t.total);
-      v.ball.position.set(t.fx + (t.tx - t.fx) * k, 1 + Math.sin(k * Math.PI) * 3, t.fz + (t.tz - t.fz) * k);
+      v.ball.position.set(t.fx + (t.tx - t.fx) * k, 1 + w.terrain.heightAt(t.fx + (t.tx - t.fx) * k, t.fz + (t.tz - t.fz) * k) + Math.sin(k * Math.PI) * 3, t.fz + (t.tz - t.fz) * k);
       v.ball.rotation.set(k * 14, k * 6, 0);
       v.ring.scale.setScalar(0.4 + k * 0.6);
     }

@@ -1,29 +1,12 @@
 {
-  "name": "weap_hammer",
-  "query": "Stylized Hammer",
-  "title": "Stylized Hammer",
-  "source": "sketchfab",
-  "id": "e2b6eb5b70724b2c932ebb58583ed227",
-  "link": "https://sketchfab.com/3d-models/none-e2b6eb5b70724b2c932ebb58583ed227",
-  "author": "MASH Virtual Limited",
-  "authorLink": "https://sketchfab.com/mash_virtual",
-  "licence": "CC Attribution",
-  "needsCredit": true,
-  "triangles": 392,
-  "trianglesOriginal": 392,
-  "bytes": 65828,
-  "dimensions": [
-    0.501,
-    0.9,
-    0.301
-  ],
-  "animations": [],
-  "skinned": false,
-  "fetched": "2026-11-24",
-  "normalized": {
-    "pivot": "centre x/z, ground y=0",
-    "height": 0.9,
-    "rotateY": 0,
-    "forward": "+z"
-  }
+ "name": "weap_hammer",
+ "title": "Thunder Hammer",
+ "source": "own",
+ "author": "Bubble Brawl (modelled in Blender by Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "Blender origin; muzzle/forward = +X, up = +Z (glTF +X / +Y)"
+ },
+ "fetched": "2026-11-24"
 }

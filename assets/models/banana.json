@@ -1,29 +1,12 @@
 {
-  "name": "banana",
-  "query": "banana peel",
-  "title": "Kulit Pisang (banana peel)",
-  "source": "sketchfab",
-  "id": "26c74e7dfba841198cc7f441c44ca018",
-  "link": "https://sketchfab.com/3d-models/none-26c74e7dfba841198cc7f441c44ca018",
-  "author": "nandoxun",
-  "authorLink": "https://sketchfab.com/nandoxun",
-  "licence": "CC Attribution",
-  "needsCredit": true,
-  "triangles": 180,
-  "trianglesOriginal": 180,
-  "bytes": 10120,
-  "dimensions": [
-    143.116,
-    86.712,
-    154.377
-  ],
-  "animations": [],
-  "skinned": false,
-  "fetched": "2026-11-24",
-  "normalized": {
-    "pivot": "centre x/z, ground y=0",
-    "height": null,
-    "rotateY": 0,
-    "forward": "+z"
-  }
+ "name": "banana",
+ "title": "Banana Trap",
+ "source": "own",
+ "author": "Bubble Brawl (modelled in Blender by Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "Blender origin; muzzle/forward = +X, up = +Z (glTF +X / +Y)"
+ },
+ "fetched": "2026-11-24"
 }

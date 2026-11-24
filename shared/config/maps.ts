@@ -567,7 +567,7 @@ function bubblegum(): MapDef {
     keepRadius: 17,
     coinScale: 2.4,
     bankSpots: bank.map(([x, z]) => ({ x, z })),
-    starts: ring(8, 10.6, Math.PI / 8),
+    starts: ring(8, 9.6, Math.PI / 8),
     pads: [],
     jackpot: { x: 0, z: 0, name: 'Bubblegum Fountain' },
     obstacles: o,

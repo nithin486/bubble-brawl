@@ -99,7 +99,7 @@ function vertexColourMaterial() {
 }
 const isPlain = (m: THREE.Material) => {
   const s = m as THREE.MeshStandardMaterial;
-  return !s.map && !s.transparent && !(s as THREE.MeshStandardMaterial & { alphaTest?: number }).alphaTest && !!s.color && !s.vertexColors && (s.emissiveIntensity ?? 0) * (s.emissive ? s.emissive.r + s.emissive.g + s.emissive.b : 0) < 0.05;
+  return !s.map && !s.transparent && !(s as THREE.MeshStandardMaterial & { alphaTest?: number }).alphaTest && !!s.color && (!s.vertexColors || s.metalness < 0.3) && (s.emissiveIntensity ?? 0) * (s.emissive ? s.emissive.r + s.emissive.g + s.emissive.b : 0) < 0.05;
 };
 
 /** Plain float, non-indexed position/normal/uv (+ colour) — every part can be merged with every other. */

@@ -1,4 +1,5 @@
 // In-game screenshots of a map.  node tools/shot-map.mjs <outDir> <map> "<name>:<cam>:<x>:<z>:<facingDeg>[:<yawDeg>]" ...
+// optional 7th = weapon (blaster rocket banana freeze hook hammer), 8th = camera offset 'x,y,z'.
 // cam = third | far | close | action | bird.  Needs playwright-core (NODE_PATH) and CHROME (chromium executable).
 // Also prints draw calls / triangles after the last shot.
 import { createRequire } from 'node:module';
@@ -19,8 +20,8 @@ await page.addInitScript((m) => localStorage.setItem('bb_profile_v1', JSON.strin
 await page.goto(url);
 await page.waitForFunction(() => window.__bb && window.__bb.world, null, { timeout: 120000 });
 await page.waitForTimeout(5000);
-for (const [name, cam, x, z, face, yaw] of shots) {
-  await page.evaluate(([cam, x, z, face, yaw]) => {
+for (const [name, cam, x, z, face, yaw, weapon, off] of shots) {
+  await page.evaluate(([cam, x, z, face, yaw, weapon, off]) => {
     const g = window.__bb;
     g.rig.setPreset(cam);
     const me = g.world.players[0];
@@ -30,7 +31,9 @@ for (const [name, cam, x, z, face, yaw] of shots) {
     }
     g.rig.snap(g.v.set(me.x, 0, me.z));
     if (yaw !== undefined) g.rig.yaw = (+yaw * Math.PI) / 180;
-  }, [cam, x, z, face, yaw]);
+    if (weapon && weapon !== '-') { me.weapon = weapon; me.ammo = 9; me.fireCd = 0; }
+    if (off) g.rig.offset.set(...off.split(',').map(Number));
+  }, [cam, x, z, face, yaw, weapon, off]);
   await page.waitForTimeout(2500);
   await page.screenshot({ path: `${out}/${map}-${name}.png`, timeout: 240000 });
 }

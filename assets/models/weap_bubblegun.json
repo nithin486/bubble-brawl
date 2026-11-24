@@ -1,29 +1,12 @@
 {
-  "name": "weap_bubblegun",
-  "query": "cartoon water gun",
-  "title": "Stylized water bottle gun model",
-  "source": "sketchfab",
-  "id": "d2c18b2fa9354e8ba47a8845b09dd521",
-  "link": "https://sketchfab.com/3d-models/none-d2c18b2fa9354e8ba47a8845b09dd521",
-  "author": "drollShark",
-  "authorLink": "https://sketchfab.com/drollShark",
-  "licence": "CC Attribution",
-  "needsCredit": true,
-  "triangles": 4534,
-  "trianglesOriginal": 4534,
-  "bytes": 39932,
-  "dimensions": [
-    1.321,
-    0.5,
-    0.296
-  ],
-  "animations": [],
-  "skinned": false,
-  "fetched": "2026-11-24",
-  "normalized": {
-    "pivot": "centre x/z, ground y=0",
-    "height": 0.5,
-    "rotateY": 0,
-    "forward": "+z"
-  }
+ "name": "weap_bubblegun",
+ "title": "Bubble Blaster",
+ "source": "own",
+ "author": "Bubble Brawl (modelled in Blender by Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "Blender origin; muzzle/forward = +X, up = +Z (glTF +X / +Y)"
+ },
+ "fetched": "2026-11-24"
 }

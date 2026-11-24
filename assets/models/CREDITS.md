@@ -4,7 +4,36 @@ Downloaded by `scripts/fetch_model.js`. CC-BY models must be credited in the gam
 
 | File | Model | Author | Licence | Source |
 |---|---|---|---|---|
-| banana.glb | Kulit Pisang (banana peel) | nandoxun | CC Attribution | https://sketchfab.com/3d-models/none-26c74e7dfba841198cc7f441c44ca018 |
+| banana.glb | Banana Trap (Blender) | Bubble Brawl | own work |  |
+| bg_block.glb | bg_block (Blender) | Bubble Brawl | own work |  |
+| bg_boulder.glb | bg_boulder (Blender) | Bubble Brawl | own work |  |
+| bg_bridge.glb | bg_bridge (Blender) | Bubble Brawl | own work |  |
+| bg_cotton.glb | bg_cotton (Blender) | Bubble Brawl | own work |  |
+| bg_cry_aqua.glb | bg_cry_aqua (Blender) | Bubble Brawl | own work |  |
+| bg_cry_lilac.glb | bg_cry_lilac (Blender) | Bubble Brawl | own work |  |
+| bg_cry_pink.glb | bg_cry_pink (Blender) | Bubble Brawl | own work |  |
+| bg_fountain.glb | bg_fountain (Blender) | Bubble Brawl | own work |  |
+| bg_gumball.glb | bg_gumball (Blender) | Bubble Brawl | own work |  |
+| bg_islet_a.glb | bg_islet_a (Blender) | Bubble Brawl | own work |  |
+| bg_islet_b.glb | bg_islet_b (Blender) | Bubble Brawl | own work |  |
+| bg_islet_c.glb | bg_islet_c (Blender) | Bubble Brawl | own work |  |
+| bg_lamp.glb | bg_lamp (Blender) | Bubble Brawl | own work |  |
+| bg_mush_aqua.glb | bg_mush_aqua (Blender) | Bubble Brawl | own work |  |
+| bg_mush_lilac.glb | bg_mush_lilac (Blender) | Bubble Brawl | own work |  |
+| bg_mush_pink.glb | bg_mush_pink (Blender) | Bubble Brawl | own work |  |
+| bg_pillar.glb | bg_pillar (Blender) | Bubble Brawl | own work |  |
+| bg_plaza.glb | bg_plaza (Blender) | Bubble Brawl | own work |  |
+| bg_ramp.glb | bg_ramp (Blender) | Bubble Brawl | own work |  |
+| bg_ramp4.glb | bg_ramp4 (Blender) | Bubble Brawl | own work |  |
+| bg_tile_cream.glb | bg_tile_cream (Blender) | Bubble Brawl | own work |  |
+| bg_tile_lilac.glb | bg_tile_lilac (Blender) | Bubble Brawl | own work |  |
+| bg_tile_lilac2.glb | bg_tile_lilac2 (Blender) | Bubble Brawl | own work |  |
+| bg_tile_mint.glb | bg_tile_mint (Blender) | Bubble Brawl | own work |  |
+| bg_tile_mint2.glb | bg_tile_mint2 (Blender) | Bubble Brawl | own work |  |
+| bg_tile_pink.glb | bg_tile_pink (Blender) | Bubble Brawl | own work |  |
+| bg_tile_sky.glb | bg_tile_sky (Blender) | Bubble Brawl | own work |  |
+| bg_tile_sky2.glb | bg_tile_sky2 (Blender) | Bubble Brawl | own work |  |
+| bg_under.glb | bg_under (Blender) | Bubble Brawl | own work |  |
 | candy_block.glb | candy_block (Blender) | Bubble Brawl | own work |  |
 | candy_cake.glb | Cake | Kenney | CC0 | https://poly.pizza/m/KGFyP16ebH |
 | candy_choco.glb | Chocolate Bar | Quaternius | CC0 | https://poly.pizza/m/vJsJ1EIiOO |
@@ -45,8 +74,9 @@ Downloaded by `scripts/fetch_model.js`. CC-BY models must be credited in the gam
 | ph_barrel.glb | Barrel_01 | Jorge Camacho | CC0 | https://polyhaven.com/a/Barrel_01 |
 | ph_crate_big.glb | Wooden Crate 02 | James Ray Cock, Jurita Burger | CC0 | https://polyhaven.com/a/wooden_crate_02 |
 | rock.glb | Moon Rock 03 | Greg Zaal, Rico Cilliers, Jenelle van Heerden | CC0 | https://polyhaven.com/a/moon_rock_03 |
-| weap_bubblegun.glb | Stylized water bottle gun model | drollShark | CC Attribution | https://sketchfab.com/3d-models/none-d2c18b2fa9354e8ba47a8845b09dd521 |
-| weap_hammer.glb | Stylized Hammer | MASH Virtual Limited | CC Attribution | https://sketchfab.com/3d-models/none-e2b6eb5b70724b2c932ebb58583ed227 |
-| weap_hook.glb | Cartoon grappling hook | luizmiguel3d | CC Attribution | https://sketchfab.com/3d-models/none-7a0452be72fe461bab0ad02cb4eab172 |
-| weap_icebomb.glb | Free Low Poly Bomb | warcool | CC Attribution | https://sketchfab.com/3d-models/none-4065d497126049e4a1040de72bc472d4 |
-| weap_rocketl.glb | Stylized Bazooka By Jungle Jim (220kb) | Jungle Jim | CC Attribution | https://sketchfab.com/3d-models/none-08810c2c43ea4f2081bd6c72bbae823e |
+| weap_bubblegun.glb | Bubble Blaster (Blender) | Bubble Brawl | own work |  |
+| weap_hammer.glb | Thunder Hammer (Blender) | Bubble Brawl | own work |  |
+| weap_hook.glb | Grapple Hook (Blender) | Bubble Brawl | own work |  |
+| weap_icebomb.glb | Freeze Bomb (Blender) | Bubble Brawl | own work |  |
+| weap_missile.glb | Rocket missile (Blender) | Bubble Brawl | own work |  |
+| weap_rocketl.glb | Rocket Launcher (Blender) | Bubble Brawl | own work |  |

@@ -178,6 +178,7 @@ export class Game {
     this.applyCamera((PARAMS.get('cam') as CamPreset) || profile.camera || 'close');
     this.sfx.muted = !profile.sound;
     this.fx = new Fx(stage.scene, this.glowTex);
+    this.fx.ground = (x, z) => this.world?.terrain.heightAt(x, z) ?? 0; // ground effects ride raised plazas and ramps
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
     this.showcase = new Showcase(assets);
     {
@@ -1003,7 +1004,12 @@ export class Game {
         if (e.weapon === 'blaster' || e.weapon === 'rocket') {
           const fx = e.x + Math.sin(e.facing) * 0.8;
           const fz = e.z + Math.cos(e.facing) * 0.8;
-          this.fx.emit(fx, 1.05, fz, { n: e.weapon === 'rocket' ? 14 : 5, color: [WEAPON_INFO[e.weapon].color, '#ffffff'], speed: 3, up: 1, life: 0.2, size: 0.4 });
+          const my = w.players[e.p].y + 1.05;
+          if (e.weapon === 'blaster') this.fx.emit(fx, my, fz, { n: 7, color: ['#bff8ff', '#ffffff', '#ffb3ec'], speed: 3.2, up: 1.2, life: 0.28, size: 0.32 });
+          else {
+            this.fx.emit(fx, my, fz, { n: 14, color: [WEAPON_INFO[e.weapon].color, '#ffffff', '#ffd23f'], speed: 3, up: 1, life: 0.2, size: 0.45 });
+            this.fx.emit(e.x - Math.sin(e.facing) * 0.9, my, e.z - Math.cos(e.facing) * 0.9, { n: 10, color: ['#bbbbbb', '#ffffff'], speed: 2.5, up: 0.8, life: 0.5, size: 0.7 }); // backblast smoke
+          }
           if (e.p === LOCAL) this.rig.punch(e.weapon === 'rocket' ? 4 : 1.2);
         }
         if (e.weapon === 'hammer') this.fx.cone(e.x, e.z, e.facing, TUNING.weapons.hammer.radius, 360, '#ffd23f', TUNING.weapons.hammer.windup + 0.05, 0.4);
@@ -1023,6 +1029,12 @@ export class Game {
           this.fx.crack(e.x, e.z, e.r * 1.4);
           this.fx.emit(e.x, 0.4, e.z, { n: 30, color: ['#ffd23f', '#ffffff'], speed: 8, up: 2, life: 0.4, size: 0.5 });
           this.fx.pillar(e.x, e.z, '#fff27a', 5, 0.3, 0.5);
+          // thunder: jagged bolts radiate from the impact
+          const gy = w.terrain.heightAt(e.x, e.z);
+          for (let k = 0; k < 7; k++) {
+            const a = (k / 7) * Math.PI * 2 + Math.random() * 0.5;
+            this.fx.lightning(this.v.set(e.x, gy + 0.4, e.z).clone(), new THREE.Vector3(e.x + Math.sin(a) * e.r, gy + 0.3, e.z + Math.cos(a) * e.r), k % 2 ? '#fff6a8' : '#b9a0ff');
+          }
         }
         const d = Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z);
         if (d < 16) {
@@ -1032,18 +1044,29 @@ export class Game {
         break;
       }
       case 'hook':
-        this.fx.beam(this.pos(e.p, 1.1), new THREE.Vector3(e.x, 1.1, e.z), '#ff5f7a', 0.35);
-        if (e.target >= 0) this.fx.emit(e.x, 1.1, e.z, { n: 12, color: ['#ff5f7a', '#ffffff'], speed: 4, up: 1, life: 0.3, size: 0.4 });
+        // teal energy cable (the colour of the spool) from the hook to where it caught (or hit a wall / flew out)
+        this.fx.beam(this.pos(e.p, 1.1), new THREE.Vector3(e.x, w.terrain.heightAt(e.x, e.z) + 1.1, e.z), '#4ff3e6', e.target >= 0 ? 0.5 : 0.3);
+        if (e.target >= 0) {
+          this.fx.emit(e.x, w.terrain.heightAt(e.x, e.z) + 1.1, e.z, { n: 14, color: ['#4ff3e6', '#ffffff', '#ff5f7a'], speed: 4, up: 1, life: 0.3, size: 0.4 });
+          this.fx.ring(e.x, e.z, '#4ff3e6', 1.4, 0.3, 0.3);
+        } else this.fx.emit(e.x, w.terrain.heightAt(e.x, e.z) + 1.1, e.z, { n: 6, color: ['#bbbbbb', '#ffffff'], speed: 2, up: 1, life: 0.25, size: 0.3 });
         break;
       case 'slip':
         hv(e.p).knockSpin(2);
-        this.fx.emit(w.players[e.p].x, 0.4, w.players[e.p].z, { n: 14, color: ['#ffe14a', '#ffffff'], speed: 4, up: 3, life: 0.4, size: 0.4 });
+        this.fx.emit(w.players[e.p].x, w.players[e.p].y + 0.4, w.players[e.p].z, { n: 14, color: ['#ffe14a', '#ffffff'], speed: 4, up: 3, life: 0.4, size: 0.4 });
+        this.fx.debris(w.players[e.p].x, w.players[e.p].y + 0.5, w.players[e.p].z, 4, ['#ffe14a', '#fff2a0'], 3, 4, 0.7); // peel bits fly
+        this.fx.ring(w.players[e.p].x, w.players[e.p].z, '#ffe14a', 1.6, 0.3, 0.3);
         if (e.p === LOCAL) this.hud.banner('SLIPPED!', 'gold', true);
         break;
-      case 'frozen':
+      case 'frozen': {
         hv(e.p).flash();
+        hv(e.p).freeze(TUNING.weapons.freeze.freeze, this.time);
+        const fp = w.players[e.p];
+        this.fx.debris(fp.x, fp.y + 1, fp.z, 8, ['#dffaff', '#9fe8ff', '#ffffff'], 4, 4, 0.8);
+        this.fx.emit(fp.x, fp.y + 1, fp.z, { n: 18, color: ['#c9f6ff', '#ffffff'], speed: 3, up: 2, life: 0.5, size: 0.4 });
         if (e.p === LOCAL) this.hud.banner('FROZEN!', 'teal', true);
         break;
+      }
       case 'damage':
         this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.n}`, 'minus');
         if (e.victim === LOCAL && e.hp > 0 && e.hp <= TUNING.weapons.hitHp) this.hud.banner('ALMOST OUT!', 'red', true);

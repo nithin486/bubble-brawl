@@ -130,6 +130,7 @@ const ENV = {
     ['weap_bubblegun', path.join(root, 'assets/models/weap_bubblegun.glb')],
     ['weap_rocketl', path.join(root, 'assets/models/weap_rocketl.glb')],
     ['weap_icebomb', path.join(root, 'assets/models/weap_icebomb.glb')],
+    ['weap_missile', path.join(root, 'assets/models/weap_missile.glb')],
     ['mystery_cube', path.join(root, 'assets/models/mystery_cube.glb')],
   ],
   dungeon: [

@@ -1,29 +1,12 @@
 {
-  "name": "weap_hook",
-  "query": "cartoon grappling hook",
-  "title": "Cartoon grappling hook",
-  "source": "sketchfab",
-  "id": "7a0452be72fe461bab0ad02cb4eab172",
-  "link": "https://sketchfab.com/3d-models/none-7a0452be72fe461bab0ad02cb4eab172",
-  "author": "luizmiguel3d",
-  "authorLink": "https://sketchfab.com/luizmiguel3d",
-  "licence": "CC Attribution",
-  "needsCredit": true,
-  "triangles": 3209,
-  "trianglesOriginal": 9282,
-  "bytes": 45688,
-  "dimensions": [
-    0.252,
-    0.6,
-    0.576
-  ],
-  "animations": [],
-  "skinned": false,
-  "fetched": "2026-11-24",
-  "normalized": {
-    "pivot": "centre x/z, ground y=0",
-    "height": 0.6,
-    "rotateY": 0,
-    "forward": "+z"
-  }
+ "name": "weap_hook",
+ "title": "Grapple Hook",
+ "source": "own",
+ "author": "Bubble Brawl (modelled in Blender by Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "Blender origin; muzzle/forward = +X, up = +Z (glTF +X / +Y)"
+ },
+ "fetched": "2026-11-24"
 }

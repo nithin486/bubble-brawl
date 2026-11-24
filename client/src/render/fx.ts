@@ -26,7 +26,25 @@ interface Wave {
 }
 
 /** GPU point particles + expanding shockwave meshes. One draw call for all particles. */
+const SHARED = new Map<string, THREE.BufferGeometry>();
+/** One geometry per shape, reused by every effect (flagged so the clean-up never disposes it). */
+function shared(key: string, make: () => THREE.BufferGeometry) {
+  let g = SHARED.get(key);
+  if (!g) {
+    g = make();
+    g.userData.shared = true;
+    SHARED.set(key, g);
+  }
+  return g;
+}
+const disposeMesh = (mesh: THREE.Mesh) => {
+  if (!mesh.geometry.userData.shared) mesh.geometry.dispose();
+  (mesh.material as THREE.Material).dispose();
+};
+
 export class Fx {
+  /** Height of the walkable ground at (x, z): raised plazas and ramps lift ground effects with them. Set by the game. */
+  ground: (x: number, z: number) => number = () => 0;
   private geo = new THREE.BufferGeometry();
   private pos = new Float32Array(MAX * 3);
   private col = new Float32Array(MAX * 3);
@@ -102,8 +120,8 @@ export class Fx {
   /** Expanding translucent half-dome shockwave. */
   dome(x: number, z: number, color: string, radius: number, dur = 0.4) {
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, blending: THREE.AdditiveBlending });
-    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat);
-    m.position.set(x, 0, z);
+    const m = new THREE.Mesh(shared('dome', () => new THREE.SphereGeometry(1, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2)), mat);
+    m.position.set(x, this.ground(x, z), z);
     this.timedObj(m, dur, (k) => {
       const e = 1 - (1 - k) ** 3;
       m.scale.set(radius * e, radius * e * 0.7, radius * e);
@@ -114,10 +132,10 @@ export class Fx {
   /** Vertical light column (jackpot, power pickup). */
   pillar(x: number, z: number, color: string, height = 8, dur = 0.9, width = 0.9) {
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(width, width * 1.3, height, 24, 1, true), mat);
-    m.position.set(x, height / 2, z);
+    const m = new THREE.Mesh(shared('pillar', () => new THREE.CylinderGeometry(1, 1.3, 1, 24, 1, true)), mat);
+    m.position.set(x, this.ground(x, z) + height / 2, z);
     this.timedObj(m, dur, (k) => {
-      m.scale.set(1 - k * 0.7, 1, 1 - k * 0.7);
+      m.scale.set(width * (1 - k * 0.7), height, width * (1 - k * 0.7));
       mat.opacity = 0.6 * (1 - k);
     });
   }
@@ -126,12 +144,12 @@ export class Fx {
   crack(x: number, z: number, size: number, rot = Math.random() * 6) {
     if (!this.crackTex) this.crackTex = crackTexture();
     const mat = new THREE.MeshBasicMaterial({ map: this.crackTex, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+    const m = new THREE.Mesh(shared('crack', () => new THREE.PlaneGeometry(1, 1)), mat);
     m.rotation.set(-Math.PI / 2, 0, rot);
-    m.position.set(x, 0.05, z);
+    m.position.set(x, this.ground(x, z) + 0.05, z);
     m.renderOrder = 1;
     this.timedObj(m, 2.6, (k) => {
-      m.scale.setScalar(Math.min(1, k * 12));
+      m.scale.setScalar(size * Math.min(1, k * 12));
       mat.opacity = k < 0.7 ? 0.9 : 0.9 * (1 - (k - 0.7) / 0.3);
     });
   }
@@ -182,7 +200,7 @@ export class Fx {
   }
 
   dust(x: number, z: number, big = false) {
-    this.emit(x, 0.15, z, { n: big ? 14 : 3, color: ['#f2e6ff', '#d9c8f0'], speed: big ? 3.5 : 0.9, up: big ? 1.5 : 0.8, life: big ? 0.6 : 0.45, size: big ? 0.9 : 0.55, drag: 4 });
+    this.emit(x, this.ground(x, z) + 0.15, z, { n: big ? 14 : 3, color: ['#f2e6ff', '#d9c8f0'], speed: big ? 3.5 : 0.9, up: big ? 1.5 : 0.8, life: big ? 0.6 : 0.45, size: big ? 0.9 : 0.55, drag: 4 });
   }
 
   confetti(x: number, y: number, z: number, n = 120) {
@@ -196,11 +214,11 @@ export class Fx {
   /** Expanding ring on the ground (Rattle Burst, banking, landing). */
   ring(x: number, z: number, color: THREE.ColorRepresentation, to = 3, dur = 0.45, from = 0.3) {
     const mesh = new THREE.Mesh(
-      new THREE.RingGeometry(0.82, 1, 48),
+      shared('ring', () => new THREE.RingGeometry(0.82, 1, 48)),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }),
     );
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(x, 0.08, z);
+    mesh.position.set(x, this.ground(x, z) + 0.08, z);
     mesh.renderOrder = 3;
     this.scene.add(mesh);
     this.waves.push({ mesh, t: 0, dur, from, to });
@@ -218,9 +236,27 @@ export class Fx {
     const holder = new THREE.Group();
     holder.add(mesh);
     holder.rotation.y = facing - Math.PI / 2;
-    holder.position.set(x, 0.09, z);
+    holder.position.set(x, this.ground(x, z) + 0.09, z);
     this.scene.add(holder);
     this.waves.push({ mesh: holder as unknown as THREE.Mesh, t: 0, dur, from, to: range });
+  }
+
+  /** A jagged lightning bolt between two points (Thunder Hammer). One short-lived tube. */
+  lightning(a: THREE.Vector3, b: THREE.Vector3, color: string, dur = 0.28, width = 0.075) {
+    const pts: THREE.Vector3[] = [];
+    const n = 7;
+    const dir = b.clone().sub(a);
+    const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const p = a.clone().lerp(b, t);
+      const j = i === 0 || i === n ? 0 : (Math.random() - 0.5) * 0.9 * Math.sin(t * Math.PI);
+      p.addScaledVector(side, j).y += i === 0 || i === n ? 0 : (Math.random() - 0.3) * 0.5;
+      pts.push(p);
+    }
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, toneMapped: false, blending: THREE.AdditiveBlending, depthWrite: false });
+    const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.1), 18, width, 4), mat);
+    this.timedObj(m, dur, (k) => (mat.opacity = k < 0.5 ? 1 : 2 * (1 - k)));
   }
 
   update(dt: number) {
@@ -263,10 +299,7 @@ export class Fx {
         this.scene.remove(o.obj);
         o.obj.traverse((m) => {
           const mesh = m as THREE.Mesh;
-          if (mesh.isMesh) {
-            mesh.geometry.dispose();
-            (mesh.material as THREE.Material).dispose();
-          }
+          if (mesh.isMesh) disposeMesh(mesh);
         });
         this.timed.splice(i, 1);
       }
@@ -308,10 +341,7 @@ export class Fx {
         this.scene.remove(w.mesh);
         w.mesh.traverse((o) => {
           const m = o as THREE.Mesh;
-          if (m.isMesh) {
-            m.geometry.dispose();
-            (m.material as THREE.Material).dispose();
-          }
+          if (m.isMesh) disposeMesh(m);
         });
         this.waves.splice(i, 1);
       }

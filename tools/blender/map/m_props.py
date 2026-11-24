@@ -21,24 +21,24 @@ def fountain():
     core = vmat("f_core", C['pink'], 0.2, 0.0, emit=(1.0, 0.35, 0.75, 4.0))
     pearl = vmat("f_pearl", C['aqua'], 0.2, 0.0, emit=(0.3, 0.9, 1.0, 3.0))
     # pool: cream wall, pink inner band
-    k.lathe("pool", [(2.2, 0.0), (2.62, 0.0), (2.7, 0.12), (2.7, 0.62), (2.58, 0.76), (2.36, 0.76), (2.2, 0.62), (2.14, 0.46), (0.0, 0.46)], (0, 0, 0), cream, seg=64)
-    k.torus("poolgold", 2.45, 0.06, (0, 0, 0.78), gold, seg=64, sides=8)
-    k.cyl("water0", 2.15, 0.02, (0, 0, 0.62), water, seg=48)
+    k.lathe("pool", [(2.2, 0.0), (2.62, 0.0), (2.7, 0.12), (2.7, 0.62), (2.58, 0.76), (2.36, 0.76), (2.2, 0.62), (2.14, 0.46), (0.0, 0.46)], (0, 0, 0), cream, seg=40)
+    k.torus("poolgold", 2.45, 0.06, (0, 0, 0.78), gold, seg=40, sides=6)
+    k.cyl("water0", 2.15, 0.02, (0, 0, 0.62), water, seg=30)
     # first column: swirl-striped bubblegum stem
-    k.lathe("stem", [(0.0, 0.46), (1.0, 0.46), (0.85, 0.7), (0.62, 1.2), (0.5, 1.9), (0.46, 2.6), (0.5, 3.1), (0.0, 3.1)], (0, 0, 0), pink, seg=48)
+    k.lathe("stem", [(0.0, 0.46), (1.0, 0.46), (0.85, 0.7), (0.62, 1.2), (0.5, 1.9), (0.46, 2.6), (0.5, 3.1), (0.0, 3.1)], (0, 0, 0), pink, seg=30)
     # basin 1
-    k.lathe("b1", [(0.0, 3.0), (0.55, 3.0), (1.3, 3.2), (1.95, 3.55), (2.18, 3.8), (2.1, 3.88), (1.9, 3.78), (1.2, 3.55), (0.0, 3.45)], (0, 0, 0), pinkl, seg=56)
-    k.torus("b1gold", 2.14, 0.055, (0, 0, 3.86), gold, seg=56, sides=8)
-    k.cyl("water1", 1.95, 0.02, (0, 0, 3.7), water, seg=48)
+    k.lathe("b1", [(0.0, 3.0), (0.55, 3.0), (1.3, 3.2), (1.95, 3.55), (2.18, 3.8), (2.1, 3.88), (1.9, 3.78), (1.2, 3.55), (0.0, 3.45)], (0, 0, 0), pinkl, seg=36)
+    k.torus("b1gold", 2.14, 0.055, (0, 0, 3.86), gold, seg=36, sides=6)
+    k.cyl("water1", 1.95, 0.02, (0, 0, 3.7), water, seg=30)
     # column 2 + basin 2
     k.lathe("stem2", [(0.0, 3.4), (0.5, 3.4), (0.4, 3.9), (0.34, 4.6), (0.4, 5.1), (0.0, 5.1)], (0, 0, 0), pink, seg=40)
-    k.lathe("b2", [(0.0, 5.0), (0.4, 5.0), (0.9, 5.15), (1.3, 5.4), (1.42, 5.6), (1.34, 5.66), (1.15, 5.56), (0.8, 5.4), (0.0, 5.3)], (0, 0, 0), cream, seg=48)
-    k.torus("b2gold", 1.38, 0.045, (0, 0, 5.64), gold, seg=48, sides=8)
+    k.lathe("b2", [(0.0, 5.0), (0.4, 5.0), (0.9, 5.15), (1.3, 5.4), (1.42, 5.6), (1.34, 5.66), (1.15, 5.56), (0.8, 5.4), (0.0, 5.3)], (0, 0, 0), cream, seg=30)
+    k.torus("b2gold", 1.38, 0.045, (0, 0, 5.64), gold, seg=30, sides=6)
     k.cyl("water2", 1.2, 0.02, (0, 0, 5.5), water, seg=40)
     # column 3
     k.lathe("stem3", [(0.0, 5.3), (0.3, 5.3), (0.24, 5.9), (0.22, 6.3), (0.0, 6.3)], (0, 0, 0), pinkl, seg=32)
     # bubble crown: giant bubble with glowing core + orbiting bubbles
-    k.sphere("giant", 1.6, (0, 0, 7.8), glass, seg=36, rings=24)
+    k.sphere("giant", 1.6, (0, 0, 7.8), glass, seg=28, rings=18)
     k.sphere("giantcore", 0.62, (0, 0, 7.8), core, seg=24, rings=16)
     k.torus("halo", 1.15, 0.035, (0, 0, 7.8), gold, rot=(0.5, 0.2, 0), seg=40, sides=6)
     k.torus("halo2", 1.28, 0.03, (0, 0, 7.8), gold, rot=(-0.6, 0.4, 0), seg=40, sides=6)
@@ -48,7 +48,7 @@ def fountain():
         rr = rnd.uniform(1.8, 2.5)
         zz = 6.4 + rnd.uniform(-0.2, 2.5)
         r = rnd.uniform(0.32, 0.62)
-        k.sphere(f"ob{i}", r, (math.cos(a) * rr, math.sin(a) * rr, zz), [glass, glass2, glass3][i % 3], seg=24, rings=16)
+        k.sphere(f"ob{i}", r, (math.cos(a) * rr, math.sin(a) * rr, zz), [glass, glass2, glass3][i % 3], seg=16, rings=10)
         if i % 2 == 0:
             k.sphere(f"pe{i}", r * 0.3, (math.cos(a) * rr, math.sin(a) * rr, zz), pearl, seg=10, rings=8)
     # falling water: ribbons from basin 2 -> basin 1 and basin 1 -> pool
@@ -56,20 +56,20 @@ def fountain():
         a = i * 2 * math.pi / 10
         ca, sa = math.cos(a), math.sin(a)
         pts = [(ca * 1.32, sa * 1.32, 5.55), (ca * 1.5, sa * 1.5, 5.3), (ca * 1.62, sa * 1.62, 4.6), (ca * 1.7, sa * 1.7, 3.75)]
-        k.tube(f"fall1{i}", pts, [0.05, 0.06, 0.06, 0.05], wfall, sides=6, cap=True)
+        k.tube(f"fall1{i}", pts, [0.05, 0.06, 0.06, 0.05], wfall, sides=4, cap=True)
     for i in range(14):
         a = i * 2 * math.pi / 14 + 0.2
         ca, sa = math.cos(a), math.sin(a)
         pts = [(ca * 2.1, sa * 2.1, 3.82), (ca * 2.3, sa * 2.3, 3.4), (ca * 2.42, sa * 2.42, 2.0), (ca * 2.42, sa * 2.42, 0.7)]
-        k.tube(f"fall2{i}", pts, [0.05, 0.06, 0.07, 0.06], wfall, sides=6, cap=True)
+        k.tube(f"fall2{i}", pts, [0.05, 0.06, 0.07, 0.06], wfall, sides=4, cap=True)
     # lollipop gumball posts around the pool rim (outside the pool collision)
     cols = [C['pink'], C['aqua'], C['yellow'], C['lilac']]
     for i in range(8):
         a = i * math.pi / 4 + math.pi / 8
         x, y = math.cos(a) * 3.35, math.sin(a) * 3.35
         k.cyl(f"stick{i}", 0.06, 0.9, (x, y, 0.45), cream, seg=8)
-        k.sphere(f"gball{i}", 0.3, (x, y, 1.1), vmat(f"gbm{i%4}", cols[i % 4], 0.25, coat=0.6), seg=16, rings=12)
-        k.torus(f"gband{i}", 0.3, 0.025, (x, y, 1.1), cream, seg=16, sides=5)
+        k.sphere(f"gball{i}", 0.3, (x, y, 1.1), vmat(f"gbm{i%4}", cols[i % 4], 0.25, coat=0.6), seg=10, rings=8)
+        k.torus(f"gband{i}", 0.3, 0.025, (x, y, 1.1), cream, seg=12, sides=4)
     # crystal clusters at the four diagonals of the plaza
     for q in range(4):
         a = q * math.pi / 2 + math.pi / 4
@@ -96,25 +96,25 @@ def gumball():
     glass = glassm("g_glass", (0.85, 0.95, 1.0), 0.22)
     navy = vmat("g_navy", C['navy'], 0.5)
     k.cyl("foot", 0.95, 0.18, (0, 0, 0.09), cream, r2=0.95, seg=24)
-    k.lathe("base", [(0.0, 0.18), (0.8, 0.18), (0.78, 0.5), (0.7, 1.1), (0.78, 1.25), (0.0, 1.25)], (0, 0, 0), pink, seg=40)
-    k.torus("ringg", 0.8, 0.05, (0, 0, 1.25), gold, seg=40, sides=8)
+    k.lathe("base", [(0.0, 0.18), (0.8, 0.18), (0.78, 0.5), (0.7, 1.1), (0.78, 1.25), (0.0, 1.25)], (0, 0, 0), pink, seg=24)
+    k.torus("ringg", 0.8, 0.05, (0, 0, 1.25), gold, seg=24, sides=5)
     k.box("chute", (0.5, 0.35, 0.34), (0, -0.78, 0.65), navy, bevel=0.0)
     k.box("flap", (0.4, 0.05, 0.22), (0, -0.97, 0.66), gold, bevel=0.0)
     k.cyl("coin", 0.2, 0.05, (0.0, -0.74, 0.98), gold, rot=(math.pi / 2, 0, 0), seg=16)
-    k.sphere("globe", 0.88, (0, 0, 2.15), glass, seg=32, rings=20)
+    k.sphere("globe", 0.88, (0, 0, 2.15), glass, seg=20, rings=12)
     rnd = random.Random(21)
     cols = [C['pink'], C['aqua'], C['yellow'], C['lilac'], C['mint'], C['orange'], C['white']]
     n = 0
-    for i in range(22):
+    for i in range(14):
         while True:
             x, y, z = rnd.uniform(-0.7, 0.7), rnd.uniform(-0.7, 0.7), rnd.uniform(-0.75, 0.55)
             if x * x + y * y + z * z < 0.58 ** 2 + 0.2 and z < 0.3 + 0.1 * rnd.random(): break
-        k.sphere(f"gb{i}", 0.15, (x, y, 2.15 + z), vmat(f"ggb{i%7}", cols[i % 7], 0.25, coat=0.6), seg=8, rings=6)
-    k.lathe("cap", [(0.0, 2.95), (0.35, 2.95), (0.5, 3.05), (0.3, 3.3), (0.0, 3.34)], (0, 0, 0), cream, seg=24)
-    k.cyl("capring", 0.56, 0.1, (0, 0, 2.95), gold, r2=0.52, seg=32, bevel=0.02)
+        k.sphere(f"gb{i}", 0.15, (x, y, 2.15 + z), vmat(f"ggb{i%7}", cols[i % 7], 0.25, coat=0.6), seg=6, rings=5)
+    k.lathe("cap", [(0.0, 2.95), (0.35, 2.95), (0.5, 3.05), (0.3, 3.3), (0.0, 3.34)], (0, 0, 0), cream, seg=16)
+    k.cyl("capring", 0.56, 0.1, (0, 0, 2.95), gold, r2=0.52, seg=16)
     k.sphere("capknob", 0.12, (0, 0, 3.4), pink, seg=12, rings=8)
-    k.lathe("neck", [(0.0, 1.25), (0.62, 1.25), (0.55, 1.5), (0.6, 1.6), (0.0, 1.6)], (0, 0, 0), cream, seg=32)
-    k.torus("neckring", 0.6, 0.06, (0, 0, 1.55), gold, seg=32, sides=8)
+    k.lathe("neck", [(0.0, 1.25), (0.62, 1.25), (0.55, 1.5), (0.6, 1.6), (0.0, 1.6)], (0, 0, 0), cream, seg=20)
+    k.torus("neckring", 0.6, 0.06, (0, 0, 1.55), gold, seg=20, sides=5)
     vary = make_vary(0, 3.0, ao=0.25, noise=0.05)
     return k, vary
 
@@ -127,15 +127,15 @@ def mushroom(variant="pink"):
     stem = vmat("m_stem", C['cream'], 0.5)
     spot = vmat("m_spot", C['white'], 0.4)
     under = vmat("m_under", C['cream2'], 0.55)
-    k.lathe("stem", [(0.0, 0.0), (0.78, 0.0), (0.6, 0.35), (0.46, 1.2), (0.42, 2.0), (0.5, 2.8), (0.0, 2.8)], (0, 0, 0), stem, seg=28)
-    k.lathe("cap", [(0.0, 2.6), (1.6, 2.7), (2.05, 3.1), (2.0, 3.6), (1.5, 4.3), (0.8, 4.65), (0.0, 4.78)], (0, 0, 0), cap, seg=40)
-    k.lathe("gills", [(0.0, 2.55), (1.5, 2.62), (1.6, 2.7), (0.0, 2.66)], (0, 0, 0), under, seg=32)
+    k.lathe("stem", [(0.0, 0.0), (0.78, 0.0), (0.6, 0.35), (0.46, 1.2), (0.42, 2.0), (0.5, 2.8), (0.0, 2.8)], (0, 0, 0), stem, seg=14)
+    k.lathe("cap", [(0.0, 2.6), (1.6, 2.7), (2.05, 3.1), (2.0, 3.6), (1.5, 4.3), (0.8, 4.65), (0.0, 4.78)], (0, 0, 0), cap, seg=20)
+    k.lathe("gills", [(0.0, 2.55), (1.5, 2.62), (1.6, 2.7), (0.0, 2.66)], (0, 0, 0), under, seg=16)
     rnd = random.Random(5)
-    for i in range(9):
+    for i in range(6):
         a = i * 2.399
-        rr = 0.35 + 1.5 * math.sqrt((i + 0.5) / 9)
+        rr = 0.35 + 1.5 * math.sqrt((i + 0.5) / 6)
         z = 4.75 - 0.55 * (rr / 2.0) ** 2 * 1.6 - 0.02
-        k.sphere(f"spot{i}", 0.2 + 0.1 * ((i * 3) % 3), (math.cos(a) * rr, math.sin(a) * rr, z), spot, scale=(1, 1, 0.45), seg=10, rings=6)
+        k.sphere(f"spot{i}", 0.2 + 0.1 * ((i * 3) % 3), (math.cos(a) * rr, math.sin(a) * rr, z), spot, scale=(1, 1, 0.45), seg=6, rings=4)
     vary = make_vary(0, 4.8, ao=0.2, noise=0.06)
     return k, vary
 
@@ -162,13 +162,13 @@ def boulder():
     k = Kit("M_Boulder")
     m1 = vmat("bo_a", C['pinkl'], 0.5, coat=0.2)
     m2 = vmat("bo_b", C['lilac'], 0.5)
-    k.sphere("body", 1.2, (0, 0, 0.75), m1, scale=(1.05, 0.9, 0.8), seg=28, rings=18)
+    k.sphere("body", 1.2, (0, 0, 0.75), m1, scale=(1.05, 0.9, 0.8), seg=18, rings=12)
     ob = k.objs[-1]
     for v in ob.data.vertices:
         n = mnoise.noise(Vector((v.co.x * 1.3 + 3, v.co.y * 1.3, v.co.z * 1.3)))
         v.co *= (1.0 + 0.12 * n)
-    k.sphere("lump", 0.6, (0.8, -0.3, 0.35), m2, scale=(1, 1, 0.8), seg=14, rings=10)
-    k.sphere("lump2", 0.5, (-0.7, 0.5, 0.3), m2, scale=(1, 1, 0.8), seg=14, rings=10)
+    k.sphere("lump", 0.6, (0.8, -0.3, 0.35), m2, scale=(1, 1, 0.8), seg=10, rings=7)
+    k.sphere("lump2", 0.5, (-0.7, 0.5, 0.3), m2, scale=(1, 1, 0.8), seg=10, rings=7)
     k.sphere("top", 0.5, (0.1, 0.1, 1.5), vmat("bo_c", C['white'], 0.4), scale=(1.2, 1, 0.5), seg=14, rings=8)
 
     def stripe_fn(p, n):
@@ -186,14 +186,14 @@ def pillar():
     gold = vmat("pi_gold", C['gold'], 0.28, 0.85)
     glass = glassm("pi_glass", (0.9, 0.95, 1.0), 0.24)
     pearl = vmat("pi_pearl", C['pink'], 0.2, 0.0, emit=(1.0, 0.5, 0.85, 2.5))
-    k.cyl("plinth", 0.62, 0.3, (0, 0, 0.15), cream, seg=16, bevel=0.04)
-    k.lathe("shaft", [(0.0, 0.3), (0.42, 0.3), (0.34, 0.5), (0.3, 1.5), (0.34, 2.3), (0.0, 2.3)], (0, 0, 0), cream, seg=24)
-    for i in range(8):
-        a = i * math.pi / 4
-        k.cyl(f"flute{i}", 0.045, 1.7, (math.cos(a) * 0.3, math.sin(a) * 0.3, 1.4), pink, seg=6)
-    k.cyl("cap", 0.5, 0.18, (0, 0, 2.38), gold, r2=0.42, seg=24, bevel=0.02)
-    k.sphere("bub", 0.62, (0, 0, 3.0), glass, seg=28, rings=18)
-    k.sphere("pearl", 0.2, (0, 0, 3.0), pearl, seg=14, rings=10)
+    k.cyl("plinth", 0.62, 0.3, (0, 0, 0.15), cream, seg=12)
+    k.lathe("shaft", [(0.0, 0.3), (0.42, 0.3), (0.34, 0.5), (0.3, 1.5), (0.34, 2.3), (0.0, 2.3)], (0, 0, 0), cream, seg=14)
+    for i in range(6):
+        a = i * math.pi / 3
+        k.cyl(f"flute{i}", 0.05, 1.7, (math.cos(a) * 0.3, math.sin(a) * 0.3, 1.4), pink, seg=4)
+    k.cyl("cap", 0.5, 0.18, (0, 0, 2.38), gold, r2=0.42, seg=14)
+    k.sphere("bub", 0.62, (0, 0, 3.0), glass, seg=16, rings=10)
+    k.sphere("pearl", 0.2, (0, 0, 3.0), pearl, seg=10, rings=6)
     vary = make_vary(0, 3.4, ao=0.2, noise=0.04)
     return k, vary
 
@@ -206,9 +206,9 @@ def lamp():
     glow = vmat("l_glow", (1.0, 0.85, 0.5), 0.3, 0.0, emit=(1.0, 0.85, 0.5, 4.0))
     k.cyl("stick", 0.06, 2.1, (0, 0, 1.05), cream, seg=8)
     k.cyl("foot", 0.2, 0.12, (0, 0, 0.06), pk, seg=12, bevel=0.02)
-    k.cyl("disc1", 0.52, 0.16, (0, 0, 2.5), pk, rot=(math.pi / 2, 0, 0), seg=28, bevel=0.03)
-    k.cyl("disc2", 0.38, 0.2, (0, 0.03, 2.5), aq, rot=(math.pi / 2, 0, 0), seg=24, bevel=0.03)
-    k.cyl("disc3", 0.22, 0.22, (0, 0.06, 2.5), cream, rot=(math.pi / 2, 0, 0), seg=18, bevel=0.03)
+    k.cyl("disc1", 0.52, 0.16, (0, 0, 2.5), pk, rot=(math.pi / 2, 0, 0), seg=16)
+    k.cyl("disc2", 0.38, 0.2, (0, 0.03, 2.5), aq, rot=(math.pi / 2, 0, 0), seg=14)
+    k.cyl("disc3", 0.22, 0.22, (0, 0.06, 2.5), cream, rot=(math.pi / 2, 0, 0), seg=12)
     k.sphere("bulb", 0.1, (0, 0.18, 2.5), glow, seg=10, rings=8)
     vary = make_vary(0, 3.0, ao=0.2, noise=0.04)
     return k, vary

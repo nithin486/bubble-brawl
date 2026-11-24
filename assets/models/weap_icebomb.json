@@ -1,29 +1,12 @@
 {
-  "name": "weap_icebomb",
-  "query": "cartoon bomb",
-  "title": "Free Low Poly Bomb",
-  "source": "sketchfab",
-  "id": "4065d497126049e4a1040de72bc472d4",
-  "link": "https://sketchfab.com/3d-models/none-4065d497126049e4a1040de72bc472d4",
-  "author": "warcool",
-  "authorLink": "https://sketchfab.com/warcool",
-  "licence": "CC Attribution",
-  "needsCredit": true,
-  "triangles": 384,
-  "trianglesOriginal": 384,
-  "bytes": 16464,
-  "dimensions": [
-    0.394,
-    0.5,
-    0.394
-  ],
-  "animations": [],
-  "skinned": false,
-  "fetched": "2026-11-24",
-  "normalized": {
-    "pivot": "centre x/z, ground y=0",
-    "height": 0.5,
-    "rotateY": 0,
-    "forward": "+z"
-  }
+ "name": "weap_icebomb",
+ "title": "Freeze Bomb",
+ "source": "own",
+ "author": "Bubble Brawl (modelled in Blender by Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "Blender origin; muzzle/forward = +X, up = +Z (glTF +X / +Y)"
+ },
+ "fetched": "2026-11-24"
 }

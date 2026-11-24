@@ -20,7 +20,7 @@ def tile(variant, seed):
             ln = rnd.uniform(1.4, 2.6)
             r = rnd.uniform(0.1, 0.16)
             x, y = (1.98 * math.cos(a) - t * math.sin(a), 1.98 * math.sin(a) + t * math.cos(a))
-            k.sphere(f"drip{side_i}{j}", r, (x, y, 0.72 - ln * r * 0.5), top, scale=(1, 1, ln), seg=6, rings=4)
+            k.sphere(f"drip{side_i}{j}", r, (x, y, 0.72 - ln * r * 0.5), top, scale=(1, 1, ln), seg=4, rings=3)
     # decoration
     if variant in ("pink", "lilac", "sky", "lilac2", "sky2"):
         for i in range(5):
@@ -70,7 +70,7 @@ def bridge(seed=5):
     cane2 = vmat("b_cane2", C['white'], 0.45)
     rope = vmat("b_rope", C['cream2'], 0.7)
     gold = vmat("b_gold", C['gold'], 0.3, 0.8)
-    n = 10
+    n = 8
     L = 4.0
     for i in range(n):
         y = -L / 2 + (i + 0.5) * L / n
@@ -82,16 +82,16 @@ def bridge(seed=5):
     for sgn in (-1, 1):
         for yy in (-1.85, 0.0, 1.85):
             for q in range(3):
-                k.cyl(f"post{sgn}{yy}{q}", 0.1, 0.33, (sgn * 1.5, yy, 1.17 + q * 0.33), cane if q % 2 == 0 else cane2, seg=8)
+                k.cyl(f"post{sgn}{yy}{q}", 0.1, 0.33, (sgn * 1.5, yy, 1.17 + q * 0.33), cane if q % 2 == 0 else cane2, seg=6)
             k.sphere(f"ball{sgn}{yy}", 0.17, (sgn * 1.5, yy, 2.18), vmat(f"gb{(sgn+1)//2}", [C['aqua'], C['yellow']][(sgn + 1) // 2], 0.25, coat=0.5), seg=10, rings=8)
         pts = [(sgn * 1.5, -1.85, 1.85), (sgn * 1.5, -0.9, 1.7), (sgn * 1.5, 0.0, 1.66), (sgn * 1.5, 0.9, 1.7), (sgn * 1.5, 1.85, 1.85)]
-        k.tube(f"rope{sgn}", pts, 0.05, rope, sides=5)
+        k.tube(f"rope{sgn}", pts, 0.05, rope, sides=4)
         pts2 = [(x, y, z - 0.45) for x, y, z in pts]
-        k.tube(f"rope2{sgn}", pts2, 0.04, rope, sides=5)
+        k.tube(f"rope2{sgn}", pts2, 0.04, rope, sides=4)
     # little bunting flags
     for sgn in (-1, 1):
-        for i in range(4):
-            yy = -1.35 + i * 0.9
+        for i in range(2):
+            yy = -0.9 + i * 1.8
             k.box(f"flag{sgn}{i}", (0.02, 0.24, 0.26), (sgn * 1.5, yy, 1.45), vmat(f"flg{i%3}", [C['pink'], C['yellow'], C['aqua']][i % 3], 0.5), rot=(0.0, 0.0, 0), bevel=0.0)
     vary = make_vary(0.6, 1.8, ao=0.25, noise=0.07)
     return k, vary
@@ -103,7 +103,7 @@ def block(seed=1):
     k = Kit("M_Block")
     base = vmat("k_base", C['pink'], 0.45)
     trim = vmat("k_trim", C['cream'], 0.5)
-    k.box("body", (4.0, 4.0, 1.1), (0, 0, 0.55), base, bevel=0.1, seg=3)
+    k.box("body", (4.0, 4.0, 1.1), (0, 0, 0.55), base, bevel=0.1, seg=2)
     k.box("cap", (4.06, 4.06, 0.14), (0, 0, 1.13), trim, bevel=0.06, seg=3)
     for i in range(4):
         a = i * math.pi / 2
@@ -158,23 +158,23 @@ def plaza(apo=5.0, h=1.2):
     ring = vmat("p_ring", C['pink'], 0.4)
     star = vmat("p_star", C['aqua'], 0.4)
     gold = vmat("p_gold", C['gold'], 0.3, 0.8)
-    k.cyl("body", R, h - 0.1, (0, 0, (h - 0.1) / 2), base, rot=(0, 0, math.pi / 8), seg=8, bevel=0.1)
-    k.cyl("topdisc", R - 0.12, 0.16, (0, 0, h - 0.08), top, rot=(0, 0, math.pi / 8), seg=8, bevel=0.07)
+    k.cyl("body", R, h - 0.1, (0, 0, (h - 0.1) / 2), base, rot=(0, 0, math.pi / 8), seg=8, bevel=0.06, seg_=1) if False else k.cyl("body", R, h - 0.1, (0, 0, (h - 0.1) / 2), base, rot=(0, 0, math.pi / 8), seg=8)
+    k.cyl("topdisc", R - 0.12, 0.16, (0, 0, h - 0.08), top, rot=(0, 0, math.pi / 8), seg=8)
     # inlaid rings + star points
     for rr, tt, mm in ((3.6, 0.07, ring), (2.9, 0.05, gold), (4.35, 0.08, star)):
-        k.torus(f"ring{rr}", rr, tt, (0, 0, h + 0.0), mm, seg=48, sides=8)
+        k.torus(f"ring{rr}", rr, tt, (0, 0, h + 0.0), mm, seg=32, sides=4)
     for i in range(8):
         a = i * math.pi / 4
         k.box(f"spoke{i}", (0.16, 1.0, 0.05), (math.cos(a) * 3.6, math.sin(a) * 3.6, h + 0.02), star, rot=(0, 0, a + math.pi / 2), bevel=0.02, seg=2)
-        k.cyl(f"gem{i}", 0.2, 0.18, (math.cos(a) * 4.35, math.sin(a) * 4.35, h + 0.06), ring if i % 2 else gold, seg=10, bevel=0.03)
+        k.cyl(f"gem{i}", 0.2, 0.18, (math.cos(a) * 4.35, math.sin(a) * 4.35, h + 0.06), ring if i % 2 else gold, seg=6)
     # hanging icing drips on the 8 flats
     rnd = random.Random(4)
     for i in range(8):
         a = i * math.pi / 4
-        for j in range(3):
-            t = (j - 1) * 1.4 + rnd.uniform(-0.3, 0.3)
+        for j in range(2):
+            t = (j - 0.5) * 2.4 + rnd.uniform(-0.3, 0.3)
             x, y = (apo * math.cos(a) - t * math.sin(a)), (apo * math.sin(a) + t * math.cos(a))
-            k.sphere(f"drip{i}{j}", 0.15, (x, y, h - 0.45), vmat("p_drip", C['pinkl'], 0.5), scale=(1, 1, 2.3), seg=8, rings=6)
+            k.sphere(f"drip{i}{j}", 0.15, (x, y, h - 0.45), vmat("p_drip", C['pinkl'], 0.5), scale=(1, 1, 2.3), seg=6, rings=4)
     vary = make_vary(0, h, ao=0.18, noise=0.05)
     return k, vary
 
