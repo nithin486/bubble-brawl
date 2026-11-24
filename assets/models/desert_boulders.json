@@ -1,0 +1,29 @@
+{
+  "name": "desert_boulders",
+  "query": "namaqualand boulders 01",
+  "title": "Namaqualand Boulders 01",
+  "source": "polyhaven",
+  "id": "namaqualand_boulders_01",
+  "link": "https://polyhaven.com/a/namaqualand_boulders_01",
+  "author": "Greg Zaal, Jenelle van Heerden",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 8994,
+  "trianglesOriginal": 40850,
+  "bytes": 262980,
+  "dimensions": [
+    1.058,
+    0.251,
+    0.587
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

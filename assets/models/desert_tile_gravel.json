@@ -1,0 +1,17 @@
+{
+  "name": "desert_tile_gravel",
+  "title": "Desert tile (rocky_trail)",
+  "source": "polyhaven",
+  "author": "Poly Haven",
+  "licence": "CC0",
+  "link": "https://polyhaven.com/a/rocky_trail",
+  "needsCredit": false,
+  "textures": [
+    "rocky_trail"
+  ],
+  "dimensions": [
+    4.8,
+    1.2,
+    4.8
+  ]
+}

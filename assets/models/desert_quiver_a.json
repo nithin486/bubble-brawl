@@ -1,0 +1,29 @@
+{
+  "name": "desert_quiver_a",
+  "query": "quiver tree 01",
+  "title": "Quiver Tree 01",
+  "source": "polyhaven",
+  "id": "quiver_tree_01",
+  "link": "https://polyhaven.com/a/quiver_tree_01",
+  "author": "James Ray Cock, Dario Barresi, Rico Cilliers",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 8992,
+  "trianglesOriginal": 150124,
+  "bytes": 352280,
+  "dimensions": [
+    1.18,
+    2.715,
+    0.967
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

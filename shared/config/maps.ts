@@ -4,7 +4,10 @@ import { TUNING } from './tuning.ts';
 import { hexToWorld, type ArenaShape } from '../sim/arena.ts';
 import type { TerrainDef } from '../sim/terrain.ts';
 
-export type MapId = 'candy' | 'downtown' | 'city' | 'spooky' | 'village';
+export type MapId = 'candy' | 'downtown' | 'city' | 'spooky' | 'village' | 'desert';
+
+/** Maps whose art ships in a separate asset pack, loaded only when the map is chosen (see client/src/render/assets.ts). */
+export const MAP_PACK: Partial<Record<MapId, string>> = { desert: 'desert' };
 
 export interface Obstacle {
   x: number;
@@ -364,6 +367,82 @@ function spooky(): MapDef {
   };
 }
 
+// ------------------------------------------------------------------ Desert Outpost (realistic)
+
+/**
+ * Visual scale and collision radius of each Desert Outpost prop (photo-scanned Poly Haven models, real-world size × scale).
+ * Shared by the map layout (collision) and the renderer (client/src/render/themes.ts) so what you see is what you hit.
+ */
+export const DESERT = {
+  cliff: { s: 1.0, r: 1.9 }, // 8.3 m rock formation, a row of circles along its length
+  boulder: { s: 1.3, r: 1.55 },
+  crate: { s: 2.2, r: 0.85 },
+  barrel: { s: 1.5, r: 0.5 },
+  stove: { s: 1.6, r: 0.5 },
+  barrier: { s: 1.5, r: 0.42 },
+  car: { s: 1.15, r: 0.95 },
+  quiverA: { s: 1.3, r: 0.38 },
+  quiverB: { s: 1.7, r: 0.3 },
+  dead: { s: 1.3, r: 0.25 },
+} as const;
+
+/** A 11×11-tile desert salvage camp on a mesa: a concrete yard in the middle, cover all around, a road crossing it. */
+function desert(): MapDef {
+  const S = 4.8;
+  const R = 26.5;
+  const o: Obstacle[] = [];
+  const P = (kind: string, x: number, z: number, r: number, rot = 0) => o.push({ kind, x, z, r, rot });
+  const quad = (x: number, z: number) => [[x, z], [-x, z], [x, -z], [-x, -z]];
+  const D = DESERT;
+
+  // ---- the yard (concrete, 3×3 tiles): two covered cars to fight around, fuel barrels, supply crates
+  for (const sx of [1, -1]) long(o, 'dcar', sx * 3.6, 0, 0, 4.6, D.car.r);
+  for (const sz of [1, -1]) P('dstove', 0, sz * 5.2, D.stove.r, sz * 1.2);
+  for (const [x, z] of quad(1.9, 4.4)) P('dcrate', x, z, D.crate.r, (x * z) * 0.12);
+  // ---- concrete barrier chicanes at the yard's corners (waist-high cover with gaps to run through)
+  for (const [x, z] of quad(9.5, 6.2)) long(o, 'dbarrier', x, z, Math.PI / 2, 2.2, D.barrier.r);
+  for (const [x, z] of quad(6.2, 9.5)) long(o, 'dbarrier', x, z, 0, 2.2, D.barrier.r);
+  // ---- rock cover
+  for (const [x, z] of quad(13.5, 3.6)) P('dboulder', x, z, D.boulder.r, x * 0.31 + z);
+  for (const [x, z] of quad(3.6, 13.5)) P('dboulder', x, z, D.boulder.r, x * 0.27 - z);
+  for (const [x, z] of quad(18.5, 18.5)) long(o, 'dcliff', x, z, Math.atan2(-x, z) * 0.5 + 0.6, 7.0, D.cliff.r);
+  // ---- camp clutter: crate pairs, barrels
+  for (const [x, z] of quad(11, 11)) {
+    P('dcrate', x, z, D.crate.r, x * 0.2);
+    P('dbarrel', x - Math.sign(x) * 1.6, z + Math.sign(z) * 0.9, D.barrel.r, z);
+  }
+  for (const [x, z] of quad(17, 7.5)) P('dbarrel', x, z, D.barrel.r, x);
+  for (const [x, z] of quad(7.5, 17)) P('dbarrel', x, z, D.barrel.r, z);
+  // ---- desert trees
+  for (const [x, z] of quad(16, 11.5)) P('dquiverA', x, z, D.quiverA.r, x * 0.7);
+  for (const [x, z] of quad(11.5, 16)) P('dquiverB', x, z, D.quiverB.r, z * 0.7);
+  for (const [x, z] of quad(22.5, 4.5)) P('dquiverB', x, z, D.quiverB.r, x);
+  for (const [x, z] of quad(4.5, 22.5)) P('dquiverA', x, z, D.quiverA.r, z);
+  for (const [x, z] of quad(21, 12.5)) P('ddead', x, z, D.dead.r, x * 0.4);
+  for (const [x, z] of quad(12.5, 21)) P('ddead', x, z, D.dead.r, z * 0.4);
+  // ---- ground dressing (r = 0: looks only, no collision)
+  for (let k = 0; k < 46; k++) {
+    const x = (hash(k, 1, 21) - 0.5) * 2 * (R - 2);
+    const z = (hash(k, 2, 21) - 0.5) * 2 * (R - 2);
+    if (Math.hypot(x, z) > R - 1.5) continue;
+    const kind = ['dstone', 'dstone', 'dpebbles', 'dtyre', 'dplanks'][k % 5];
+    P(kind, x, z, 0, hash(k, 3, 21) * 6.28);
+  }
+  return {
+    id: 'desert',
+    name: 'Desert Outpost',
+    blurb: 'A salvage camp on a desert mesa at sunset: hide behind cars, barriers and rock.',
+    shape: { grid: 'square', tileSize: S, radius: R },
+    keepRadius: 15,
+    coinScale: 2.4,
+    bankSpots: [[1, 1], [-1, -1], [1, -1], [-1, 1], [3, 0], [-3, 0], [0, 3], [0, -3]].map(([i, j]) => ({ x: i * S, z: j * S })),
+    starts: ring(6, 12, 0),
+    pads: [],
+    jackpot: { x: 0, z: 0, name: 'Supply Drop' },
+    obstacles: o,
+  };
+}
+
 // ------------------------------------------------------------------ Village (the first map)
 
 /** Spoke directions (road axes): 30° + 60°·k in facing convention (atan2(x, z)). */
@@ -419,6 +498,6 @@ function village(): MapDef {
   };
 }
 
-export const MAPS: Record<MapId, MapDef> = { candy: candy(), downtown: downtown(), city: city(), spooky: spooky(), village: village() };
+export const MAPS: Record<MapId, MapDef> = { candy: candy(), downtown: downtown(), city: city(), spooky: spooky(), village: village(), desert: desert() };
 /** Maps offered to players: Candy Town is the one premium map (older maps stay defined for tests/replays). */
-export const MAP_ROTATION: MapId[] = ['candy'];
+export const MAP_ROTATION: MapId[] = ['candy', 'desert'];

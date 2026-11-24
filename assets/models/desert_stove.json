@@ -1,0 +1,29 @@
+{
+  "name": "desert_stove",
+  "query": "barrel stove",
+  "title": "Barrel Stove",
+  "source": "polyhaven",
+  "id": "barrel_stove",
+  "link": "https://polyhaven.com/a/barrel_stove",
+  "author": "MP",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 9000,
+  "trianglesOriginal": 9216,
+  "bytes": 187600,
+  "dimensions": [
+    0.593,
+    0.856,
+    0.593
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

@@ -455,13 +455,17 @@ body.cam-third .tag.me .tn{display:none}
 .hrt { width: 22px; height: 20px; display: inline-block; background: center/contain no-repeat url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'><path d='M12 21s-9-5.6-9-12a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6.4-9 12-9 12z' fill='%23ff3a5a' stroke='%231d0d52' stroke-width='2.4'/></svg>"); }
 .hrt.off { filter: grayscale(1) brightness(.55); opacity: .7; }
 .pill.carry.low { animation: pulse .5s infinite alternate; }
-.thp { display: inline-flex; gap: 2px; }
-.thp .hrt { width: 13px; height: 12px; }
+/* health bars */
+.hpbar { position: relative; display: inline-block; width: 150px; height: 22px; border-radius: 12px; background: #1d0d52; box-shadow: inset 0 2px 3px #0009, 0 0 0 2px #ffffff55; overflow: hidden; vertical-align: middle; }
+.hpfill { display: block; height: 100%; border-radius: 12px; box-shadow: inset 0 -5px 0 #0003, inset 0 3px 0 #ffffff55; transition: width .25s ease-out; }
+.hpbar b { position: absolute; inset: 0; display: grid; place-items: center; font: 400 15px var(--display); color: #fff; text-shadow: 0 2px 0 #1d0d52, 0 0 4px #1d0d52; }
+.thp { display: inline-block; width: 44px; height: 8px; border-radius: 5px; background: #1d0d52; box-shadow: 0 0 0 1.5px #ffffffaa; overflow: hidden; vertical-align: middle; }
+.thp .hpfill { border-radius: 5px; box-shadow: none; }
 .tbub { font-family: var(--display); font-size: 13px; color: #fff; background: #b38cff; padding: 1px 7px; border-radius: 8px; animation: pulse .4s infinite alternate; }
 .btn.grab.armed { background: radial-gradient(circle at 50% 35%, #fff, var(--wc, #ffd23f) 70%); }
 .btn .wicon { width: 46px; height: 46px; position: relative; z-index: 2; margin-bottom: -4px; filter: drop-shadow(0 2px 0 #0006); }
 .btn.grab.armed .lbl { color: #1d0d52; text-shadow: none; font-size: 16px; }
-@media (max-height: 520px) { .hrt { width: 16px; height: 15px; } .thp .hrt { width: 11px; height: 10px; } }
+@media (max-height: 520px) { .hpbar { width: 110px; height: 18px; } .hpbar b { font-size: 12px; } .thp { width: 38px; height: 7px; } }
 /* weapons mode: scores are ⭐ points, not coins */
 .mode-weapons .row .bk .coin-ico, .mode-weapons .sc .coin-ico, .mode-weapons .podium .coin-ico {
   background: center/contain no-repeat url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 2l3 6.5 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.1l1.5-7L2 9.3l7-.8z' fill='%23ffd23f' stroke='%23a35a00' stroke-width='1.6' stroke-linejoin='round'/></svg>");

@@ -1,0 +1,29 @@
+{
+  "name": "desert_crate_a",
+  "query": "wooden crate 01",
+  "title": "Wooden Crate 01",
+  "source": "polyhaven",
+  "id": "wooden_crate_01",
+  "link": "https://polyhaven.com/a/wooden_crate_01",
+  "author": "James Ray Cock",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 6576,
+  "trianglesOriginal": 6576,
+  "bytes": 164068,
+  "dimensions": [
+    0.825,
+    0.35,
+    0.409
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

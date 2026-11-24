@@ -1,0 +1,17 @@
+{
+  "name": "desert_tile_sand",
+  "title": "Desert tile (sandy_gravel_02)",
+  "source": "polyhaven",
+  "author": "Poly Haven",
+  "licence": "CC0",
+  "link": "https://polyhaven.com/a/sandy_gravel_02",
+  "needsCredit": false,
+  "textures": [
+    "sandy_gravel_02"
+  ],
+  "dimensions": [
+    4.8,
+    1.2,
+    4.8
+  ]
+}

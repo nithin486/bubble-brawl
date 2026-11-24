@@ -142,7 +142,7 @@ export interface Coin {
   v: number; // value: 1, or more for a golden coin
 }
 
-export type RoundMod = 'none' | 'giant' | 'thieves' | 'bombs' | 'turbo' | 'magnet' | 'goldrush' | 'double';
+export type RoundMod = 'none' | 'giant' | 'thieves' | 'bombs' | 'turbo' | 'magnet' | 'goldrush' | 'double' | 'rapid' | 'ammo' | 'rockets' | 'blasters' | 'frost' | 'boxfest';
 
 export interface Hazard {
   id: number;
@@ -208,6 +208,7 @@ export type SimEvent =
   | { t: 'hazardHit'; kind: 'traffic' | 'bell'; p: number }
   | { t: 'jackpot'; n: number }
   | { t: 'steal'; from: number; to: number; n: number; sticky: boolean }
+  | { t: 'weaponSteal'; from: number; to: number; weapon: WeaponKind }
   | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | 'traffic' | 'bell' | AbilityId | WeaponKind; drop: number; x: number; z: number }
   | { t: 'grab'; p: number; hit: boolean }
   | { t: 'grabStart'; p: number; facing: number }

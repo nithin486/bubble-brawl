@@ -1,0 +1,17 @@
+{
+  "name": "desert_tile_yard",
+  "title": "Desert tile (concrete_floor_02)",
+  "source": "polyhaven",
+  "author": "Poly Haven",
+  "licence": "CC0",
+  "link": "https://polyhaven.com/a/concrete_floor_02",
+  "needsCredit": false,
+  "textures": [
+    "concrete_floor_02"
+  ],
+  "dimensions": [
+    4.8,
+    1.2,
+    4.8
+  ]
+}

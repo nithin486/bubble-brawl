@@ -1,0 +1,17 @@
+{
+  "name": "desert_tile_pale",
+  "title": "Desert tile (dense_sand)",
+  "source": "polyhaven",
+  "author": "Poly Haven",
+  "licence": "CC0",
+  "link": "https://polyhaven.com/a/dense_sand",
+  "needsCredit": false,
+  "textures": [
+    "dense_sand"
+  ],
+  "dimensions": [
+    4.8,
+    1.2,
+    4.8
+  ]
+}

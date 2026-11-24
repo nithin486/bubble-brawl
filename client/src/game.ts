@@ -8,9 +8,9 @@ import { HEROES, HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 import { Stage, isTouch, type Quality } from './render/stage.ts';
 import { loadModel } from './render/models.ts';
 import { WeaponsView, WEAPON_INFO } from './render/weapons-view.ts';
-import type { Assets } from './render/assets.ts';
+import { loadPack, type Assets } from './render/assets.ts';
 import { ArenaView } from './render/arena-view.ts';
-import { MAPS, MAP_ROTATION, type MapId } from '../../shared/config/maps.ts';
+import { MAPS, MAP_ROTATION, MAP_PACK, type MapId } from '../../shared/config/maps.ts';
 import { HeroView } from './render/hero.ts';
 import { CoinsView } from './render/coins.ts';
 import { BankView } from './render/bank.ts';
@@ -186,10 +186,13 @@ export class Game {
     }
     if (AUTOPLAY || PARAMS.has('play')) {
       this.mode = 'match';
-      this.startMatch(profile.hero);
-      // ?model=crate,rock — preview models fetched by scripts/fetch_model.js in front of your hero
-      const preview = PARAMS.get('model');
-      if (preview) void this.previewModels(preview.split(','));
+      const begin = () => {
+        this.startMatch(profile.hero);
+        // ?model=crate,rock — preview models fetched by scripts/fetch_model.js in front of your hero
+        const preview = PARAMS.get('model');
+        if (preview) void this.previewModels(preview.split(','));
+      };
+      void this.ensureMap(this.mapId).then(begin);
     } else this.goHome();
     // invite link: straight into the friend's room
     const invite = PARAMS.get('room');
@@ -229,7 +232,16 @@ export class Game {
       this.profile.map = id;
       saveProfile(this.profile);
       track('map_selected', { map: id });
-      this.startMatch(this.profile.hero, true);
+      if (this.mapReady(this.mapId)) {
+        this.startMatch(this.profile.hero, true);
+        return;
+      }
+      // its art is a separate download: show a note, then switch the background when it has arrived
+      this.home?.setMapNote('Loading map…');
+      void this.ensureMap(id as MapId).then(() => {
+        this.home?.setMapNote('');
+        if (this.mode === 'home' && this.mapId === id) this.startMatch(this.profile.hero, true);
+      });
     };
     this.home.onHero = (h, locked) => {
       this.showcase.set([{ hero: h, anim: locked ? 'Idle' : 'Cheer', locked, color: HEROES[h].color, height: 0.45 }]);
@@ -252,16 +264,35 @@ export class Game {
         this.profile.hero = h;
         saveProfile(this.profile);
       }
-      this.home?.destroy();
-      this.home = null;
-      this.showcase.clear();
-      this.mode = 'match';
-      this.trial = trial;
-      this.startMatch(h);
+      const go = () => {
+        this.home?.destroy();
+        this.home = null;
+        this.showcase.clear();
+        this.mode = 'match';
+        this.trial = trial;
+        this.startMatch(h);
+      };
+      if (this.mapReady(this.mapId)) go();
+      else {
+        this.home?.setMapNote('Loading map…');
+        void this.ensureMap(this.mapId).then(go);
+      }
     };
   }
 
+  /** Download a map's art pack if it has one (resolved at once when it is already here). */
+  private ensureMap(id: MapId): Promise<void> {
+    const pack = MAP_PACK[id];
+    return pack && !this.assets.packs.has(pack) ? loadPack(this.assets, pack) : Promise.resolve();
+  }
+
+  private mapReady(id: MapId) {
+    const pack = MAP_PACK[id];
+    return !pack || this.assets.packs.has(pack);
+  }
+
   private startMatch(hero: HeroId, attract = false, net?: { start: StartMsg; seat: number }) {
+    if (!net && !this.mapReady(this.mapId)) this.mapId = MAP_ROTATION[0]; // art still downloading: play on the first map
     const rng = new Rng((Math.random() * 1e9) | 0);
     const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
     const botHeroes: HeroId[] = HERO_IDS;
@@ -343,6 +374,7 @@ export class Game {
 
   private frame = (nowMs: number) => {
     requestAnimationFrame(this.frame);
+    if (!this.world) return; // the first match is still waiting for its map's art
     let dt = (nowMs - this.last) / 1000;
     this.last = nowMs;
     if (dt > 0.1) dt = 0.1;
@@ -670,7 +702,7 @@ export class Game {
     this.mode = 'match';
     this.paused = false;
     this.trial = false;
-    this.startMatch(start.seats[seat].hero, false, { start, seat });
+    void this.ensureMap(start.map).then(() => this.startMatch(start.seats[seat].hero, false, { start, seat }));
   }
 
   private peerLeft(peer: string) {
@@ -789,6 +821,21 @@ export class Game {
           this.hud.prompt(null);
         }
         break;
+      case 'weaponSteal': {
+        const info = WEAPON_INFO[e.weapon];
+        this.fx.beam(this.pos(e.to, 1.1), this.pos(e.from, 1.1), '#ff5fd2', 0.45);
+        this.fx.emit(this.pos(e.from, 1.1).x, 1.1, this.pos(e.from, 1.1).z, { n: 16, color: ['#ff5fd2', '#ffffff', info.color], speed: 4, up: 3, life: 0.5, size: 0.4 });
+        if (e.to === LOCAL) {
+          this.sfx.steal();
+          this.hud.banner(`STOLE ${info.name}!`, 'pink');
+          this.slowMo(0.35, 0.25);
+        } else if (e.from === LOCAL) {
+          this.sfx.stolenFrom();
+          this.hud.banner('DISARMED!', 'red', true);
+        }
+        this.hud.feed(`${this.who(e.to)} stole ${this.who(e.from)}'s ${info.name.toLowerCase()}`);
+        break;
+      }
       case 'steal': {
         if (e.n > 0 && e.from === LOCAL) {
           this.say(e.to, 'robbedYou', true);
@@ -820,7 +867,7 @@ export class Game {
         if (e.n >= 3) this.hud.feed(`${this.who(e.to)} stole ${e.n} from ${this.who(e.from)}`);
         if (e.n > 0) {
           this.hud.floater(this.pos(e.to, 2.6), cam, `+${e.n}`, 'plus');
-          this.hud.floater(this.pos(e.from, 2.6), cam, `-${e.n}`, 'minus');
+          this.hud.floater(this.pos(e.from, 2.6), cam, `-${Math.round(e.n * TUNING.weapons.hitHp)}`, 'minus');
         }
         break;
       }
@@ -914,7 +961,7 @@ export class Game {
         break;
       case 'damage':
         this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.n}`, 'minus');
-        if (e.victim === LOCAL && e.hp === 1) this.hud.banner('LAST HEART!', 'red', true);
+        if (e.victim === LOCAL && e.hp > 0 && e.hp <= TUNING.weapons.hitHp) this.hud.banner('ALMOST OUT!', 'red', true);
         break;
       case 'ko': {
         const P = w.players[e.victim];
@@ -1218,7 +1265,7 @@ export class Game {
       case 'countdown':
         if (e.n === Math.ceil(TUNING.match.countdownSeconds)) {
           this.hud.closePanel();
-          if (this.mode === 'match') this.hud.roulette(w.mod, w.round);
+          if (this.mode === 'match') this.hud.roulette(w.mod, w.round, w.mode);
         }
         if (e.n <= 3) this.hud.countdown(e.n);
         this.sfx.count();
@@ -1441,7 +1488,7 @@ export class Game {
     return { ...i, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist };
   }
   private lastStickFwd = 0;
-  /** Where the local player is pointing this frame (camera centre in 3rd person, cursor on desktop top-down). */
+  /** Where the local player is pointing this frame (camera centre line in 3rd person, cursor on desktop top-down). */
   private aimInfo: { heading: number; dist: number } | null = null;
   private aimRay = new THREE.Raycaster();
   private aimNdc = new THREE.Vector2();

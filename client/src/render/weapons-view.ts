@@ -316,14 +316,23 @@ export class WeaponsView {
         const glow = this.glowSprite('#ffd84a', 1.7); // small warm halo only: a big one bleaches the chest on a bright map
         glow.material.blending = THREE.NormalBlending;
         glow.position.y = 0.7;
-        // KayKit golden chest: same art family as the heroes
+        // KayKit golden chest (same art family as the heroes); on the realistic desert map a real military ammo crate
         const model = new THREE.Group();
-        const src = this.env.get('chest_gold');
+        const real = w.map.id === 'desert' && this.env.has('desert_ammo');
+        const src = this.env.get(real ? 'desert_ammo' : 'chest_gold');
         if (src) {
           const c = src.clone();
-          c.scale.setScalar(0.85);
+          c.scale.setScalar(real ? 4.4 : 0.85);
+          if (real)
+            c.traverse((m) => {
+              const mesh = m as THREE.Mesh;
+              if (!mesh.isMesh) return;
+              const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+              mat.color.setScalar(2.6); // the scanned olive paint is very dark: lift it so the crate reads from afar
+              mesh.material = mat;
+            });
           model.add(c);
-          addOutlines(c, 0.03 / 0.85);
+          if (!real) addOutlines(c, 0.03 / 0.85);
         }
         const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.4, 5.5, 20, 1, true), this.beamMat);
         beam.position.y = 2.75;

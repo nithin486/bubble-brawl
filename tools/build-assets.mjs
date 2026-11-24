@@ -134,42 +134,52 @@ const envInputs = [...ENV.hex, ...ENV.city, ...ENV.spooky, ...ENV.candy, ...ENV.
     seen.add(n);
   }
 }
-const envDst = path.join(out, 'env.glb');
-if (!fresh(envDst, envInputs.map((e) => e[1]))) {
-  const doc = await io.read(envInputs[0][1]);
-  // Give every piece a single named root node "piece_<name>" in one scene.
-  const nameRoot = (d, name) => {
-    const scene = d.getRoot().listScenes()[0];
-    const holder = d.createNode(`piece_${name}`);
-    for (const child of scene.listChildren()) {
-      scene.removeChild(child);
-      holder.addChild(child);
+async function mergeEnv(inputs, envDst, label) {
+  if (fresh(envDst, inputs.map((e) => e[1]))) return;
+  {
+    const doc = await io.read(inputs[0][1]);
+    // Give every piece a single named root node "piece_<name>" in one scene.
+    const nameRoot = (d, name) => {
+      const scene = d.getRoot().listScenes()[0];
+      const holder = d.createNode(`piece_${name}`);
+      for (const child of scene.listChildren()) {
+        scene.removeChild(child);
+        holder.addChild(child);
+      }
+      scene.addChild(holder);
+    };
+    nameRoot(doc, inputs[0][0]);
+    const mainScene = doc.getRoot().listScenes()[0];
+    for (const [name, file] of inputs.slice(1)) {
+      const other = await io.read(file);
+      nameRoot(other, name);
+      const map = mergeDocuments(doc, other);
+      const otherScene = map.get(other.getRoot().listScenes()[0]);
+      for (const child of otherScene.listChildren()) {
+        otherScene.removeChild(child);
+        mainScene.addChild(child);
+      }
+      otherScene.dispose();
     }
-    scene.addChild(holder);
-  };
-  nameRoot(doc, envInputs[0][0]);
-  const mainScene = doc.getRoot().listScenes()[0];
-  for (const [name, file] of envInputs.slice(1)) {
-    const other = await io.read(file);
-    nameRoot(other, name);
-    const map = mergeDocuments(doc, other);
-    const otherScene = map.get(other.getRoot().listScenes()[0]);
-    for (const child of otherScene.listChildren()) {
-      otherScene.removeChild(child);
-      mainScene.addChild(child);
-    }
-    otherScene.dispose();
+    await doc.transform(unpartition());
+    const size = await compress(doc, envDst);
+    console.log(`${label} ${(size / 1024).toFixed(0)} KB, ${inputs.length} pieces`);
   }
-  await doc.transform(unpartition());
-  const size = await compress(doc, envDst);
-  console.log(`env ${(size / 1024).toFixed(0)} KB, ${envInputs.length} pieces`);
 }
+await mergeEnv(envInputs, path.join(out, 'env.glb'), 'env');
+// Desert Outpost: realistic scanned props + PBR ground tiles, loaded only when that map is chosen
+const desertInputs = fs
+  .readdirSync(path.join(root, 'assets/models'))
+  .filter((f) => f.startsWith('desert_') && f.endsWith('.glb'))
+  .sort()
+  .map((f) => [f.slice(0, -4), path.join(root, 'assets/models', f)]);
+if (desertInputs.length) await mergeEnv(desertInputs, path.join(out, 'env_desert.glb'), 'env_desert');
 // Models fetched by scripts/fetch_model.js are already game-ready: copy them as they are.
 const modelsSrc = path.join(root, 'assets/models');
 if (fs.existsSync(modelsSrc)) {
   const dst = path.join(out, 'models');
   fs.mkdirSync(dst, { recursive: true });
-  const glbs = fs.readdirSync(modelsSrc).filter((f) => f.endsWith('.glb'));
+  const glbs = fs.readdirSync(modelsSrc).filter((f) => f.endsWith('.glb') && !f.startsWith('desert_')); // desert pieces ship inside env_desert.glb
   for (const f of glbs) if (!fresh(path.join(dst, f), [path.join(modelsSrc, f)])) fs.copyFileSync(path.join(modelsSrc, f), path.join(dst, f));
   if (glbs.length) console.log(`models ${glbs.length} → assets/models`);
 }

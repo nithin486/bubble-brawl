@@ -195,6 +195,10 @@ export const TUNING = {
     magnet: { radius: 2.8 },
     goldrush: { jackpotEvery: 9 },
     double: { bankMult: 2 },
+    // weapons-mode twists
+    rapid: { cooldownMult: 0.5 },
+    ammo: { mult: 2 },
+    boxfest: { respawnMult: 0.25 },
   },
 
   /** Map events. */
@@ -221,7 +225,9 @@ export const TUNING = {
 
   /** Weapons mode: mystery boxes, 6 weapons, health and Bubble KO. */
   weapons: {
-    hp: 3,
+    /** Health bar: 0..100. Every attack's damage is in "hits"; one hit takes hitHp (3 hits knock you out, as before). */
+    hp: 100,
+    hitHp: 34,
     /** Punch (no weapon): uses the grab timings, does this much damage. */
     punchDamage: 1,
     boxes: { count: 6, respawn: 5, pickupRadius: 1.1 },

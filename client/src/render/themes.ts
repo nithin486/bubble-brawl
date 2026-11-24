@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { World } from '../../../shared/sim/world.ts';
 import type { MapId, Obstacle } from '../../../shared/config/maps.ts';
-import { SPOKES, spokeTile, CANDY_K } from '../../../shared/config/maps.ts';
+import { SPOKES, spokeTile, CANDY_K, DESERT } from '../../../shared/config/maps.ts';
 import { hexToWorld, key } from '../../../shared/sim/arena.ts';
 import type { Rng } from '../../../shared/sim/math.ts';
 
@@ -43,6 +43,10 @@ export interface Theme {
   hemi: { sky: string; ground: string; intensity: number };
   sun: { color: string; intensity: number; pos: [number, number, number] };
   exposure: number;
+  /** Realistic map: plain PBR materials, no ink outlines, ground textured in world space. */
+  pbr?: boolean;
+  /** Final colour grade (default: the saturated cartoon poster look). */
+  grade?: { sat: number; con: number };
   /** Glow filter: only really bright things (lamps, effects) should glow. */
   bloom?: { strength: number; threshold: number };
   clouds: { color: string; emissive: string; intensity: number };
@@ -593,4 +597,121 @@ const village: Theme = {
   },
 };
 
-export const THEMES: Record<MapId, Theme> = { candy, downtown, city, spooky, village };
+// =================================================================== Desert Outpost (realistic)
+
+const dhash = (a: number, b: number) => {
+  const h = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return h - Math.floor(h);
+};
+
+const desert: Theme = {
+  id: 'desert',
+  pbr: true,
+  grade: { sat: 0.98, con: 1.08 },
+  sky: { top: '#2f5db0', mid: '#e8a56d', horizon: '#ffd9a4', bottom: '#dba56e' },
+  fog: { color: '#ebc59b', near: 55, far: 230 },
+  bloom: { strength: 0.18, threshold: 0.98 },
+  hemi: { sky: '#fff1dc', ground: '#8f7456', intensity: 0.9 },
+  sun: { color: '#ffe3bb', intensity: 3.0, pos: [-26, 16, 11] }, // low sun: long, readable shadows
+  exposure: 0.95,
+  clouds: { color: '#ffd9bb', emissive: '#ff9f6a', intensity: 0.25 },
+  waterfalls: false,
+  bubbles: false,
+  under: { piece: 'desert_under', sx: 1, sy: 1, sz: 1, y: -3.8 },
+  core: [
+    { y: -5.2, r: 22, s: 0.96 },
+    { y: -6.8, r: 16, s: 0.92 },
+    { y: -8.4, r: 10, s: 0.88 },
+    { y: -10, r: 5, s: 0.84 },
+  ],
+  tiles(world) {
+    return world.arena.tiles.map((t) => {
+      const i = t.q;
+      const j = t.r;
+      const h = dhash(i, j);
+      let kind = 'pale';
+      if (Math.abs(i) <= 1 && Math.abs(j) <= 1) kind = 'yard';
+      else if ((i === 0 && Math.abs(j) >= 2) || (j === 0 && Math.abs(i) >= 2)) kind = 'road'; // the road through the camp
+      else if (h < 0.28) kind = 'sand';
+      else if (h < 0.42) kind = 'gravel';
+      // tone the orange sand down towards the pale one and vary every tile a little, so the ground never reads as a grid of patches
+      const tone = kind === 'sand' ? 0.82 : kind === 'gravel' ? 0.94 : 1;
+      const v = tone * (0.93 + dhash(i + 5, j + 9) * 0.1);
+      const color = new THREE.Color(v, v * (kind === 'sand' ? 0.9 : 0.97), v * (kind === 'sand' ? 0.8 : 0.94));
+      return { piece: `desert_tile_${kind}`, rot: Math.floor(dhash(j, i) * 4) * (Math.PI / 2), scale: [1, 1, 1] as [number, number, number], y: 0, color };
+    });
+  },
+  prop(o, add, glow) {
+    const D = DESERT;
+    switch (o.kind) {
+      case 'dcliff':
+        add('desert_cliff', D.cliff.s, 0, 0, Math.PI / 2); // the model runs along x; the collision row runs along the prop's z
+        break;
+      case 'dboulder':
+        add('desert_boulder_a', D.boulder.s);
+        break;
+      case 'dcrate':
+        add('desert_crate_a', D.crate.s);
+        break;
+      case 'dbarrel':
+        add('desert_barrel', D.barrel.s);
+        break;
+      case 'dstove':
+        add('desert_stove', D.stove.s);
+        glow('#ff8a3d', 2.6, 0, 1.45, 0); // fire in the barrel
+        break;
+      case 'dbarrier':
+        add('desert_barrier', D.barrier.s, 0, 0, Math.PI / 2);
+        break;
+      case 'dcar': {
+        const car = add('desert_car', D.car.s);
+        // the scanned tarp is nearly black: lift it so the car reads as a shape, not a hole
+        car?.traverse((m) => {
+          const mesh = m as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+          mat.color.setScalar(2.4);
+          mesh.material = mat;
+        });
+        break;
+      }
+      case 'dquiverA':
+        add('desert_quiver_a', D.quiverA.s);
+        break;
+      case 'dquiverB':
+        add('desert_quiver_b', D.quiverB.s);
+        break;
+      case 'ddead':
+        add('desert_deadtree', D.dead.s);
+        break;
+      case 'dstone':
+        add('desert_boulder_b', 2.2);
+        break;
+      case 'dpebbles':
+        add('desert_boulders', 2.6);
+        break;
+      case 'dtyre':
+        add('desert_tyre', 1.8);
+        break;
+      case 'dplanks':
+        add('desert_rocks', 3);
+        break;
+    }
+  },
+  backdrop(ctx) {
+    // other mesas rising out of the haze all around, and the desert floor far below
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(700, 48), new THREE.MeshStandardMaterial({ color: '#c79a66', roughness: 1 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -55;
+    ctx.add(floor);
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2 + dhash(k, 3) * 0.3;
+      const d = 80 + dhash(k, 5) * 70;
+      const sc = 7 + dhash(k, 7) * 8;
+      ctx.place('desert_cliff', Math.sin(a) * d, -52 + dhash(k, 9) * 22, Math.cos(a) * d, sc, dhash(k, 11) * 6.28);
+      if (k % 3 === 0) ctx.place('desert_cliff', Math.sin(a + 0.12) * (d + 20), -50 + dhash(k, 13) * 18, Math.cos(a + 0.12) * (d + 20), sc * 1.5, dhash(k, 15) * 6.28);
+    }
+  },
+};
+
+export const THEMES: Record<MapId, Theme> = { candy, downtown, city, spooky, village, desert };

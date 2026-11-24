@@ -1,0 +1,29 @@
+{
+  "name": "desert_ammo",
+  "query": "ammo box",
+  "title": "Ammo Box",
+  "source": "polyhaven",
+  "id": "ammo_box",
+  "link": "https://polyhaven.com/a/ammo_box",
+  "author": "DanKit",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 4382,
+  "trianglesOriginal": 4382,
+  "bytes": 97524,
+  "dimensions": [
+    0.087,
+    0.177,
+    0.258
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

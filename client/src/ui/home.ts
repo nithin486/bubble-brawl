@@ -125,6 +125,11 @@ export class Home {
     this.refresh();
   }
 
+  /** Map card sub-line: a loading note while a map's art downloads (empty = show the map's description again). */
+  setMapNote(note: string) {
+    this.root.querySelector('.mapcard span')!.textContent = note || this.state.maps[this.mapIdx].blurb;
+  }
+
   get hero() {
     return HERO_IDS[this.idx];
   }

@@ -1,0 +1,14 @@
+{
+  "name": "desert_under",
+  "title": "Desert rock block",
+  "source": "polyhaven",
+  "author": "Poly Haven",
+  "licence": "CC0",
+  "link": "https://polyhaven.com/a/rock_boulder_dry",
+  "needsCredit": false,
+  "dimensions": [
+    4.4,
+    2.6,
+    4.4
+  ]
+}

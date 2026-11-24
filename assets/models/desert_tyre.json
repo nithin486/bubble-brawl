@@ -1,0 +1,29 @@
+{
+  "name": "desert_tyre",
+  "query": "old tyre",
+  "title": "Old Tyre",
+  "source": "polyhaven",
+  "id": "old_tyre",
+  "link": "https://polyhaven.com/a/old_tyre",
+  "author": "MP",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 2880,
+  "trianglesOriginal": 2880,
+  "bytes": 139296,
+  "dimensions": [
+    0.6,
+    0.6,
+    0.165
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

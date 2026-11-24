@@ -159,6 +159,15 @@ export class World {
 
   /** Round Roulette: a twist each round. First round of a first match is plain; the last round is double points. */
   private pickMod(round: number): RoundMod {
+    if (this.mode === 'weapons') {
+      // weapons-mode twists change how the fight plays (the coin twists mean nothing here)
+      if (round >= T.match.rounds) return 'double'; // final round: every KO and pop counts double
+      if (round === 1) return this.firstMatch ? 'none' : this.rng.pick(['turbo', 'rapid', 'ammo'] as RoundMod[]);
+      const wpool: RoundMod[] = ['turbo', 'bombs', 'rapid', 'ammo', 'rockets', 'blasters', 'frost', 'boxfest'];
+      let wm = this.mod;
+      while (wm === this.mod) wm = this.rng.pick(wpool);
+      return wm;
+    }
     if (round >= T.match.rounds) return 'double';
     if (round === 1) return this.firstMatch ? 'none' : this.rng.pick(['turbo', 'giant', 'magnet'] as RoundMod[]);
     const pool: RoundMod[] = ['giant', 'thieves', 'bombs', 'turbo', 'magnet', 'goldrush'];
@@ -640,7 +649,20 @@ export class World {
       const d = len(dx, dz) || 1;
       const sticky = p.stickyT > 0;
       if (sticky) p.stickyT = 0;
-      this.brawl.damage(target, p, 'grab', T.weapons.punchDamage + (sticky ? 1 : 0), dx / d, dz / d, sticky ? 0.4 : T.grab.shove);
+      // Sticky Fingers: take the rival's weapon (and its ammo) for yourself and yank them in
+      if (sticky && target.state !== 'bubble' && target.weapon) {
+        const stolen = target.weapon;
+        const ammo = target.ammo;
+        target.weapon = null;
+        target.ammo = 0;
+        p.weapon = stolen;
+        p.ammo = Math.max(ammo, 2);
+        p.fireCd = 0.15;
+        this.events.push({ t: 'weaponSteal', from: target.id, to: p.id, weapon: stolen });
+      }
+      // sticky: the rival is yanked TOWARD you (opposite shove), never through you
+      const pull = Math.min(T.abilities.stickyFingers.pull, Math.max(0, d - 0.9));
+      this.brawl.damage(target, p, 'grab', T.weapons.punchDamage, sticky ? -dx / d : dx / d, sticky ? -dz / d : dz / d, sticky ? pull : T.grab.shove);
       this.events.push({ t: 'grab', p: p.id, hit: true });
       return;
     }
