@@ -89,7 +89,7 @@ export class BotBrain {
     const me = w.players[this.id];
     if (w.phase !== 'playing' || me.state === 'falling' || me.state === 'launched') return NO_INPUT;
     // trapped in a KO bubble: mash to break out
-    if (me.state === 'bubble') return { ...NO_INPUT, grab: this.rng.next() < (this.easy(w) ? 0.15 : 0.45) };
+    if (me.state === 'bubble') return { ...NO_INPUT, grab: this.rng.next() < (this.easy(w) ? 0.05 : 0.15) };
     this.thinkT -= dt;
     if (this.thinkT <= 0) {
       this.thinkT += 1 / B.thinkHz;
@@ -373,7 +373,7 @@ export class BotBrain {
     const dist = (o: { x: number; z: number }) => Math.hypot(o.x - me.x, o.z - me.z);
     const canHit = (o: Player) => !(easy && o === human && !o.isBot);
     // a bubble nearby = a free point
-    const bubble = w.players.filter((o) => o !== me && o.state === 'bubble' && dist(o) < 7).sort((a, b) => dist(a) - dist(b))[0];
+    const bubble = w.players.filter((o) => o !== me && o.state === 'bubble' && dist(o) < 9).sort((a, b) => dist(a) - dist(b))[0];
     if (bubble && !easy) {
       const d = dist(bubble);
       const shoot = me.weapon === 'blaster' || me.weapon === 'rocket';

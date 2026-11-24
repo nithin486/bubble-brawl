@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WEAPON_INFO } from '../render/weapons-view.ts';
+import { WEAPON_INFO, weaponIcon } from '../render/weapons-view.ts';
 import './hud.css';
 import type { World } from '../../../shared/sim/world.ts';
 import type { Player } from '../../../shared/sim/types.ts';
@@ -358,7 +358,7 @@ export class Hud {
         this.btnGrab.classList.toggle('armed', !!info);
         this.btnGrab.style.setProperty('--wc', info?.color ?? '');
         const svg = this.btnGrab.querySelector('svg, .wicon');
-        const icon = info ? Object.assign(document.createElement('span'), { className: 'wicon', textContent: info.icon }) : null;
+        const icon = info && me.weapon ? Object.assign(document.createElement('img'), { className: 'wicon', src: weaponIcon(me.weapon, 96).toDataURL() }) : null;
         if (svg && icon) svg.replaceWith(icon);
         else if (svg && !icon && svg.classList.contains('wicon')) svg.outerHTML = ICONS.grab;
         this.btnGrab.querySelector('.lbl')!.textContent = info ? `x${me.ammo}` : 'PUNCH';

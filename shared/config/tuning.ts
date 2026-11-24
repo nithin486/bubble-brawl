@@ -239,7 +239,7 @@ export const TUNING = {
       /** Seconds trapped if nobody pops it. */
       seconds: 3.5,
       /** Each button mash shaves this much off. */
-      mash: 0.22,
+      mash: 0.16,
       rise: 2.2,
       popRadius: 1.9,
       koPoints: 1,

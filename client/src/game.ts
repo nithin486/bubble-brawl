@@ -86,7 +86,7 @@ export class Game {
   private autoBrain: BotBrain | null = null;
   private heroes: HeroView[] = [];
   private island!: ArenaView;
-  private mapId: MapId = 'city';
+  private mapId: MapId = 'downtown';
   private coins: CoinsView;
   private bank!: BankView;
   private fx: Fx;
@@ -305,7 +305,7 @@ export class Game {
     this.bank = new BankView(this.world, this.assets.env, this.stage.scene, this.glowTex);
     this.bank.group.visible = this.world.mode === 'coins';
     document.body.classList.toggle('mode-weapons', this.world.mode === 'weapons');
-    if (!this.weapons) this.weapons = new WeaponsView(this.world, this.stage.scene, this.fx, this.glowTex);
+    if (!this.weapons) this.weapons = new WeaponsView(this.world, this.stage.scene, this.fx, this.glowTex, this.assets.env);
     else this.weapons.setWorld(this.world);
     if (!this.powers) this.powers = new PowerView(this.world, this.stage.scene, this.glowTex);
     else this.powers.setWorld(this.world);
@@ -842,7 +842,7 @@ export class Game {
         this.fx.ring(e.x, e.z, info.color, 2.2, 0.35, 0.4);
         if (e.p === LOCAL) {
           this.sfx.power();
-          this.hud.skillBanner(`${info.icon} ${info.name}`, info.color);
+          this.hud.skillBanner(info.name, info.color);
           if (this.weaponTips.has(e.weapon) === false) {
             this.weaponTips.add(e.weapon);
             this.hud.tip(`${info.name}: ${info.tip} · press ${this.touch ? 'the big button' : 'J or click'} to use`, 3.5);

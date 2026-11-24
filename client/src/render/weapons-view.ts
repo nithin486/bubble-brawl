@@ -3,6 +3,7 @@ import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
 import type { WeaponKind } from '../../../shared/sim/types.ts';
 import { loadModel, type Model } from './models.ts';
+import { addOutlines } from './style.ts';
 import type { Fx } from './fx.ts';
 
 /** Names, colours and icons for the six weapons (HUD, banners, pickups). */
@@ -17,30 +18,117 @@ export const WEAPON_INFO: Record<WeaponKind, { name: string; icon: string; color
 
 const W = TUNING.weapons;
 
-function iconTexture(text: string, bg?: string) {
+const iconCache = new Map<string, HTMLCanvasElement>();
+/** Hand-drawn weapon icon (thick outline, bright fill) — no emoji fonts needed. */
+export function weaponIcon(kind: WeaponKind, size = 128, badge = false): HTMLCanvasElement {
+  const key = kind + size + badge;
+  const hit = iconCache.get(key);
+  if (hit) return hit;
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = c.height = size;
   const g = c.getContext('2d')!;
-  if (bg) {
-    g.fillStyle = bg;
+  g.scale(size / 100, size / 100);
+  const INK = '#1d0d52';
+  if (badge) {
+    g.fillStyle = WEAPON_INFO[kind].color;
+    g.strokeStyle = INK;
+    g.lineWidth = 7;
     g.beginPath();
-    g.arc(64, 64, 58, 0, Math.PI * 2);
+    g.arc(50, 50, 45, 0, Math.PI * 2);
     g.fill();
-    g.lineWidth = 8;
-    g.strokeStyle = '#1d0d52';
     g.stroke();
+    g.translate(50, 50);
+    g.scale(0.72, 0.72);
+    g.translate(-50, -50);
   }
-  g.font = '900 78px "Lilita One", system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.lineWidth = 10;
-  g.strokeStyle = '#1d0d52';
-  if (!bg) g.strokeText(text, 64, 70);
-  g.fillStyle = '#ffffff';
-  g.fillText(text, 64, 70);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  const shape = (fill: string, draw: () => void, lw = 7) => {
+    g.beginPath();
+    draw();
+    g.fillStyle = fill;
+    g.strokeStyle = INK;
+    g.lineWidth = lw;
+    g.stroke();
+    g.fill();
+  };
+  const circle = (x: number, y: number, r: number) => g.arc(x, y, r, 0, Math.PI * 2);
+  switch (kind) {
+    case 'blaster':
+      shape('#4fd8ff', () => g.roundRect(12, 40, 52, 24, 9));
+      shape('#2a8fd6', () => g.roundRect(22, 58, 16, 28, 6));
+      shape('#ffd23f', () => g.roundRect(60, 44, 14, 16, 4));
+      shape('#c9fbff', () => circle(80, 34, 10), 5);
+      shape('#c9fbff', () => circle(70, 16, 6), 4);
+      break;
+    case 'rocket':
+      shape('#ff5a3d', () => {
+        g.moveTo(20, 58);
+        g.bezierCurveTo(14, 26, 44, 12, 66, 22);
+        g.bezierCurveTo(88, 30, 90, 62, 70, 72);
+        g.lineTo(34, 74);
+        g.closePath();
+      });
+      shape('#ffffff', () => g.roundRect(14, 66, 30, 20, 6));
+      shape('#ffd23f', () => {
+        g.moveTo(74, 80);
+        g.lineTo(94, 90);
+        g.lineTo(80, 72);
+      }, 5);
+      break;
+    case 'banana':
+      shape('#ffe14a', () => {
+        g.moveTo(18, 30);
+        g.bezierCurveTo(14, 70, 48, 92, 84, 76);
+        g.bezierCurveTo(56, 74, 34, 58, 30, 26);
+        g.closePath();
+      });
+      shape('#6b4a1f', () => g.roundRect(20, 16, 12, 14, 3), 5);
+      break;
+    case 'freeze':
+      g.strokeStyle = INK;
+      for (let i = 0; i < 3; i++) {
+        g.save();
+        g.translate(50, 50);
+        g.rotate((i * Math.PI) / 3);
+        g.lineWidth = 15;
+        g.strokeStyle = INK;
+        g.beginPath();
+        g.moveTo(0, -38);
+        g.lineTo(0, 38);
+        g.stroke();
+        g.lineWidth = 7;
+        g.strokeStyle = '#bff4ff';
+        g.stroke();
+        g.restore();
+      }
+      shape('#7fdcff', () => circle(50, 50, 12), 6);
+      break;
+    case 'hook':
+      g.lineWidth = 26;
+      g.strokeStyle = INK;
+      g.beginPath();
+      g.arc(50, 46, 26, Math.PI, 0, true);
+      g.stroke();
+      g.lineWidth = 15;
+      g.strokeStyle = '#ff4d6d';
+      g.stroke();
+      shape('#e6e6f0', () => g.roundRect(17, 34, 16, 18, 3), 6);
+      shape('#e6e6f0', () => g.roundRect(67, 34, 16, 18, 3), 6);
+      break;
+    case 'hammer':
+      shape('#a8642a', () => g.roundRect(44, 34, 13, 56, 5));
+      shape('#ffd23f', () => g.roundRect(18, 12, 64, 30, 8));
+      shape('#fff27a', () => {
+        g.moveTo(54, 18);
+        g.lineTo(44, 28);
+        g.lineTo(52, 28);
+        g.lineTo(46, 38);
+      }, 3);
+      break;
+  }
+  iconCache.set(key, c);
+  return c;
 }
 
 /** Soap-bubble shader (same family as the Bubble Bank). */
@@ -63,8 +151,8 @@ function bubbleMaterial() {
 
 interface BoxView {
   root: THREE.Group;
-  model: Model | null;
-  q: THREE.Sprite;
+  model: THREE.Object3D;
+  beam: THREE.Mesh;
   glow: THREE.Sprite;
   shown: boolean;
   pop: number;
@@ -84,7 +172,8 @@ export class WeaponsView {
   private bubbleMat = bubbleMaterial();
   private iconTex = new Map<string, THREE.Texture>();
   private glowTex: THREE.Texture;
-  private boxModel: Promise<Model> | null = null;
+  private env: Map<string, THREE.Object3D>;
+  private beamMat: THREE.ShaderMaterial;
   private bananaReady: Promise<Model> | null = null;
   private shotGeo = new THREE.SphereGeometry(1, 14, 10);
   private shotMats = {
@@ -94,12 +183,22 @@ export class WeaponsView {
   private iceMat = new THREE.MeshBasicMaterial({ color: '#c9f6ff', toneMapped: false });
   private ringMat = new THREE.MeshBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, toneMapped: false });
 
-  constructor(world: World, scene: THREE.Scene, fx: Fx, glowTex: THREE.Texture) {
+  constructor(world: World, scene: THREE.Scene, fx: Fx, glowTex: THREE.Texture, env: Map<string, THREE.Object3D>) {
+    this.env = env;
+    // soft golden light column over every chest: you can spot loot from across the map
+    this.beamMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      uniforms: { time: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: 'varying vec2 vUv; uniform float time; void main(){ float a = pow(1.0 - vUv.y, 1.6) * (0.75 + 0.25*sin(vUv.y*18.0 - time*5.0)); gl_FragColor = vec4(1.0, 0.82, 0.35, a * 0.55); }',
+    });
     this.world = world;
     this.fx = fx;
     this.glowTex = glowTex;
     scene.add(this.group);
-    this.boxModel = loadModel('assets/models/mystery_box.glb', { height: 0.95 });
     this.bananaReady = loadModel('assets/models/banana.glb', { fit: 0.75, outline: 0.02 });
     this.setWorld(world);
   }
@@ -134,10 +233,14 @@ export class WeaponsView {
     this.group.visible = world.mode === 'weapons';
   }
 
-  private icon(text: string, bg?: string) {
-    const k = text + (bg ?? '');
-    let t = this.iconTex.get(k);
-    if (!t) this.iconTex.set(k, (t = iconTexture(text, bg)));
+  private weaponTex(k: WeaponKind) {
+    const key = 'w:' + k;
+    let t = this.iconTex.get(key);
+    if (!t) {
+      t = new THREE.CanvasTexture(weaponIcon(k, 128, true));
+      t.colorSpace = THREE.SRGBColorSpace;
+      this.iconTex.set(key, t);
+    }
     return t;
   }
 
@@ -152,6 +255,7 @@ export class WeaponsView {
     if (w.mode !== 'weapons') return;
     const br = w.brawl;
     this.bubbleMat.uniforms.time.value = time;
+    this.beamMat.uniforms.time.value = time;
 
     // ---- mystery boxes: float, spin, glow; pop back in when they respawn
     const seenBox = new Set<number>();
@@ -160,20 +264,22 @@ export class WeaponsView {
       let v = this.boxes.get(b.id);
       if (!v) {
         const root = new THREE.Group();
-        const glow = this.glowSprite('#ffd84a', 2.6);
-        glow.position.y = 0.7;
-        const q = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.icon('?'), transparent: true, depthWrite: false, toneMapped: false }));
-        q.scale.setScalar(0.7);
-        q.position.y = 1.85;
-        root.add(glow, q);
+        const glow = this.glowSprite('#ffd84a', 2.8);
+        glow.position.y = 0.8;
+        // KayKit golden chest: same art family as the heroes
+        const model = new THREE.Group();
+        const src = this.env.get('chest_gold');
+        if (src) {
+          const c = src.clone();
+          c.scale.setScalar(0.85);
+          model.add(c);
+          addOutlines(c, 0.03 / 0.85);
+        }
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.75, 7, 20, 1, true), this.beamMat);
+        beam.position.y = 3.5;
+        root.add(glow, model, beam);
         root.position.set(b.x, 0, b.z);
-        const view: BoxView = { root, model: null, q, glow, shown: true, pop: 1 };
-        void this.boxModel?.then((m) => {
-          const inst = m.root.clone(true);
-          inst.position.y = 0.35;
-          view.model = { ...m, root: inst };
-          root.add(inst);
-        });
+        const view: BoxView = { root, model, beam, glow, shown: true, pop: 1 };
         this.group.add(root);
         this.boxes.set(b.id, (v = view));
       }
@@ -187,12 +293,10 @@ export class WeaponsView {
       const s = v.pop < 1 ? Math.sin(v.pop * Math.PI * 0.5) * (1 + Math.sin(v.pop * Math.PI) * 0.3) : 1;
       v.root.scale.setScalar(s);
       const bob = Math.sin(time * 2.4 + b.id) * 0.12;
-      if (v.model) {
-        v.model.root.position.y = 0.35 + bob;
-        v.model.root.rotation.y = time * 1.4 + b.id;
-      }
-      v.q.position.y = 1.85 + bob * 1.4;
+      v.model.position.y = 0.3 + bob;
+      v.model.rotation.y = time * 1.2 + b.id;
       v.glow.material.opacity = 0.55 + Math.sin(time * 4 + b.id) * 0.15;
+      if (Math.random() < dt * 3) this.fx.sparkle(b.x + (Math.random() - 0.5) * 0.8, 0.9 + Math.random() * 0.6, b.z + (Math.random() - 0.5) * 0.8, '#ffe27a', 2);
     }
     for (const [id, v] of this.boxes) if (!seenBox.has(id)) (this.group.remove(v.root), this.boxes.delete(id));
 
@@ -266,8 +370,7 @@ export class WeaponsView {
       const h = this.held[i];
       h.visible = !!p.weapon && !inBubble && p.state !== 'falling';
       if (h.visible) {
-        const info = WEAPON_INFO[p.weapon!];
-        const tex = this.icon(info.icon, info.color);
+        const tex = this.weaponTex(p.weapon!);
         if (h.material.map !== tex) {
           h.material.map = tex;
           h.material.needsUpdate = true;

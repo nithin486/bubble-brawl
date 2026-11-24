@@ -459,7 +459,7 @@ body.cam-third .tag.me .tn{display:none}
 .thp .hrt { width: 13px; height: 12px; }
 .tbub { font-family: var(--display); font-size: 13px; color: #fff; background: #b38cff; padding: 1px 7px; border-radius: 8px; animation: pulse .4s infinite alternate; }
 .btn.grab.armed { background: radial-gradient(circle at 50% 35%, #fff, var(--wc, #ffd23f) 70%); }
-.btn .wicon { font-size: 38px; line-height: 1; position: relative; z-index: 2; margin-bottom: -4px; filter: drop-shadow(0 2px 0 #0006); }
+.btn .wicon { width: 46px; height: 46px; position: relative; z-index: 2; margin-bottom: -4px; filter: drop-shadow(0 2px 0 #0006); }
 .btn.grab.armed .lbl { color: #1d0d52; text-shadow: none; font-size: 16px; }
 @media (max-height: 520px) { .hrt { width: 16px; height: 15px; } .thp .hrt { width: 11px; height: 10px; } }
 /* weapons mode: scores are ⭐ points, not coins */
@@ -467,3 +467,6 @@ body.cam-third .tag.me .tn{display:none}
   background: center/contain no-repeat url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 2l3 6.5 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21.1l1.5-7L2 9.3l7-.8z' fill='%23ffd23f' stroke='%23a35a00' stroke-width='1.6' stroke-linejoin='round'/></svg>");
   box-shadow: none; border-radius: 0;
 }
+/* tips: small, out of the way of the action (just above the health bar) */
+.cam-hint { top: auto; bottom: calc(64px + var(--safe-b)); opacity: .92; }
+@media (max-height: 520px) { .cam-hint { font-size: 10px; padding: 3px 8px; bottom: calc(40px + var(--safe-b)); } }

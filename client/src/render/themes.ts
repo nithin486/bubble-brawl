@@ -141,6 +141,10 @@ const city: Theme = {
       case 'hydrant':
         add('firehydrant', 3.4);
         break;
+      default:
+        // Downtown's towers: a whole tile each
+        if (o.kind.startsWith('building_')) add(o.kind, S * 1.0);
+        break;
       // ---- ground detail (no collision)
       case 'manhole':
         decal('manhole', 1.3);
@@ -188,6 +192,46 @@ const city: Theme = {
       }
       if (ctx.rng.next() < 0.6) ctx.place('watertower', cells[0].x + 1.2, b.y + 7.5, cells[0].z, CITY_S);
     }
+  },
+};
+
+// =================================================================== Downtown (big, clean)
+
+const DT_RING = 3;
+const downtown: Theme = {
+  ...city,
+  id: 'downtown',
+  fog: { color: '#f0a8bc', near: 85, far: 240 },
+  core: [
+    { y: -1.9, r: 23, s: 0.95 },
+    { y: -3.3, r: 17, s: 0.9 },
+    { y: -4.7, r: 11, s: 0.85 },
+    { y: -6.1, r: 6, s: 0.8 },
+  ],
+  tiles(world) {
+    return world.arena.tiles.map((t) => {
+      const i = t.q;
+      const j = t.r;
+      const vert = i === 0 || Math.abs(i) === DT_RING; // road running along z
+      const horz = j === 0 || Math.abs(j) === DT_RING; // road running along x
+      let piece = 'base';
+      let rot = ((i * 7 + j * 3) % 4) * (Math.PI / 2);
+      const inside = Math.abs(i) <= DT_RING && Math.abs(j) <= DT_RING;
+      if (vert && horz && inside) {
+        piece = 'road_junction';
+        rot = 0;
+      } else if (vert && (inside || i === 0)) {
+        // crossings right next to a junction
+        const nearJ = [0, DT_RING, -DT_RING].some((v) => Math.abs(j - v) === 1);
+        piece = nearJ ? 'road_straight_crossing' : 'road_straight';
+        rot = 0;
+      } else if (horz && (inside || j === 0)) {
+        const nearJ = [0, DT_RING, -DT_RING].some((v) => Math.abs(i - v) === 1);
+        piece = nearJ ? 'road_straight_crossing' : 'road_straight';
+        rot = Math.PI / 2;
+      }
+      return { piece, rot, scale: [CITY_S, CITY_S, CITY_S], y: -0.24 };
+    });
   },
 };
 
@@ -445,4 +489,4 @@ const village: Theme = {
   },
 };
 
-export const THEMES: Record<MapId, Theme> = { city, spooky, village };
+export const THEMES: Record<MapId, Theme> = { downtown, city, spooky, village };

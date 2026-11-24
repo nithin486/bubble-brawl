@@ -378,7 +378,14 @@ export class Brawl {
 
   /** Trapped player: float, drift, mash to break out. */
   tickBubble(p: Player, mash: boolean, dt: number) {
-    p.bubbleT -= dt + (mash ? W.bubble.mash : 0);
+    // mashing helps, but only up to ~7 presses a second (no instant escapes)
+    p.stateT -= dt;
+    let cut = 0;
+    if (mash && p.stateT <= 0) {
+      cut = W.bubble.mash;
+      p.stateT = 1 / 7;
+    }
+    p.bubbleT -= dt + cut;
     p.y = Math.min(W.bubble.rise, p.y + dt * 1.6);
     p.x += p.kx * dt;
     p.z += p.kz * dt;

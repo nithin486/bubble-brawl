@@ -62,7 +62,7 @@ export class World {
     this.brawl = new Brawl(this);
     this.rng = new Rng(opts.seed ?? (Math.random() * 2 ** 31) | 0);
     this.firstMatch = !!opts.firstMatch;
-    this.map = MAPS[opts.map ?? 'city'];
+    this.map = MAPS[opts.map ?? 'downtown'];
     this.arena = new Arena(this.map.shape);
     this.obstacles = this.map.obstacles.filter((o) => o.r > 0);
     this.players = setups.map((s, i) => newPlayer(i, s));
