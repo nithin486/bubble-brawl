@@ -4,14 +4,21 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { LOOK } from './style.ts';
 
 /** Final colour grade: a touch more saturation and contrast, like a cartoon poster. */
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, sat: { value: 1.18 }, con: { value: 1.06 } },
+  uniforms: { tDiffuse: { value: null }, sat: { value: 1.18 }, con: { value: 1.06 }, vig: { value: 0.0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float sat; uniform float con; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float sat; uniform float con; uniform float vig; varying vec2 vUv;
     void main(){ vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-      vec3 g = mix(vec3(l), c.rgb, sat); g = (g - 0.5) * con + 0.5; gl_FragColor = vec4(clamp(g, 0.0, 1.0), c.a); }`,
+      vec3 g = mix(vec3(l), c.rgb, sat); g = (g - 0.5) * con + 0.5;
+      // soft cinematic vignette (warm, never black)
+      vec2 d = vUv - 0.5; float v = smoothstep(0.35, 0.95, dot(d, d) * 2.2);
+      g = mix(g, g * vec3(0.78, 0.7, 0.82), v * vig);
+      gl_FragColor = vec4(clamp(g, 0.0, 1.0), c.a); }`,
 };
 
 /** Kills NaN / Infinity / absurd HDR values before bloom: one bad pixel otherwise smears into black boxes. */
@@ -23,6 +30,9 @@ const CleanShader = {
       bool bad = any(isnan(c)) || any(isinf(c));
       gl_FragColor = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(clamp(c.rgb, 0.0, 12.0), 1.0); }`,
 };
+
+/** GTAO also shades sprites/labels (dark boxes round heroes), so it is opt-in: ?ao */
+const AO_ON = new URLSearchParams(location.search).has('ao');
 
 export type Quality = 'low' | 'medium' | 'high';
 
@@ -44,6 +54,8 @@ export class Stage {
   private bloomCfg = { strength: 0.55, threshold: 0.82 };
   private gradeCfg = { sat: 1.18, con: 1.06 };
   private gradePass: ShaderPass | null = null;
+  private ao: GTAOPass | null = null;
+  private rim!: THREE.DirectionalLight;
 
   constructor(parent: HTMLElement, quality: Quality) {
     this.quality = quality;
@@ -104,9 +116,19 @@ export class Stage {
     this.sun.shadow.radius = 4;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
-    const rim = new THREE.DirectionalLight('#9fd8ff', 0.7);
+    const rim = (this.rim = new THREE.DirectionalLight('#9fd8ff', 0.7));
     rim.position.set(10, 8, -16);
     this.scene.add(rim);
+
+    if (LOOK === 'toy') {
+      // soft studio reflections: every surface gets a highlight and a bit of sky bounce (the "toy" sheen)
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.scene.environmentIntensity = 0.38;
+      pm.dispose();
+      this.sun.shadow.radius = 6;
+      this.sun.shadow.blurSamples = 16;
+    }
 
     this.setQuality(quality);
     window.addEventListener('resize', () => this.resize());
@@ -141,6 +163,21 @@ export class Stage {
     this.sun.intensity = t.sun.intensity;
     this.sunOffset.set(...t.sun.pos);
     this.renderer.toneMappingExposure = t.exposure;
+    if (LOOK === 'toy') {
+      // stronger key + weaker fill = real shadows and form; AgX needs a bit more exposure than ACES
+      this.sun.intensity = t.sun.intensity * 1.15;
+      this.hemi.intensity = t.hemi.intensity * 0.72;
+      // bloom only on real HDR highlights (glows, muzzle flashes), never on pale ground
+      this.bloomCfg = { strength: Math.max(this.bloomCfg.strength, 0.35), threshold: Math.max(this.bloomCfg.threshold, 1.05) };
+      if (this.bloom) { this.bloom.strength = this.bloomCfg.strength; this.bloom.threshold = this.bloomCfg.threshold; }
+      this.rim.intensity = 1.1;
+      this.renderer.toneMappingExposure = t.exposure * 0.96;
+      this.gradeCfg = { sat: (t.grade?.sat ?? 1.18) * 1.06, con: t.grade?.con ?? 1.06 };
+      if (this.gradePass) {
+        this.gradePass.uniforms.sat.value = this.gradeCfg.sat;
+        this.gradePass.uniforms.con.value = this.gradeCfg.con;
+      }
+    }
   }
 
   /** Keep the shadow camera centred on the action. */
@@ -154,13 +191,30 @@ export class Stage {
     const dpr = window.devicePixelRatio || 1;
     this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1));
     this.sun.castShadow = q !== 'low';
+    if (q === 'low' || (AO_ON && this.composer && (q === 'high') !== !!this.ao)) {
+      // rebuild when AO availability changes
+      this.composer?.dispose();
+      this.composer = null;
+      this.ao = null;
+    }
     if (q === 'low') {
       this.composer = null;
       this.bloom = null;
       this.gradePass = null;
     } else if (!this.composer) {
-      const composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true }));
+      // MSAA inside the composer (the canvas' own antialias is lost once we render to targets)
+      const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true, samples: q === 'high' ? 4 : 2 });
+      const composer = new EffectComposer(this.renderer, rt);
       composer.addPass(new RenderPass(this.scene, this.camera));
+      if (LOOK === 'toy' && q === 'high' && AO_ON) {
+        // ground-truth AO: contact darkening where heroes, props and walls meet the floor
+        const ao = new GTAOPass(this.scene, this.camera, 1, 1);
+        ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.0, samples: 12 });
+        ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+        ao.blendIntensity = 0.85;
+        composer.addPass(ao);
+        this.ao = ao;
+      }
       composer.addPass(new ShaderPass(CleanShader));
       this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), this.bloomCfg.strength, 0.5, this.bloomCfg.threshold);
       composer.addPass(this.bloom);
@@ -168,6 +222,7 @@ export class Stage {
       this.gradePass = new ShaderPass(GradeShader);
       this.gradePass.uniforms.sat.value = this.gradeCfg.sat;
       this.gradePass.uniforms.con.value = this.gradeCfg.con;
+      this.gradePass.uniforms.vig.value = LOOK === 'toy' ? 0.55 : 0;
       composer.addPass(this.gradePass);
       this.composer = composer;
     }
@@ -194,6 +249,7 @@ export class Stage {
       this.composer.setSize(w, h);
       // bloom at reduced resolution: cheap and soft
       this.bloom?.resolution.set(w / 2, h / 2);
+      this.ao?.setSize(w * this.renderer.getPixelRatio(), h * this.renderer.getPixelRatio());
     }
   }
 

@@ -7,7 +7,7 @@ export type CamPreset = 'third' | 'far' | 'close' | 'action' | 'bird';
 export type PlayerCam = Exclude<CamPreset, 'bird'>;
 /** Camera views the player can pick in Settings. */
 export const CAM_PRESETS: Record<CamPreset, { label: string; offset: [number, number, number]; look: [number, number, number]; lead: number; fov: number }> = {
-  third: { label: 'BEHIND (3RD PERSON)', offset: [0, 7.4, 11.2], look: [0, 1.0, -6], lead: 0.14, fov: 50 },
+  third: { label: 'BEHIND (3RD PERSON)', offset: [0, 4.4, 7.6], look: [0, 1.5, -7], lead: 0.12, fov: 54 },
   far: { label: 'TOP · FAR', offset: [0, 14, 12.5], look: [0, 0.8, -1.2], lead: 0.35, fov: 45 },
   close: { label: 'TOP · CLOSE', offset: [0, 11, 9], look: [0, 0.9, -1.4], lead: 0.45, fov: 46 },
   /** Dev view (?cam=bird): the whole big map from above. */

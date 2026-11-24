@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CEL, toonOf } from './style.ts';
+import { INKED, toonOf } from './style.ts';
 
 /**
  * Draw-call diet for low-end phones.
@@ -201,7 +201,7 @@ export class StaticBatch {
     }
     const live = this.items.filter((i) => i.on);
     for (const m of mergeParts(live.flatMap((i) => i.parts), true)) this.group.add(m);
-    if (CEL) {
+    if (INKED) {
       const ink = live.filter((i) => i.outline).flatMap((i) => i.parts.filter((p) => (p.mat as THREE.Material & { alphaTest?: number }).alphaTest === 0 && !p.mat.transparent));
       if (ink.length) {
         // outlines only need position + normal (parts differ in uv/colour attributes)

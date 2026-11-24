@@ -195,6 +195,32 @@ function questionTexture() {
   return t;
 }
 
+/** Iridescent soap-bubble film: clear in the middle, rainbow thin-film rim, a hot specular glint. */
+function soapBubbleMaterial() {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+    uniforms: { time: { value: 0 } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying vec3 vW;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
+        vW = position; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying vec3 vN; varying vec3 vV; varying vec3 vW;
+      vec3 film(float t){ return 0.5 + 0.5 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + t)); }
+      void main(){
+        float f = 1.0 - max(dot(vN, vV), 0.0);
+        float rim = pow(f, 2.2);
+        vec3 col = film(f * 1.6 + vW.y * 0.6) * 0.85 + vec3(0.25, 0.55, 0.65);
+        // key light glint (upper left) + small secondary
+        vec3 L = normalize(vec3(-0.5, 0.7, 0.6));
+        float spec = pow(max(dot(reflect(-L, vN), vV), 0.0), 60.0);
+        float spec2 = pow(max(dot(reflect(-normalize(vec3(0.6, -0.3, 0.7)), vN), vV), 0.0), 30.0) * 0.4;
+        float a = 0.12 + rim * 0.85 + spec + spec2;
+        gl_FragColor = vec4(col * (0.75 + rim * 0.9) + vec3(spec * 2.2 + spec2), clamp(a, 0.0, 1.0));
+      }`,
+  });
+}
+
 /** Draws mystery boxes, shots, banana traps, freeze bombs, KO bubbles and what each hero holds. */
 export class WeaponsView {
   group = new THREE.Group();
@@ -214,9 +240,9 @@ export class WeaponsView {
   private bananaReady: Promise<Model> | null = null;
   private qTex = questionTexture();
   private pops: { s: THREE.Sprite; t: number; x: number; z: number }[] = [];
-  private shotGeo = new THREE.SphereGeometry(1, 14, 10);
+  private shotGeo = new THREE.SphereGeometry(1, 20, 14);
   private shotMats = {
-    blaster: new THREE.MeshBasicMaterial({ color: '#8ff4ff', transparent: true, opacity: 0.85, toneMapped: false }),
+    blaster: soapBubbleMaterial(),
     rocket: new THREE.MeshBasicMaterial({ color: '#ff8a3d', toneMapped: false }),
   };
   private iceMat = new THREE.MeshBasicMaterial({ color: '#c9f6ff', toneMapped: false });
@@ -318,7 +344,7 @@ export class WeaponsView {
         glow.position.y = 0.7;
         // KayKit golden chest (same art family as the heroes); on the realistic desert map a real military ammo crate
         const model = new THREE.Group();
-        const real = w.map.id === 'desert' && this.env.has('desert_ammo');
+        const real = false; // every map uses the stylized gold chest
         const src = this.env.get(real ? 'desert_ammo' : 'chest_gold');
         if (src) {
           const c = src.clone();
@@ -423,11 +449,18 @@ export class WeaponsView {
       let m = this.shots.get(s.id);
       if (!m) {
         m = new THREE.Mesh(this.shotGeo, this.shotMats[s.kind]);
-        m.scale.setScalar(s.kind === 'rocket' ? 0.32 : 0.2);
+        m.scale.setScalar(s.kind === 'rocket' ? 0.32 : 0.34);
+        m.userData.born = performance.now();
         this.group.add(m);
         this.shots.set(s.id, m);
       }
       m.position.set(s.x, 1.05, s.z);
+      if (s.kind !== 'rocket') {
+        // wobbly soap film: squash and stretch a little as it flies, grows in from the muzzle
+        const t = (performance.now() - m.userData.born) / 1000;
+        const k = 0.34 * Math.min(1, 0.45 + t * 6);
+        m.scale.set(k * (1 + Math.sin(t * 19) * 0.07), k * (1 - Math.sin(t * 19) * 0.06), k * (1 + Math.cos(t * 23) * 0.06));
+      }
       if (s.kind === 'rocket') this.fx.emit(s.x, 1.05, s.z, { n: 2, color: ['#ff8a3d', '#ffd23f', '#aaaaaa'], speed: 1, up: 0.5, life: 0.35, size: 0.5 });
       else if (Math.random() < 0.4) this.fx.emit(s.x, 1.05, s.z, { n: 1, color: '#bff8ff', speed: 0.4, up: 0.2, life: 0.25, size: 0.25 });
     }
@@ -436,7 +469,10 @@ export class WeaponsView {
         this.group.remove(m);
         this.shots.delete(id);
         // blaster shots burst into droplets where they stop
-        if (m.material === this.shotMats.blaster) this.fx.emit(m.position.x, 1.05, m.position.z, { n: 8, color: ['#bff8ff', '#ffffff'], speed: 3, up: 1, life: 0.3, size: 0.3 });
+        if (m.material === this.shotMats.blaster) {
+          this.fx.emit(m.position.x, 1.05, m.position.z, { n: 12, color: ['#bff8ff', '#ffffff', '#ffe0fb', '#d8fff0'], speed: 3.6, up: 1.2, life: 0.38, size: 0.28 });
+          this.fx.ring(m.position.x, m.position.z, '#dffbff', 0.9, 0.22, 0.35);
+        }
       }
 
     // ---- banana traps

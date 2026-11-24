@@ -128,7 +128,7 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
         mat.metalness = 0;
       }
     });
-    celify(g.scene);
+    celify(g.scene, true);
     // mergeSkinned(g.scene); — disabled: merged skins deformed wrongly (KayKit parts); revisit
     // normalise height using the body meshes only (weapons stick out)
     const box = new THREE.Box3();

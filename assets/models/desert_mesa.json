@@ -1,0 +1,29 @@
+{
+  "name": "desert_cliff",
+  "query": "Desert Mountains low poly",
+  "title": "Desert Mountains (low poly)",
+  "source": "sketchfab",
+  "id": "e6ff5793f27b4972b716698b7ee284d9",
+  "link": "https://sketchfab.com/3d-models/none-e6ff5793f27b4972b716698b7ee284d9",
+  "author": "Götz von Berlichingen",
+  "authorLink": "https://sketchfab.com/vonBerlichingen",
+  "licence": "CC Attribution",
+  "needsCredit": true,
+  "triangles": 1369,
+  "trianglesOriginal": 1369,
+  "bytes": 69188,
+  "dimensions": [
+    10.794,
+    5,
+    11.951
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": 5,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

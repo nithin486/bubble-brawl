@@ -376,14 +376,14 @@ function spooky(): MapDef {
 export const DESERT = {
   cliff: { s: 1.0, r: 1.9 }, // 8.3 m rock formation, a row of circles along its length
   boulder: { s: 1.3, r: 1.55 },
-  crate: { s: 2.2, r: 0.85 },
-  barrel: { s: 1.5, r: 0.5 },
+  crate: { s: 0.85, r: 0.85 },
+  barrel: { s: 1.25, r: 0.5 },
   stove: { s: 1.6, r: 0.5 },
-  barrier: { s: 1.5, r: 0.42 },
-  car: { s: 1.15, r: 0.95 },
+  barrier: { s: 0.95, r: 0.42 },
+  car: { s: 1.25, r: 0.95 },
   quiverA: { s: 1.3, r: 0.38 },
   quiverB: { s: 1.7, r: 0.3 },
-  dead: { s: 1.3, r: 0.25 },
+  dead: { s: 1.05, r: 0.25 },
 } as const;
 
 /** A 11×11-tile desert salvage camp on a mesa: a concrete yard in the middle, cover all around, a road crossing it. */

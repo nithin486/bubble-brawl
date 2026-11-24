@@ -607,14 +607,14 @@ const dhash = (a: number, b: number) => {
 const desert: Theme = {
   id: 'desert',
   pbr: true,
-  grade: { sat: 0.98, con: 1.08 },
-  sky: { top: '#2f5db0', mid: '#e8a56d', horizon: '#ffd9a4', bottom: '#dba56e' },
-  fog: { color: '#ebc59b', near: 55, far: 230 },
-  bloom: { strength: 0.18, threshold: 0.98 },
-  hemi: { sky: '#fff1dc', ground: '#8f7456', intensity: 0.9 },
-  sun: { color: '#ffe3bb', intensity: 3.0, pos: [-26, 16, 11] }, // low sun: long, readable shadows
-  exposure: 0.95,
-  clouds: { color: '#ffd9bb', emissive: '#ff9f6a', intensity: 0.25 },
+  grade: { sat: 1.12, con: 1.06 },
+  sky: { top: '#2b7cf0', mid: '#6fb6ff', horizon: '#ffd9b0', bottom: '#e09a6e' },
+  fog: { color: '#f3c9a4', near: 70, far: 260 },
+  bloom: { strength: 0.3, threshold: 0.9 },
+  hemi: { sky: '#cfe6ff', ground: '#b9714a', intensity: 1.0 },
+  sun: { color: '#ffe0b0', intensity: 3.0, pos: [-22, 20, 12] }, // low warm sun: long, readable shadows
+  exposure: 1.0,
+  clouds: { color: '#ffffff', emissive: '#ffd2b0', intensity: 0.2 },
   waterfalls: false,
   bubbles: false,
   under: { piece: 'desert_under', sx: 1, sy: 1, sz: 1, y: -3.8 },
@@ -637,7 +637,8 @@ const desert: Theme = {
       // tone the orange sand down towards the pale one and vary every tile a little, so the ground never reads as a grid of patches
       const tone = kind === 'sand' ? 0.82 : kind === 'gravel' ? 0.94 : 1;
       const v = tone * (0.93 + dhash(i + 5, j + 9) * 0.1);
-      const color = new THREE.Color(v, v * (kind === 'sand' ? 0.9 : 0.97), v * (kind === 'sand' ? 0.8 : 0.94));
+      // warm terracotta cast, like sun-baked canyon stone
+      const color = new THREE.Color(v * 1.04, v * (kind === 'sand' ? 0.82 : 0.88), v * (kind === 'sand' ? 0.68 : 0.78));
       return { piece: `desert_tile_${kind}`, rot: Math.floor(dhash(j, i) * 4) * (Math.PI / 2), scale: [1, 1, 1] as [number, number, number], y: 0, color };
     });
   },
@@ -645,7 +646,11 @@ const desert: Theme = {
     const D = DESERT;
     switch (o.kind) {
       case 'dcliff':
-        add('desert_cliff', D.cliff.s, 0, 0, Math.PI / 2); // the model runs along x; the collision row runs along the prop's z
+        // a ridge of stylized sandstone along the collision row (prop's z axis)
+        for (let k = -1; k <= 1; k++) {
+          const h = dhash(o.x + k, o.z - k);
+          add('desert_boulder_a', 2.6 + h * 0.9, (h - 0.5) * 0.6, k * 2.9, h * 6.28);
+        }
         break;
       case 'dboulder':
         add('desert_boulder_a', D.boulder.s);
@@ -657,24 +662,15 @@ const desert: Theme = {
         add('desert_barrel', D.barrel.s);
         break;
       case 'dstove':
-        add('desert_stove', D.stove.s);
+        add('desert_barrel', D.barrel.s);
         glow('#ff8a3d', 2.6, 0, 1.45, 0); // fire in the barrel
         break;
       case 'dbarrier':
         add('desert_barrier', D.barrier.s, 0, 0, Math.PI / 2);
         break;
-      case 'dcar': {
-        const car = add('desert_car', D.car.s);
-        // the scanned tarp is nearly black: lift it so the car reads as a shape, not a hole
-        car?.traverse((m) => {
-          const mesh = m as THREE.Mesh;
-          if (!mesh.isMesh) return;
-          const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-          mat.color.setScalar(2.4);
-          mesh.material = mat;
-        });
+      case 'dcar':
+        add('desert_car', D.car.s);
         break;
-      }
       case 'dquiverA':
         add('desert_quiver_a', D.quiverA.s);
         break;
@@ -685,16 +681,16 @@ const desert: Theme = {
         add('desert_deadtree', D.dead.s);
         break;
       case 'dstone':
-        add('desert_boulder_b', 2.2);
+        add('desert_boulder_a', 0.42, 0, 0, o.rot * 3);
         break;
       case 'dpebbles':
-        add('desert_boulders', 2.6);
+        add('desert_boulder_a', 0.28, 0, 0, o.rot * 5);
         break;
       case 'dtyre':
         add('desert_tyre', 1.8);
         break;
       case 'dplanks':
-        add('desert_rocks', 3);
+        add('desert_boulder_a', 0.34, 0, 0, o.rot * 7);
         break;
     }
   },
@@ -708,8 +704,8 @@ const desert: Theme = {
       const a = (k / 16) * Math.PI * 2 + dhash(k, 3) * 0.3;
       const d = 80 + dhash(k, 5) * 70;
       const sc = 7 + dhash(k, 7) * 8;
-      ctx.place('desert_cliff', Math.sin(a) * d, -52 + dhash(k, 9) * 22, Math.cos(a) * d, sc, dhash(k, 11) * 6.28);
-      if (k % 3 === 0) ctx.place('desert_cliff', Math.sin(a + 0.12) * (d + 20), -50 + dhash(k, 13) * 18, Math.cos(a + 0.12) * (d + 20), sc * 1.5, dhash(k, 15) * 6.28);
+      ctx.place('desert_mesa', Math.sin(a) * d, -52 + dhash(k, 9) * 22, Math.cos(a) * d, sc * 0.9, dhash(k, 11) * 6.28);
+      if (k % 3 === 0) ctx.place('desert_mesa', Math.sin(a + 0.12) * (d + 20), -50 + dhash(k, 13) * 18, Math.cos(a + 0.12) * (d + 20), sc * 1.3, dhash(k, 15) * 6.28);
     }
   },
 };
