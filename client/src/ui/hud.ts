@@ -448,7 +448,8 @@ export class Hud {
     }
 
     // edge arrows: bank (when off-screen) and the 2 richest rivals off-screen
-    this.edgeArrow(this.edgeBank, world.bank.x, 1, world.bank.z, camera, playing, '');
+    const coinMode = playing && world.mode === 'coins'; // the bank and coin carriers only exist in Coin Clash
+    this.edgeArrow(this.edgeBank, world.bank.x, 1, world.bank.z, camera, coinMode, '');
     // crown holder always gets an arrow; plus the richest other rival
     const crownP = world.crownId >= 0 && world.crownId !== localId ? world.players[world.crownId] : null;
     const rich = world.players
@@ -458,7 +459,7 @@ export class Hud {
     this.edgeRich.forEach((e, i) => {
       const p = list[i];
       e.classList.toggle('crown', !!p && p === crownP);
-      if (!p || !playing) e.style.display = 'none';
+      if (!p || !coinMode) e.style.display = 'none';
       else this.edgeArrow(e, p.x, 1, p.z, camera, true, `${p === crownP ? '👑' : ''}${p.carried}`);
     });
 

@@ -192,8 +192,9 @@ export class WeaponsView {
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       uniforms: { time: { value: 0 } },
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: 'varying vec2 vUv; uniform float time; void main(){ float a = pow(1.0 - vUv.y, 1.6) * (0.75 + 0.25*sin(vUv.y*18.0 - time*5.0)); gl_FragColor = vec4(1.0, 0.82, 0.35, a * 0.55); }',
+      vertexShader: 'varying vec2 vUv; varying float vD; void main(){ vUv = uv; vec4 mv = modelViewMatrix*vec4(position,1.0); vD = -mv.z; gl_Position = projectionMatrix*mv; }',
+      // fades out up close: a column next to the camera must never wash the screen out
+      fragmentShader: 'varying vec2 vUv; varying float vD; uniform float time; void main(){ float a = pow(1.0 - vUv.y, 1.6) * (0.75 + 0.25*sin(vUv.y*18.0 - time*5.0)); a *= smoothstep(5.0, 14.0, vD); gl_FragColor = vec4(1.0, 0.82, 0.35, a * 0.4); }',
     });
     this.world = world;
     this.fx = fx;

@@ -12,7 +12,7 @@ let ramp: THREE.DataTexture | null = null;
 /** Light ramp: shadow band, mid band, lit band. Shadows stay warm and bright (cartoon, not gritty). */
 function gradient() {
   if (ramp) return ramp;
-  const steps = [112, 190, 255];
+  const steps = [104, 150, 205, 255]; // 4 softer bands: rounder form, still cartoon
   const data = new Uint8Array(steps.length * 4);
   steps.forEach((v, i) => data.set([v, v, v, 255], i * 4));
   ramp = new THREE.DataTexture(data, steps.length, 1, THREE.RGBAFormat);

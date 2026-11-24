@@ -45,13 +45,27 @@ const ring = (n: number, r: number, off = 0) =>
     return { x: Math.sin(a) * r, z: Math.cos(a) * r };
   });
 
-/** A long object as a row of circles along its yaw (rot 0 = along +z). */
+/**
+ * A long object as a row of circles along its yaw (rot 0 = along +z).
+ * The visible piece sits at the object's CENTRE; the extra circles are hidden collision only.
+ */
 function long(out: Obstacle[], kind: string, x: number, z: number, rot: number, length: number, r: number) {
+  out.push({ kind, x, z, r, rot });
   const n = Math.max(2, Math.round(length / (r * 1.6)));
   for (let i = 0; i < n; i++) {
     const t = (i / (n - 1) - 0.5) * (length - r * 2);
-    out.push({ kind, x: x + Math.sin(rot) * t, z: z + Math.cos(rot) * t, r, rot, hidden: i > 0 });
+    out.push({ kind, x: x + Math.sin(rot) * t, z: z + Math.cos(rot) * t, r, rot, hidden: true });
   }
+}
+
+/** A square block (side 2·half) as a centre circle plus four hidden corner circles, turned by rot. */
+function block(out: Obstacle[], kind: string, x: number, z: number, half: number, rot: number) {
+  out.push({ kind, x, z, r: half - 0.1, rot });
+  const c = half * 0.66;
+  const cr = half * 0.52;
+  const s = Math.sin(rot);
+  const k = Math.cos(rot);
+  for (const [a, b] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) out.push({ kind, x: x + (a * c * k + b * c * s), z: z + (-a * c * s + b * c * k), r: cr, rot, hidden: true });
 }
 
 // ------------------------------------------------------------------ helpers
@@ -151,6 +165,9 @@ function city(): MapDef {
  *  - ground cover everywhere else: gumdrops, cupcakes, ice-cream cones, cakes, chocolate walls, peppermint pillars
  * Collision circles match the visual footprints of assets/models/candy_*.glb. Everything symmetric so no side is better.
  */
+/** Ground-cover sweets are drawn and collide at this fraction of the model size, so they never hide the heroes. */
+export const CANDY_K = 0.62;
+
 function candy(): MapDef {
   const S = 4.8;
   const R = 37.2;
@@ -172,7 +189,7 @@ function candy(): MapDef {
     P('ramp', x, z, 0, ascend(dx, dz));
   }
   P('fountain', 0, 0, 0.9);
-  for (const [x, z] of quad(5, 5)) P('deckpillar', x, z, 0.9);
+  for (const [x, z] of quad(5, 5)) P('deckpillar', x, z, 0.65);
 
   // ---- four corner castles: 2×2 blocks, one ramp from each side
   for (const [cx, cz] of quad(24, 24)) {
@@ -190,15 +207,15 @@ function candy(): MapDef {
 
   // ---- ground cover (all big; nothing small)
   const gum = [[18, 8], [8, 18]];
-  for (const [gx, gz] of gum) for (const [x, z] of quad(gx, gz)) P('gumdrop', x, z, 1.6, 0);
-  for (const [x, z] of quad(12, 12)) P('cupcake', x, z, 1.7, (x + z) * 0.3);
-  for (const [x, z] of quad(17, 17)) P('cake', x, z, 2.2, (x - z) * 0.2);
-  for (const [gx, gz] of [[30, 9], [9, 30]]) for (const [x, z] of quad(gx, gz)) P('icecream', x, z, 1.9, (x * z) * 0.05);
-  for (const [x, z] of quad(16.8, 11)) long(o, 'choco', x, z, 0, 2.9, 0.55);
-  for (const [x, z] of quad(26, 3)) P('pillar', x, z, 0.9);
-  for (const [x, z] of quad(3, 26)) P('pillar', x, z, 0.9);
-  for (const [x, z] of quad(33, 12)) P('swirl', x, z, 0.7, x * 0.2);
-  for (const [x, z] of quad(12, 33)) P('swirl', x, z, 0.7, z * 0.2);
+  for (const [gx, gz] of gum) for (const [x, z] of quad(gx, gz)) P('gumdrop', x, z, 1.6 * CANDY_K, 0);
+  for (const [x, z] of quad(12, 12)) P('cupcake', x, z, 1.95 * CANDY_K, (x + z) * 0.3);
+  for (const [x, z] of quad(17, 17)) block(o, 'cake', x, z, 2.3 * CANDY_K, (x - z) * 0.2);
+  for (const [gx, gz] of [[30, 9], [9, 30]]) for (const [x, z] of quad(gx, gz)) P('icecream', x, z, 1.9 * CANDY_K, (x * z) * 0.05);
+  for (const [x, z] of quad(16.8, 11)) long(o, 'choco', x, z, 0, 2.9 * CANDY_K, 0.25);
+  for (const [x, z] of quad(26, 3)) P('pillar', x, z, 0.62);
+  for (const [x, z] of quad(3, 26)) P('pillar', x, z, 0.62);
+  for (const [x, z] of quad(33, 12)) P('swirl', x, z, 0.5, x * 0.2);
+  for (const [x, z] of quad(12, 33)) P('swirl', x, z, 0.5, z * 0.2);
 
   return {
     id: 'candy',

@@ -262,7 +262,7 @@ body { font-family: var(--body); color: #fff; user-select: none; -webkit-user-se
 .pill { box-shadow: 0 5px 0 var(--deep), inset 0 3px 0 #ffffff60, 0 0 0 3px #ffffff50; }
 
 /* panels */
-.veil { background: radial-gradient(circle at 50% 40%, #4a2fd060, #1d0d52c8); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+.veil { background: radial-gradient(circle at 50% 40%, #4a2fd060, #1d0d52c8); }
 .panel { background: linear-gradient(180deg, #7a5cff 0%, #5a3be6 40%, #4127c4 100%); border-radius: 28px;
   box-shadow: 0 8px 0 var(--deep), 0 18px 40px #1d0d5290, inset 0 4px 0 #ffffff50, inset 0 -6px 0 #00000025, 0 0 0 4px #ffffff40; }
 .panel h1 { -webkit-text-stroke: 7px var(--deep); text-shadow: 0 5px 0 var(--deep); }
@@ -272,7 +272,7 @@ body { font-family: var(--body); color: #fff; user-select: none; -webkit-user-se
 .toggle { border-bottom: 2px solid #ffffff18; }
 
 /* results beside the 3D podium */
-.veil.side { justify-content: flex-end; padding-right: max(4vw, calc(16px + var(--safe-r))); background: radial-gradient(ellipse 45% 60% at 29% 62%, #8a6bff90 0%, #3a1f8fd0 60%, #1d0d52ec 100%); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.veil.side { justify-content: flex-end; padding-right: max(4vw, calc(16px + var(--safe-r))); background: radial-gradient(ellipse 45% 60% at 29% 62%, #8a6bff90 0%, #3a1f8fd0 60%, #1d0d52ec 100%); }
 .veil.side .panel { width: min(470px, 52vw); }
 .podium-names { position: absolute; inset: 0; pointer-events: none; }
 .veil.side .podium-names { left: 0; }

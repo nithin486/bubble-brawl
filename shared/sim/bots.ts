@@ -43,6 +43,7 @@ export class BotBrain {
   mode: Mode = 'idle';
   /** Rival this bot is currently hunting (-1 = none) — shown as a red "!" over its head. */
   targetId = -1;
+  private avoidSide = 1;
   private wpCache: { age: number; tx: number; tz: number; mx: number; mz: number; wp: { x: number; z: number } } | null = null;
   readonly personality: Personality;
   private reaction: number;
@@ -174,7 +175,10 @@ export class BotBrain {
         if (od > reach || od > d + o.r || !w.arena.solid(o.x, o.z)) continue;
         const ahead = (ox * dx + oz * dz) / od;
         if (ahead < 0.2) continue;
-        const side = ox * dz - oz * dx > 0 ? 1 : -1; // steer to the side away from the obstacle
+        // steer to the side away from the obstacle; when it is dead ahead keep the side we already chose (no flip-flopping)
+        const cross = (ox * dz - oz * dx) / od;
+        if (Math.abs(cross) > 0.3) this.avoidSide = cross > 0 ? 1 : -1;
+        const side = this.avoidSide;
         const k = (1 - od / reach) * 2.2 * ahead;
         const px = -oz / od;
         const pz = ox / od;

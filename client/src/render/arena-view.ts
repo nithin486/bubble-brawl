@@ -567,8 +567,8 @@ export class ArenaView {
     }
     this.batch.flush();
     // see-through: whatever stands between the camera and your hero is dithered away
-    SEE.seeOn.value = this.focus && this.camPos ? 1 : 0;
-    if (this.focus) SEE.seeFocus.value.set(this.focus.x, 1, this.focus.z);
+    SEE.seeOn.value = 0; // no dither holes: the hero is shown through cover as an x-ray silhouette instead (hero.ts)
+    if (this.focus) SEE.seeFocus.value.set(this.focus.x, this.focus.y + 1.1, this.focus.z);
     if (this.camPos) SEE.seeCam.value.copy(this.camPos);
     for (const m of dirty) {
       m.instanceMatrix.needsUpdate = true;
