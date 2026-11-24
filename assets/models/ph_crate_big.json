@@ -1,0 +1,29 @@
+{
+  "name": "ph_crate_big",
+  "query": "wooden_crate_02",
+  "title": "Wooden Crate 02",
+  "source": "polyhaven",
+  "id": "wooden_crate_02",
+  "link": "https://polyhaven.com/a/wooden_crate_02",
+  "author": "James Ray Cock, Jurita Burger",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 3000,
+  "trianglesOriginal": 5176,
+  "bytes": 137432,
+  "dimensions": [
+    0.529,
+    0.464,
+    1.166
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}
