@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addOutlines } from './style.ts';
+import { StaticBatch, GlowField, SEE, bakeParts, mergeParts, type BatchItem } from './batch.ts';
 import { makeDecal } from './decals.ts';
 import type { Decal } from './themes.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -59,10 +59,10 @@ interface PropView {
   obj: THREE.Object3D;
   tile: number;
   base: THREE.Vector3;
-  mats: THREE.MeshStandardMaterial[];
-  fade: number;
-  tall: boolean;
-  ink: THREE.Material[];
+  item: BatchItem;
+  glows: number[];
+  /** Currently drawn on its own (falling) instead of inside the batch. */
+  loose: boolean;
 }
 
 /** Renders any map: themed tiles that shake and fall, props that ride their tile, pads, backdrop and ambience. */
@@ -76,6 +76,11 @@ export class ArenaView {
   private props: PropView[] = [];
   /** Set each frame: props between the camera and this point fade out so you never lose your hero. */
   focus: THREE.Vector3 | null = null;
+  /** Set by the game each frame (for the see-through shader). */
+  camPos: THREE.Vector3 | null = null;
+  private batch = new StaticBatch();
+  private glowField: GlowField;
+  private placed: THREE.Object3D[] = [];
   /** Set by the game: does a prop at (x, z) hide the focus point from the camera? */
   blocks: ((x: number, z: number, fx: number, fz: number) => boolean) | null = null;
   private falls = new Map<number, FallAnim>();
@@ -95,6 +100,7 @@ export class ArenaView {
     this.env = env;
     this.glowTex = glowTex;
     this.theme = THEMES[world.map.id];
+    this.glowField = new GlowField(glowTex);
     const th = this.theme;
     const tiles = world.arena.tiles;
 
@@ -148,6 +154,9 @@ export class ArenaView {
     th.extras?.(ctx);
     th.backdrop(ctx);
     this.flushChunks();
+    this.mergeScenery();
+    this.batch.flush();
+    this.group.add(this.batch.group, this.glowField.points);
     this.buildClouds();
     if (th.waterfalls) this.buildWaterfalls();
     if (th.bubbles) this.buildBubbles();
@@ -173,6 +182,11 @@ export class ArenaView {
       rng,
       place: (name, x, y, z, s, ry = 0) => this.place(name, x, y, z, s, ry),
       glow: (color, size, x, y, z, parent) => {
+        if (!parent && size < 8) {
+          // small lamp glows all go into one draw call (the returned sprite is a dummy)
+          this.glowField.add(color, size, x, y, z);
+          return new THREE.Sprite();
+        }
         const g = this.makeGlow(color, size);
         g.position.set(x, y, z);
         (parent ?? this.group).add(g);
@@ -256,7 +270,27 @@ export class ArenaView {
       if (/windmill_top_fan|lumbermill_saw/.test(m.name)) this.spinners.push(m);
     });
     this.group.add(o);
+    this.placed.push(o);
     return o;
+  }
+
+  /** Backdrop never moves: merge everything placed into one mesh per material. */
+  private mergeScenery() {
+    const keep = (o: THREE.Object3D) => {
+      let ok = true;
+      o.traverse((c) => {
+        if (this.spinners.includes(c) || (c as THREE.Sprite).isSprite || this.clouds.includes(c)) ok = false;
+      });
+      return ok;
+    };
+    const take = this.placed.filter((o) => o.parent === this.group && keep(o));
+    const parts = take.flatMap((o) => bakeParts(o, false));
+    for (const o of take) this.group.remove(o);
+    for (const m of mergeParts(parts, false)) {
+      m.castShadow = false;
+      this.group.add(m);
+    }
+    this.placed = [];
   }
 
   /** Obstacle visuals — sized to match their collision circles in shared/config/maps.ts. */
@@ -272,10 +306,9 @@ export class ArenaView {
       g.add(c);
       return c;
     };
+    const glows: { c: string; s: number; p: THREE.Vector3 }[] = [];
     const glow = (color: string, size: number, x: number, y: number, z: number) => {
-      const s = this.makeGlow(color, size);
-      s.position.set(x, y, z);
-      g.add(s);
+      glows.push({ c: color, s: size, p: new THREE.Vector3(x, y, z) });
     };
     const decal: Decal = (kind, size, x = 0, z = 0, rot = 0) => {
       g.add(makeDecal(kind, size, x, z, rot));
@@ -283,25 +316,22 @@ export class ArenaView {
     this.theme.prop(o as never, add, glow, decal);
     g.position.set(o.x, 0, o.z);
     g.rotation.y = o.rot;
-    const mats: THREE.MeshStandardMaterial[] = [];
     g.traverse((m) => {
       const mesh = m as THREE.Mesh;
       if (mesh.isMesh) {
         mesh.castShadow = o.r > 0;
         mesh.receiveShadow = true;
-        const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-        mat.transparent = true;
-        mesh.material = mat;
-        mats.push(mat);
       }
     });
-    const box = new THREE.Box3().setFromObject(g);
-    // ink outline on solid obstacles: they pop out of the ground and read as "can't walk here"
-    const ink: THREE.Material[] = [];
-    if (o.r > 0) for (const c of [...g.children]) if (!(c as THREE.Sprite).isSprite) ink.push(...addOutlines(c, 0.03 / Math.max(0.3, c.scale.x)));
+    g.updateMatrixWorld(true);
+    // drawn inside the merged batch; the group itself is only shown while its tile falls
+    const item = this.batch.add(bakeParts(g, o.r > 0), o.r > 0);
+    const ids = glows.map((q) => {
+      const w = g.localToWorld(q.p.clone());
+      return this.glowField.add(q.c, q.s, w.x, w.y, w.z);
+    });
     const tile = this.world.arena.tileAt(o.x, o.z);
-    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), mats, ink, fade: 1, tall: box.max.y > 0.7 });
-    this.group.add(g);
+    this.props.push({ obj: g, tile: tile ? this.world.arena.tiles.indexOf(tile) : -1, base: g.position.clone(), item, glows: ids, loose: false });
   }
 
   private buildPads() {
@@ -476,32 +506,30 @@ export class ArenaView {
       underDirty = true;
       if (gone) this.falls.delete(i);
     }
-    // props ride their tile: shake, fall, come back next round; tall ones fade in front of you
+    // props ride their tile: they live in the merged batch, and only fall on their own with their tile
     for (const p of this.props) {
       const t = tiles[p.tile];
       if (!t) continue;
       const f = this.falls.get(p.tile);
-      if (f) {
-        p.obj.position.set(p.base.x, -13.5 * f.t * f.t, p.base.z);
-        p.obj.visible = f.t < 2.2;
-      } else if (t.state === 2) p.obj.visible = false;
-      else {
-        p.obj.visible = true;
-        p.obj.position.copy(p.base);
-        if (t.state === 1) p.obj.position.x += Math.sin(time * 47) * 0.06;
+      const loose = !!f || t.state === 2;
+      if (loose !== p.loose) {
+        p.loose = loose;
+        this.batch.set(p.item, !loose);
+        if (loose) this.group.add(p.obj);
+        else this.group.remove(p.obj);
       }
-      const fc = this.focus;
-      const hide = p.tall && !!fc && !!this.blocks && this.blocks(p.base.x, p.base.z, fc.x, fc.z);
-      const target = hide ? 0.3 : 1;
-      if (Math.abs(p.fade - target) > 0.01) {
-        p.fade += (target - p.fade) * Math.min(1, dt * 8);
-        for (const m of p.ink) m.visible = p.fade > 0.95;
-        for (const m of p.mats) {
-          m.opacity = p.fade;
-          m.depthWrite = p.fade > 0.95;
-        }
-      }
+      if (loose) {
+        const y = f ? -13.5 * f.t * f.t : -50;
+        p.obj.position.set(p.base.x, y, p.base.z);
+        p.obj.visible = !!f && f.t < 2.2;
+        for (const id of p.glows) this.glowField.move(id, 0, y, 0, p.obj.visible);
+      } else if (p.glows.length) for (const id of p.glows) this.glowField.move(id, 0, 0, 0, true);
     }
+    this.batch.flush();
+    // see-through: whatever stands between the camera and your hero is dithered away
+    SEE.seeOn.value = this.focus && this.camPos ? 1 : 0;
+    if (this.focus) SEE.seeFocus.value.set(this.focus.x, 1, this.focus.z);
+    if (this.camPos) SEE.seeCam.value.copy(this.camPos);
     for (const m of dirty) {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;

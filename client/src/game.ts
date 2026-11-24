@@ -437,6 +437,7 @@ export class Game {
     if (this.wellWarnT > 0) this.wellWarnT -= dt;
     this.island.focus = this.mode === 'match' ? this.v.set(this.world.players[LOCAL].x, 0, this.world.players[LOCAL].z).clone() : null;
     this.island.blocks = (x, z, fx, fz) => this.blocksView(x, z, fx, fz, 1.9);
+    this.island.camPos = this.stage.camera.position;
     this.island.update(dt, this.time);
     this.coins.update(this.world, dt, this.time);
     this.bank.update(dt, this.time, this.stage.camera.position);
