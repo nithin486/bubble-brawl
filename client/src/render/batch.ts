@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CEL } from './style.ts';
+import { CEL, toonOf } from './style.ts';
 
 /**
  * Draw-call diet for low-end phones.
@@ -88,8 +88,19 @@ export interface Part {
   shadow: boolean;
 }
 
-/** Plain float, non-indexed position/normal/uv — every part can be merged with every other. */
-function plain(src: THREE.BufferGeometry, m: THREE.Matrix4) {
+/** One shared material for every plain-colour (untextured) piece: its colour lives in the vertices. */
+let vcMat: THREE.Material | null = null;
+function vertexColourMaterial() {
+  vcMat ??= toonOf(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0 }));
+  return vcMat;
+}
+const isPlain = (m: THREE.Material) => {
+  const s = m as THREE.MeshStandardMaterial;
+  return !s.map && !s.transparent && !(s as THREE.MeshStandardMaterial & { alphaTest?: number }).alphaTest && !!s.color && !s.vertexColors && (s.emissiveIntensity ?? 0) * (s.emissive ? s.emissive.r + s.emissive.g + s.emissive.b : 0) < 0.05;
+};
+
+/** Plain float, non-indexed position/normal/uv (+ colour) — every part can be merged with every other. */
+function plain(src: THREE.BufferGeometry, m: THREE.Matrix4, colour?: THREE.Color) {
   let g = src.index ? src.toNonIndexed() : src.clone();
   const out = new THREE.BufferGeometry();
   for (const name of ['position', 'normal', 'uv']) {
@@ -100,6 +111,12 @@ function plain(src: THREE.BufferGeometry, m: THREE.Matrix4) {
     out.setAttribute(name, new THREE.BufferAttribute(f, size));
   }
   if (!g.getAttribute('normal')) out.computeVertexNormals();
+  if (colour) {
+    const n = out.getAttribute('position').count;
+    const c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) c.set([colour.r, colour.g, colour.b], i * 3);
+    out.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  }
   out.applyMatrix4(m);
   g = out;
   return g;
@@ -114,7 +131,10 @@ export function bakeParts(root: THREE.Object3D, shadow: boolean, relativeTo?: TH
     if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh || (mesh as THREE.SkinnedMesh).isSkinnedMesh) return;
     if (mesh.userData.outline) return;
     const m = relativeTo ? new THREE.Matrix4().multiplyMatrices(relativeTo, mesh.matrixWorld) : mesh.matrixWorld;
-    parts.push({ geo: plain(mesh.geometry, m), mat: mesh.material as THREE.Material, shadow: shadow && mesh.castShadow !== false });
+    const mat = mesh.material as THREE.Material;
+    // plain colours → vertex colours + one shared material, so a multi-colour sweet is one draw, not ten
+    if (isPlain(mat)) parts.push({ geo: plain(mesh.geometry, m, (mat as THREE.MeshStandardMaterial).color), mat: vertexColourMaterial(), shadow: shadow && mesh.castShadow !== false });
+    else parts.push({ geo: plain(mesh.geometry, m), mat, shadow: shadow && mesh.castShadow !== false });
   });
   return parts;
 }
@@ -182,7 +202,15 @@ export class StaticBatch {
     if (CEL) {
       const ink = live.filter((i) => i.outline).flatMap((i) => i.parts.filter((p) => (p.mat as THREE.Material & { alphaTest?: number }).alphaTest === 0 && !p.mat.transparent));
       if (ink.length) {
-        const geo = mergeGeometries(ink.map((p) => p.geo));
+        // outlines only need position + normal (parts differ in uv/colour attributes)
+        const geo = mergeGeometries(
+          ink.map((p) => {
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', p.geo.getAttribute('position'));
+            g.setAttribute('normal', p.geo.getAttribute('normal'));
+            return g;
+          }),
+        );
         if (geo) this.group.add(new THREE.Mesh(geo, this.outlineMat));
       }
     }
@@ -243,6 +271,17 @@ export class GlowField {
     this.points.geometry.setDrawRange(0, this.n);
     (this.points.geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
     return i;
+  }
+
+  /** Move a glow's base to a new spot (floating bubbles). */
+  set(i: number, x: number, y: number, z: number, size: number) {
+    if (i < 0) return;
+    const b = this.base[i];
+    b.x = x;
+    b.y = y;
+    b.z = z;
+    b.s = size;
+    this.move(i, 0, 0, 0, true);
   }
 
   /** Offset a glow from its base (dy for falling tiles); hidden glows get size 0. */

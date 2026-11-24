@@ -3,6 +3,7 @@ import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { HeroId } from '../../../shared/config/heroes.ts';
 import { celify } from './style.ts';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export interface HeroAsset {
   scene: THREE.Group;
@@ -108,6 +109,7 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
       }
     });
     celify(g.scene);
+    // mergeSkinned(g.scene); — disabled: merged skins deformed wrongly (KayKit parts); revisit
     // normalise height using the body meshes only (weapons stick out)
     const box = new THREE.Box3();
     g.scene.updateMatrixWorld(true);
@@ -122,6 +124,82 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
     heroes.set(id, { scene: g.scene, clips, scale: 1.8 / h });
   });
   return { heroes, env };
+}
+
+/**
+ * KayKit heroes come as ~10 skinned parts (head, arms, legs…) on one skeleton with one atlas material.
+ * Merge them into one skinned mesh per material: ~10× fewer draw calls per hero (and per outline/shadow).
+ */
+export function mergeSkinned(root: THREE.Object3D) {
+  root.updateMatrixWorld(true);
+  // group parts that share a parent and a texture (each KayKit part has its own Skeleton object,
+  // but they all point at the same bones)
+  const groups = new Map<string, THREE.SkinnedMesh[]>();
+  root.traverse((o) => {
+    const m = o as THREE.SkinnedMesh;
+    if (!m.isSkinnedMesh) return;
+    const mat = m.material as THREE.MeshStandardMaterial;
+    const k = (m.parent?.uuid ?? '') + '|' + (mat.map?.uuid ?? mat.color?.getHexString() ?? mat.uuid) + '|' + mat.transparent;
+    let list = groups.get(k);
+    if (!list) groups.set(k, (list = []));
+    list.push(m);
+  });
+  const ATTRS = ['position', 'normal', 'uv', 'skinWeight'];
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const first = list[0];
+    if (!list.every((m) => m.matrix.equals(first.matrix) && m.bindMatrix.equals(first.bindMatrix))) continue;
+    // one skeleton with every bone any part uses
+    const bones: THREE.Bone[] = [];
+    const inverses: THREE.Matrix4[] = [];
+    const indexOf = new Map<THREE.Bone, number>();
+    for (const m of list)
+      m.skeleton.bones.forEach((bone, i) => {
+        if (indexOf.has(bone)) return;
+        indexOf.set(bone, bones.length);
+        bones.push(bone);
+        inverses.push(m.skeleton.boneInverses[i].clone());
+      });
+    const geos: THREE.BufferGeometry[] = [];
+    let ok = true;
+    for (const m of list) {
+      const src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+      const g = new THREE.BufferGeometry();
+      for (const a of ATTRS) {
+        const attr = src.getAttribute(a) as THREE.BufferAttribute | undefined;
+        if (!attr) {
+          ok = false;
+          break;
+        }
+        const f = new Float32Array(attr.count * attr.itemSize);
+        for (let i = 0; i < attr.count; i++) for (let c = 0; c < attr.itemSize; c++) f[i * attr.itemSize + c] = attr.getComponent(i, c);
+        g.setAttribute(a, new THREE.BufferAttribute(f, attr.itemSize));
+      }
+      const si = src.getAttribute('skinIndex') as THREE.BufferAttribute | undefined;
+      if (!ok || !si) {
+        ok = false;
+        break;
+      }
+      // remap this part's joint indices into the shared skeleton
+      const idx = new Uint16Array(si.count * 4);
+      for (let i = 0; i < si.count; i++) for (let c = 0; c < 4; c++) idx[i * 4 + c] = indexOf.get(m.skeleton.bones[si.getComponent(i, c)]) ?? 0;
+      g.setAttribute('skinIndex', new THREE.BufferAttribute(idx, 4));
+      geos.push(g);
+    }
+    if (!ok) continue;
+    const merged = mergeGeometries(geos);
+    if (!merged) continue;
+    const mesh = new THREE.SkinnedMesh(merged, first.material);
+    mesh.name = 'body';
+    mesh.position.copy(first.position);
+    mesh.quaternion.copy(first.quaternion);
+    mesh.scale.copy(first.scale);
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+    first.parent!.add(mesh);
+    mesh.bind(new THREE.Skeleton(bones, inverses), first.bindMatrix);
+    for (const m of list) m.parent!.remove(m);
+  }
 }
 
 /**

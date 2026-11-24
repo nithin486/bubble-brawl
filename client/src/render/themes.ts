@@ -43,6 +43,8 @@ export interface Theme {
   hemi: { sky: string; ground: string; intensity: number };
   sun: { color: string; intensity: number; pos: [number, number, number] };
   exposure: number;
+  /** Glow filter: only really bright things (lamps, effects) should glow. */
+  bloom?: { strength: number; threshold: number };
   clouds: { color: string; emissive: string; intensity: number };
   waterfalls: boolean;
   bubbles: boolean;
@@ -63,7 +65,8 @@ const CANDY_TILE_Y = -1; // candy tiles are 1 m thick, grounded at y = 0: top su
 const candy: Theme = {
   id: 'candy',
   sky: { top: '#6fd0ff', mid: '#ffb3e6', horizon: '#fff2c9', bottom: '#ffd0ee' },
-  fog: { color: '#ffd9f0', near: 90, far: 260 },
+  fog: { color: '#ffd9f0', near: 110, far: 300 },
+  bloom: { strength: 0.32, threshold: 0.97 },
   hemi: { sky: '#fff3fb', ground: '#d79ac2', intensity: 0.8 },
   sun: { color: '#fff0d4', intensity: 1.7, pos: [-14, 24, 12] },
   exposure: 0.82,

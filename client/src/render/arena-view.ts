@@ -105,9 +105,11 @@ export class ArenaView {
   blocks: ((x: number, z: number, fx: number, fz: number) => boolean) | null = null;
   private falls = new Map<number, FallAnim>();
   private clouds: THREE.Object3D[] = [];
+  private cloudList: { im: THREE.InstancedMesh; idx: number; pos: THREE.Vector3; s: number; rot: number; speed: number }[] = [];
+  private bubbleField: GlowField | null = null;
+  private bubbleList: { x: number; y: number; z: number; v: number; ph: number; s: number }[] = [];
   private spinners: THREE.Object3D[] = [];
   private waterMats: THREE.ShaderMaterial[] = [];
-  private bubbles: THREE.Sprite[] = [];
   private lastStates: number[] = [];
   private world: World;
   private env: Map<string, THREE.Object3D>;
@@ -386,28 +388,38 @@ export class ArenaView {
     const rng = new Rng(11);
     const C = this.theme.clouds;
     const cloudMat = new THREE.MeshStandardMaterial({ color: C.color, emissive: C.emissive, emissiveIntensity: C.intensity, roughness: 1 });
+    // two instanced meshes (small / big) instead of 26 separate clouds: 2 draw calls
+    const kinds = ['cloud_small', 'cloud_big'].map((name, k) => {
+      const b = this.bake(name);
+      const im = new THREE.InstancedMesh(b.geo, cloudMat, k === 0 ? 9 : 17);
+      im.frustumCulled = false;
+      this.group.add(im);
+      return { im, n: 0 };
+    });
     for (let i = 0; i < 26; i++) {
-      const c = this.env.get(i % 3 === 0 ? 'cloud_small' : 'cloud_big')!.clone();
+      const kind = kinds[i % 3 === 0 ? 0 : 1];
       const a = rng.range(0, Math.PI * 2);
       const below = i < 18;
       const ua = rng.range(-1.2, 1.2);
       const d = below ? rng.range(18, 70) : rng.range(45, 72);
-      if (below) c.position.set(Math.sin(a) * d, rng.range(-22, -18), Math.cos(a) * d);
-      else c.position.set(Math.sin(ua) * d, rng.range(-4, 6), -Math.cos(ua) * d);
-      c.scale.setScalar(below ? rng.range(5, 7) : rng.range(3, 5));
-      c.rotation.y = rng.range(0, 6.28);
-      c.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.isMesh) {
-          m.castShadow = false;
-          m.receiveShadow = false;
-          m.material = cloudMat;
-        }
-      });
-      c.userData.speed = rng.range(0.2, 0.6);
-      this.clouds.push(c);
-      this.group.add(c);
+      const pos = below ? new THREE.Vector3(Math.sin(a) * d, rng.range(-22, -18), Math.cos(a) * d) : new THREE.Vector3(Math.sin(ua) * d, rng.range(-4, 6), -Math.cos(ua) * d);
+      this.cloudList.push({ im: kind.im, idx: kind.n++, pos, s: below ? rng.range(5, 7) : rng.range(3, 5), rot: rng.range(0, 6.28), speed: rng.range(0.2, 0.6) });
     }
+    kinds.forEach((k) => (k.im.count = k.n));
+    this.updateClouds(0);
+  }
+
+  private updateClouds(dt: number) {
+    const dirty = new Set<THREE.InstancedMesh>();
+    for (const c of this.cloudList) {
+      c.rot += dt * 0.02;
+      c.pos.x += dt * c.speed;
+      if (c.pos.x > 75) c.pos.x = -75;
+      if (c.pos.y > -9 && Math.hypot(c.pos.x, c.pos.z) < 40) c.pos.x = -75;
+      c.im.setMatrixAt(c.idx, tmpM.compose(c.pos, tmpQ.setFromAxisAngle(UP, c.rot), tmpS.setScalar(c.s)));
+      dirty.add(c.im);
+    }
+    for (const im of dirty) im.instanceMatrix.needsUpdate = true;
   }
 
   /** Water gushing out of the island's rocky underside (village). */
@@ -464,23 +476,31 @@ export class ArenaView {
     g.fill();
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    // all 36 floating bubbles in one draw call
+    this.bubbleField = new GlowField(tex);
     for (let k = 0; k < 36; k++) {
-      const s = new THREE.Sprite(mat);
-      this.resetBubble(s, true);
-      this.bubbles.push(s);
-      this.group.add(s);
+      const b = { x: 0, y: 0, z: 0, v: 0, ph: 0, s: 0 };
+      this.bubbleList.push(b);
+      this.bubbleField.add('#ffffff', 1, 0, 0, 0);
+      this.resetBubbleData(k, true);
     }
+    this.group.add(this.bubbleField.points);
   }
 
-  private resetBubble(s: THREE.Sprite, anyY: boolean) {
+  private resetBubbleData(k: number, anyY: boolean) {
+    const b = this.bubbleList[k];
     const a = Math.random() * Math.PI * 2;
-    const d = 18 + Math.random() * 18; // outside the play area, never in front of the camera
-    s.position.set(Math.sin(a) * d, anyY ? -8 + Math.random() * 18 : -10, Math.cos(a) * d);
-    s.scale.setScalar(0.25 + Math.random() * 0.6);
-    s.userData.v = 0.6 + Math.random() * 0.8;
-    s.userData.ph = Math.random() * 6;
+    const d = this.world.map.shape.radius + 4 + Math.random() * 18; // outside the play area, never in front of the camera
+    b.x = Math.sin(a) * d;
+    b.y = anyY ? -8 + Math.random() * 18 : -10;
+    b.z = Math.cos(a) * d;
+    b.s = 0.25 + Math.random() * 0.6;
+    b.v = 0.6 + Math.random() * 0.8;
+    b.ph = Math.random() * 6;
+    this.bubbleField!.set(k, b.x, b.y, b.z, b.s);
   }
+
+
 
   update(dt: number, time: number) {
     const tiles = this.world.arena.tiles;
@@ -570,17 +590,13 @@ export class ArenaView {
       else sp.rotation.z += dt * 1.6;
     }
     for (const m of this.waterMats) m.uniforms.time.value = time;
-    for (const b of this.bubbles) {
-      b.position.y += b.userData.v * dt;
-      b.position.x += Math.sin(time * 1.3 + b.userData.ph) * dt * 0.3;
-      if (b.position.y > 12) this.resetBubble(b, false);
-    }
-    for (const c of this.clouds) {
-      c.rotation.y += dt * 0.02;
-      c.position.x += dt * c.userData.speed;
-      if (c.position.x > 75) c.position.x = -75;
-      if (c.position.y > -9 && Math.hypot(c.position.x, c.position.z) < 40) c.position.x = -75;
-    }
+    this.bubbleList.forEach((b, k) => {
+      b.y += b.v * dt;
+      b.x += Math.sin(time * 1.3 + b.ph) * dt * 0.3;
+      if (b.y > 12) this.resetBubbleData(k, false);
+      else this.bubbleField!.set(k, b.x, b.y, b.z, b.s);
+    });
+    this.updateClouds(dt);
   }
 }
 
