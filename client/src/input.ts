@@ -39,7 +39,6 @@ export class InputManager {
       this.mouse.t = performance.now();
       if (document.pointerLockElement === canvas) {
         this.yaw -= e.movementX * 0.0032;
-        this.aimDist = Math.min(16, Math.max(3, this.aimDist - e.movementY * 0.03)); // mouse up = aim farther
       }
     });
     canvas.addEventListener('mousedown', (e) => {
@@ -79,7 +78,7 @@ export class InputManager {
   /** Drag-to-look from the touch look zone. */
   look(dx: number, dy = 0) {
     this.yaw -= dx * 0.0085;
-    this.aimDist = Math.min(16, Math.max(3, this.aimDist - dy * 0.04)); // drag up = aim farther
+    void dy;
   }
 
   /** Camera turn since last call (mouse, touch drag, Q/E). */

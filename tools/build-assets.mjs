@@ -145,7 +145,12 @@ const envInputs = [...ENV.hex, ...ENV.city, ...ENV.spooky, ...ENV.candy, ...ENV.
   }
 }
 async function mergeEnv(inputs, envDst, label) {
-  if (fresh(envDst, inputs.map((e) => e[1]))) return;
+  // rebuild when any input is newer, OR the set of pieces / their sizes changed (renamed or deleted files keep old mtimes)
+  const sig = inputs.map(([n, f]) => `${n}:${fs.statSync(f).size}`).join('\n');
+  const sigFile = `${envDst}.sig`;
+  const sameSet = fs.existsSync(sigFile) && fs.readFileSync(sigFile, 'utf8') === sig;
+  if (sameSet && fresh(envDst, inputs.map((e) => e[1]))) return;
+  fs.writeFileSync(sigFile, sig);
   {
     const doc = await io.read(inputs[0][1]);
     // Give every piece a single named root node "piece_<name>" in one scene.

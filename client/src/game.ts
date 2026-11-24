@@ -565,9 +565,6 @@ export class Game {
     } else {
       if (this.mode === 'match' && this.input.enabled) {
         this.rig.addYaw(this.input.takeYaw(dt));
-        // vertical look: aiming close tilts the camera up to a top view, aiming far lowers it behind the hero
-        const ad = this.input.aimDist;
-        this.rig.heightMul = ad < 8 ? 1 + ((8 - ad) / 5) * 0.9 : 1 - ((ad - 8) / 8) * 0.45;
         const me2 = this.world.players[LOCAL];
         this.rig.autoFollow(dt, me2.facing, Math.max(0, this.lastStickFwd));
       }
@@ -1572,7 +1569,9 @@ export class Game {
       const cam = this.stage.camera;
       cam.getWorldDirection(this.v);
       if (Math.hypot(this.v.x, this.v.z) < 1e-4) return;
-      this.aimInfo = { heading: Math.atan2(this.v.x, this.v.z), dist: this.input.aimDist };
+      // steady aim: straight ahead of the camera to the weapon's full reach (the scope stops at walls and rivals);
+      // up/down mouse no longer slides it, which made the scope swim around
+      this.aimInfo = { heading: Math.atan2(this.v.x, this.v.z), dist: 30 };
       return;
     }
     // top-down views: the scope sits under the mouse pointer
