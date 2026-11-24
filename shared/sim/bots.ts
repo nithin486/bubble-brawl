@@ -43,6 +43,7 @@ export class BotBrain {
   mode: Mode = 'idle';
   /** Rival this bot is currently hunting (-1 = none) — shown as a red "!" over its head. */
   targetId = -1;
+  private wpCache: { age: number; tx: number; tz: number; mx: number; mz: number; wp: { x: number; z: number } } | null = null;
   readonly personality: Personality;
   private reaction: number;
   private speed: number;
@@ -125,8 +126,20 @@ export class BotBrain {
     }
     const c = this.cur;
     this.mode = c.mode;
-    let dx = c.tx - me.x;
-    let dz = c.tz - me.z;
+    // cliffs: go via a ramp when the straight line would climb one
+    let wp = { x: c.tx, z: c.tz };
+    if (!w.terrain.flat) {
+      const k = this.wpCache;
+      if (k && k.age < 5 && Math.hypot(k.tx - c.tx, k.tz - c.tz) < 1 && Math.hypot(k.mx - me.x, k.mz - me.z) < 2) {
+        k.age++;
+        wp = k.wp;
+      } else {
+        wp = w.terrain.waypoint(me.x, me.z, c.tx, c.tz);
+        this.wpCache = { age: 0, tx: c.tx, tz: c.tz, mx: me.x, mz: me.z, wp };
+      }
+    }
+    let dx = wp.x - me.x;
+    let dz = wp.z - me.z;
     const d = len(dx, dz);
     const speed = this.easy(w) ? B.firstMatch.speed : this.speed;
     let mx = 0;

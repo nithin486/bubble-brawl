@@ -1,0 +1,29 @@
+{
+  "name": "candy_pillar",
+  "query": "",
+  "title": "candy_pillar (Blender)",
+  "source": "file",
+  "id": "candy_pillar.glb",
+  "link": "",
+  "author": "Bubble Brawl",
+  "authorLink": "",
+  "licence": "own work",
+  "needsCredit": false,
+  "triangles": 716,
+  "trianglesOriginal": 716,
+  "bytes": 6532,
+  "dimensions": [
+    2.047,
+    6.45,
+    2.1
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

@@ -15,7 +15,7 @@ import { HeroView } from './render/hero.ts';
 import { CoinsView } from './render/coins.ts';
 import { BankView } from './render/bank.ts';
 import { Fx, makeGlowTexture } from './render/fx.ts';
-import { CameraRig, CAM_PRESETS, type CamPreset } from './camera.ts';
+import { CameraRig, CAM_PRESETS, type CamPreset, type PlayerCam } from './camera.ts';
 import { InputManager } from './input.ts';
 import { Hud, PLAYER_COLORS } from './ui/hud.ts';
 import { Sfx } from './audio.ts';
@@ -452,7 +452,7 @@ export class Game {
     this.weapons?.update(dt, this.time);
     this.fx.update(dt);
     const me = this.world.players[LOCAL];
-    let focus = this.v.set(me.x, 0, me.z);
+    let focus = this.v.set(me.x, me.state === 'falling' || me.state === 'launched' ? 0 : me.y, me.z);
     if (this.world.phase === 'matchEnd') {
       const w = this.world.players[this.world.ranking()[0]];
       focus = this.v.set(w.x, 0, w.z);
@@ -1526,8 +1526,9 @@ export class Game {
             this.goHome();
           },
           camera: () => {
-            const order: CamPreset[] = ['third', 'close', 'far', 'action'];
-            const next = order[(order.indexOf(this.rig.preset) + 1) % order.length];
+            const order: PlayerCam[] = ['third', 'close', 'far', 'action'];
+            const cur = order.indexOf(this.rig.preset as PlayerCam);
+            const next = order[(cur + 1) % order.length];
             this.profile.camera = next;
             saveProfile(this.profile);
             this.applyCamera(next);

@@ -82,17 +82,40 @@ const candy: Theme = {
   ],
   tiles(world) {
     return world.arena.tiles.map((t) => ({
-      piece: (t.q + t.r) % 2 === 0 ? 'candy_tile_pink' : 'candy_tile_cream',
+      // colour zones from the middle outwards: pink plaza, mint meadow, sky ring, lilac rim (checker with cream)
+      piece:
+        (t.q + t.r) % 2 === 0
+          ? ['candy_tile_pink', 'candy_tile_pink', 'candy_tile_pink', 'candy_tile_mint', 'candy_tile_mint', 'candy_tile_sky', 'candy_tile_sky', 'candy_tile_lilac'][Math.min(7, Math.max(Math.abs(t.q), Math.abs(t.r)))]
+          : 'candy_tile_cream',
       rot: 0,
       scale: [1, 1, 1] as [number, number, number],
       y: CANDY_TILE_Y,
     }));
   },
   prop(o, add, glow) {
+    const DECK = 2.4;
     switch (o.kind) {
+      case 'deckcell':
+        add('candy_block', 1);
+        break;
+      case 'ramp':
+        add('candy_ramp', 1);
+        break;
       case 'fountain':
-        add('candy_sundae', 1.35);
-        glow('#ffd23f', 2.4, 0, 2.6, 0);
+        add('candy_sundae', 1.35, 0, 0, 0, DECK);
+        glow('#ffd23f', 2.4, 0, DECK + 2.6, 0);
+        break;
+      case 'decksundae':
+        add('candy_sundae', 1.2, 0, 0, 0, DECK);
+        break;
+      case 'deckpillar':
+        add('candy_pillar', 0.9, 0, 0, 0, DECK);
+        break;
+      case 'pillar':
+        add('candy_pillar', 1);
+        break;
+      case 'gumdrop':
+        add(['candy_gumdrop_red', 'candy_gumdrop_green', 'candy_gumdrop_blue'][Math.abs(Math.round(o.x + o.z)) % 3], 1);
         break;
       case 'cupcake':
         add('candy_cupcake', 1);

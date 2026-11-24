@@ -2,6 +2,7 @@
 // Each map: ground grid, solid obstacles (circles), bank spots, bounce pads, start spots, jackpot source.
 import { TUNING } from './tuning.ts';
 import { hexToWorld, type ArenaShape } from '../sim/arena.ts';
+import type { TerrainDef } from '../sim/terrain.ts';
 
 export type MapId = 'candy' | 'downtown' | 'city' | 'spooky' | 'village';
 
@@ -34,6 +35,8 @@ export interface MapDef {
   coinScale?: number;
   /** Live map event. */
   event?: 'traffic' | 'bell';
+  /** Walkable ramps and raised decks (optional; flat when absent). */
+  terrain?: TerrainDef;
 }
 
 const ring = (n: number, r: number, off = 0) =>
@@ -142,45 +145,79 @@ function city(): MapDef {
 // ------------------------------------------------------------------ Candy Town (the one big map)
 
 /**
- * 11×11 frosted candy tiles (~53 m). Big cover only: 4 cupcakes, 8 ice-cream cones, 4 cakes, chocolate
- * walls, sundaes and lollipop trees around the rim. Wide open lanes between them for fighting.
- * Collision circles match the visual footprints of the exported pieces (assets/models/candy_*.glb).
+ * 15×15 frosted candy tiles (~72 m). Original layout, built for routes and choices:
+ *  - a raised cake plaza in the middle (14 m square, 2.4 m up) with four narrow ramps = the hill to fight over
+ *  - four corner "castle" decks with two ramps each = flanking routes and sniper nests
+ *  - ground cover everywhere else: gumdrops, cupcakes, ice-cream cones, cakes, chocolate walls, peppermint pillars
+ * Collision circles match the visual footprints of assets/models/candy_*.glb. Everything symmetric so no side is better.
  */
 function candy(): MapDef {
   const S = 4.8;
-  const R = 26.5;
+  const R = 37.2;
+  const H = 2.4; // deck height = candy_block height
   const o: Obstacle[] = [];
   const P = (kind: string, x: number, z: number, r: number, rot = 0, hidden = false) => o.push({ kind, x, z, r, rot, hidden });
-  P('fountain', 0, 0, 0.9); // sugar fountain in the middle (jackpot)
-  // inner ring: a cupcake in every quadrant (3.5 m wide)
-  for (const [i, j] of [[2, 2], [-2, 2], [2, -2], [-2, -2]]) P('cupcake', i * S, j * S, 1.7, (i + j) * 0.7);
-  // outer ring: ice-cream cones in pairs (3.9 m wide)
-  for (const [i, j] of [[4, 2], [4, -2], [-4, 2], [-4, -2], [2, 4], [-2, 4], [2, -4], [-2, -4]]) P('icecream', i * S, j * S, 1.9, (i * 3 + j) * 0.5);
-  // corner cakes (4.6 m wide, low)
-  for (const [i, j] of [[4, 4], [-4, 4], [4, -4], [-4, -4]]) P('cake', i * S, j * S, 2.2, (i + j) * 0.4);
-  // chocolate walls: 2.9 m long, 0.35 thick (two circles along the length)
-  for (const [i, j, rot] of [[3, 1.5, 0], [-3, -1.5, 0], [-1.5, 3, Math.PI / 2], [1.5, -3, Math.PI / 2]] as [number, number, number][]) long(o, 'choco', i * S, j * S, rot, 2.9, 0.55);
-  // sundaes on the open lanes
-  for (const [i, j] of [[1, 3], [-1, -3], [3, -1], [-3, 1]]) P('sundae', i * S + 0.8, j * S, 0.7, (i - j) * 0.9);
-  // lollipop trees ringing the rim
-  for (const [i, j] of [[5, 3], [5, -3], [-5, 3], [-5, -3], [3, 5], [-3, 5], [3, -5], [-3, -5]]) P('swirl', i * S, j * S, 0.7, (i * j) * 0.3);
+  const decks: TerrainDef['decks'] = [];
+  const ramps: TerrainDef['ramps'] = [];
+  const quad = (x: number, z: number) => [[x, z], [-x, z], [x, -z], [-x, -z]];
+  const ascend = (dx: number, dz: number) => Math.atan2(dx, dz);
+
+  // ---- central plaza: 3×3 blocks, ramps on all four sides (4.8 m wide: a choke point on purpose)
+  decks.push({ x: 0, z: 0, w: 3 * S, d: 3 * S, h: H });
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) P('deckcell', i * S, j * S, 0);
+  for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    const x = -dx * 10.8;
+    const z = -dz * 10.8;
+    ramps.push({ x, z, rot: ascend(dx, dz), w: S, len: 7.2, h: H });
+    P('ramp', x, z, 0, ascend(dx, dz));
+  }
+  P('fountain', 0, 0, 0.9);
+  for (const [x, z] of quad(5, 5)) P('deckpillar', x, z, 0.9);
+
+  // ---- four corner castles: 2×2 blocks, one ramp from each side
+  for (const [cx, cz] of quad(24, 24)) {
+    const sx = Math.sign(cx);
+    const sz = Math.sign(cz);
+    decks.push({ x: cx, z: cz, w: 2 * S, d: 2 * S, h: H });
+    for (const [i, j] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) P('deckcell', cx + i * S, cz + j * S, 0);
+    // ramp A comes in along x, ramp B along z
+    ramps.push({ x: sx * 15.6, z: cz, rot: ascend(sx, 0), w: S, len: 7.2, h: H });
+    P('ramp', sx * 15.6, cz, 0, ascend(sx, 0));
+    ramps.push({ x: cx, z: sz * 15.6, rot: ascend(0, sz), w: S, len: 7.2, h: H });
+    P('ramp', cx, sz * 15.6, 0, ascend(0, sz));
+    P('decksundae', cx, cz, 0.8, (sx + sz) * 0.8);
+  }
+
+  // ---- ground cover (all big; nothing small)
+  const gum = [[18, 8], [8, 18]];
+  for (const [gx, gz] of gum) for (const [x, z] of quad(gx, gz)) P('gumdrop', x, z, 1.6, 0);
+  for (const [x, z] of quad(12, 12)) P('cupcake', x, z, 1.7, (x + z) * 0.3);
+  for (const [x, z] of quad(17, 17)) P('cake', x, z, 2.2, (x - z) * 0.2);
+  for (const [gx, gz] of [[30, 9], [9, 30]]) for (const [x, z] of quad(gx, gz)) P('icecream', x, z, 1.9, (x * z) * 0.05);
+  for (const [x, z] of quad(16.8, 11)) long(o, 'choco', x, z, 0, 2.9, 0.55);
+  for (const [x, z] of quad(26, 3)) P('pillar', x, z, 0.9);
+  for (const [x, z] of quad(3, 26)) P('pillar', x, z, 0.9);
+  for (const [x, z] of quad(33, 12)) P('swirl', x, z, 0.7, x * 0.2);
+  for (const [x, z] of quad(12, 33)) P('swirl', x, z, 0.7, z * 0.2);
+
   return {
     id: 'candy',
     name: 'Candy Town',
-    blurb: 'A giant sweet shop in the sky: cupcakes and cones for cover, frosting lanes to fight on.',
+    blurb: 'A giant sweet shop in the sky: climb the cake plaza, flank through the castles, hide behind gumdrops.',
     shape: { grid: 'square', tileSize: S, radius: R },
-    keepRadius: 15,
-    coinScale: 2.4,
-    bankSpots: [[1, 1], [-1, -1], [1, -1], [-1, 1], [3, 0], [-3, 0], [0, 3], [0, -3]].map(([i, j]) => ({ x: i * S, z: j * S })),
-    starts: ring(6, 6, Math.PI / 6),
+    keepRadius: 22,
+    coinScale: 3,
+    bankSpots: [[20.5, 4.5], [-20.5, -4.5], [4.5, -20.5], [-4.5, 20.5], [14, -14], [-14, 14], [22, -12], [-22, 12]].map(([x, z]) => ({ x, z })),
+    starts: ring(6, 16, 0),
     pads: [
-      { x: 5 * S, z: 0 },
-      { x: -5 * S, z: 0 },
-      { x: 0, z: 5 * S },
-      { x: 0, z: -5 * S },
+      { x: 30, z: 0 },
+      { x: -30, z: 0 },
+      { x: 0, z: 30 },
+      { x: 0, z: -30 },
     ],
     jackpot: { x: 0, z: 0, name: 'Sugar Fountain' },
     obstacles: o,
+    terrain: { decks, ramps },
   };
 }
 
