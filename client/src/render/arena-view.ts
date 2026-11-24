@@ -14,6 +14,7 @@ export function bakePiece(piece: THREE.Object3D): { geo: THREE.BufferGeometry; m
   const inv = new THREE.Matrix4().copy(piece.matrixWorld).invert();
   const geos: THREE.BufferGeometry[] = [];
   let mat: THREE.Material | null = null;
+  const mats: THREE.Material[] = [];
   piece.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
@@ -29,8 +30,27 @@ export function bakePiece(piece: THREE.Object3D): { geo: THREE.BufferGeometry; m
     }
     g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
     geos.push(g);
+    mats.push(m.material as THREE.Material);
     mat ??= m.material as THREE.Material;
   });
+  // Pieces with several plain-colour materials (our Blender candy tiles, CC0 sweets): bake each material's
+  // colour into vertex colours so one merged mesh keeps every colour. Textured (atlas) pieces are untouched.
+  const plain = mats.length > 1 && new Set(mats).size > 1 && mats.every((x) => !(x as THREE.MeshStandardMaterial).map);
+  if (plain) {
+    geos.forEach((g, i) => {
+      const c = (mats[i] as THREE.MeshStandardMaterial).color;
+      const n = g.getAttribute('position').count;
+      const arr = new Float32Array(n * 3);
+      for (let k = 0; k < n; k++) {
+        arr[k * 3] = c.r;
+        arr[k * 3 + 1] = c.g;
+        arr[k * 3 + 2] = c.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+    });
+    const base = mats[0] as THREE.MeshStandardMaterial;
+    mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: base.roughness ?? 0.7, metalness: 0 });
+  }
   const geo = geos.length === 1 ? geos[0] : mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)))!;
   return { geo, mat: mat! };
 }
@@ -237,13 +257,13 @@ export class ArenaView {
     const topY = this.theme.id === 'village' ? y : y + this.theme.tiles(this.world)[0].y;
     for (const c of cells) {
       push(piece, new THREE.Matrix4().compose(tmpP.set(c.x, topY, c.z), tmpQ.identity(), tmpS.setScalar(scale)));
-      push('__under', new THREE.Matrix4().compose(tmpP.set(c.x, y - (this.theme.id === 'village' ? 1 : 0.4), c.z), tmpQ.identity(), tmpS.set(under.sx, under.sy, under.sz)));
+      push('__under', new THREE.Matrix4().compose(tmpP.set(c.x, y + (this.theme.under.chunkY ?? (this.theme.id === 'village' ? -1 : -0.4)), c.z), tmpQ.identity(), tmpS.set(under.sx, under.sy, under.sz)));
     }
     for (let L = 1; L <= 3; L++)
       for (const c of cells) {
         if (Math.hypot(c.x - cx, c.z - cz) > R * (1 - L * 0.3) + 0.6) continue;
         const s = 1 - L * 0.1;
-        push('__under', new THREE.Matrix4().compose(tmpP.set(c.x, y - 0.4 - L * under.sy, c.z), tmpQ.identity(), tmpS.set(under.sx * s, under.sy, under.sz * s)));
+        push('__under', new THREE.Matrix4().compose(tmpP.set(c.x, y + (this.theme.under.chunkY ?? -0.4) - L * under.sy, c.z), tmpQ.identity(), tmpS.set(under.sx * s, under.sy, under.sz * s)));
       }
   }
 

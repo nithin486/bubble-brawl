@@ -86,7 +86,7 @@ export class Game {
   private autoBrain: BotBrain | null = null;
   private heroes: HeroView[] = [];
   private island!: ArenaView;
-  private mapId: MapId = 'downtown';
+  private mapId: MapId = 'candy';
   private coins: CoinsView;
   private bank!: BankView;
   private fx: Fx;

@@ -3,7 +3,7 @@
 import { TUNING } from './tuning.ts';
 import { hexToWorld, type ArenaShape } from '../sim/arena.ts';
 
-export type MapId = 'downtown' | 'city' | 'spooky' | 'village';
+export type MapId = 'candy' | 'downtown' | 'city' | 'spooky' | 'village';
 
 export interface Obstacle {
   x: number;
@@ -136,6 +136,51 @@ function city(): MapDef {
     jackpot: { x: 0, z: 0, name: 'Coin Hydrant' },
     obstacles: o,
     event: 'traffic',
+  };
+}
+
+// ------------------------------------------------------------------ Candy Town (the one big map)
+
+/**
+ * 11×11 frosted candy tiles (~53 m). Big cover only: 4 cupcakes, 8 ice-cream cones, 4 cakes, chocolate
+ * walls, sundaes and lollipop trees around the rim. Wide open lanes between them for fighting.
+ * Collision circles match the visual footprints of the exported pieces (assets/models/candy_*.glb).
+ */
+function candy(): MapDef {
+  const S = 4.8;
+  const R = 26.5;
+  const o: Obstacle[] = [];
+  const P = (kind: string, x: number, z: number, r: number, rot = 0, hidden = false) => o.push({ kind, x, z, r, rot, hidden });
+  P('fountain', 0, 0, 0.9); // sugar fountain in the middle (jackpot)
+  // inner ring: a cupcake in every quadrant (3.5 m wide)
+  for (const [i, j] of [[2, 2], [-2, 2], [2, -2], [-2, -2]]) P('cupcake', i * S, j * S, 1.7, (i + j) * 0.7);
+  // outer ring: ice-cream cones in pairs (3.9 m wide)
+  for (const [i, j] of [[4, 2], [4, -2], [-4, 2], [-4, -2], [2, 4], [-2, 4], [2, -4], [-2, -4]]) P('icecream', i * S, j * S, 1.9, (i * 3 + j) * 0.5);
+  // corner cakes (4.6 m wide, low)
+  for (const [i, j] of [[4, 4], [-4, 4], [4, -4], [-4, -4]]) P('cake', i * S, j * S, 2.2, (i + j) * 0.4);
+  // chocolate walls: 2.9 m long, 0.35 thick (two circles along the length)
+  for (const [i, j, rot] of [[3, 1.5, 0], [-3, -1.5, 0], [-1.5, 3, Math.PI / 2], [1.5, -3, Math.PI / 2]] as [number, number, number][]) long(o, 'choco', i * S, j * S, rot, 2.9, 0.55);
+  // sundaes on the open lanes
+  for (const [i, j] of [[1, 3], [-1, -3], [3, -1], [-3, 1]]) P('sundae', i * S + 0.8, j * S, 0.7, (i - j) * 0.9);
+  // lollipop trees ringing the rim
+  for (const [i, j] of [[5, 3], [5, -3], [-5, 3], [-5, -3], [3, 5], [-3, 5], [3, -5], [-3, -5]]) P('swirl', i * S, j * S, 0.7, (i * j) * 0.3);
+  return {
+    id: 'candy',
+    name: 'Candy Town',
+    blurb: 'A giant sweet shop in the sky: cupcakes and cones for cover, frosting lanes to fight on.',
+    shape: { grid: 'square', tileSize: S, radius: R },
+    keepRadius: 15,
+    coinScale: 2.4,
+    bankSpots: [[1, 1], [-1, -1], [1, -1], [-1, 1], [3, 0], [-3, 0], [0, 3], [0, -3]].map(([i, j]) => ({ x: i * S, z: j * S })),
+    starts: ring(6, 6, Math.PI / 6),
+    pads: [
+      { x: 5 * S, z: 0 },
+      { x: -5 * S, z: 0 },
+      { x: 0, z: 5 * S },
+      { x: 0, z: -5 * S },
+    ],
+    jackpot: { x: 0, z: 0, name: 'Sugar Fountain' },
+    obstacles: o,
   };
 }
 
@@ -320,6 +365,6 @@ function village(): MapDef {
   };
 }
 
-export const MAPS: Record<MapId, MapDef> = { downtown: downtown(), city: city(), spooky: spooky(), village: village() };
-/** Maps offered to players (the village was replaced after playtest feedback). */
-export const MAP_ROTATION: MapId[] = ['downtown', 'city', 'spooky'];
+export const MAPS: Record<MapId, MapDef> = { candy: candy(), downtown: downtown(), city: city(), spooky: spooky(), village: village() };
+/** Maps offered to players: Candy Town is the one premium map (older maps stay defined for tests/replays). */
+export const MAP_ROTATION: MapId[] = ['candy'];

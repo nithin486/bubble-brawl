@@ -1,0 +1,29 @@
+{
+  "name": "candy_swirl",
+  "query": "",
+  "title": "Tree Swirl",
+  "source": "file",
+  "id": "candy_swirl.glb",
+  "link": "https://poly.pizza/m/czV0Ck0h2G",
+  "author": "Quaternius",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 1112,
+  "trianglesOriginal": 1112,
+  "bytes": 16492,
+  "dimensions": [
+    4.176,
+    7,
+    1.56
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

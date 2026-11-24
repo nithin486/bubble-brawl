@@ -1,0 +1,29 @@
+{
+  "name": "candy_cake",
+  "query": "",
+  "title": "Cake",
+  "source": "file",
+  "id": "candy_cake.glb",
+  "link": "https://poly.pizza/m/KGFyP16ebH",
+  "author": "Kenney",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 780,
+  "trianglesOriginal": 780,
+  "bytes": 20976,
+  "dimensions": [
+    4.6,
+    2.948,
+    4.6
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

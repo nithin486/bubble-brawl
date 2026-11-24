@@ -104,6 +104,12 @@ const ENV = {
     .filter((f) => f.endsWith('.gltf'))
     .sort()
     .map((f) => [f.slice(0, -5), path.join(root, 'assets/env/spooky', f)]),
+  // Candy Town: own Blender tiles + CC0 sweets, processed by scripts/fetch_model.js (assets/models/candy_*.glb)
+  candy: fs
+    .readdirSync(path.join(root, 'assets/models'))
+    .filter((f) => f.startsWith('candy_') && f.endsWith('.glb'))
+    .sort()
+    .map((f) => [f.slice(0, -4), path.join(root, 'assets/models', f)]),
   dungeon: [
     ['coin', path.join(root, 'assets/env/dungeon/coin.gltf.glb')],
     ['coin_stack', path.join(root, 'assets/env/dungeon/coin_stack_small.gltf.glb')],
@@ -111,7 +117,7 @@ const ENV = {
     ['torch_lit', path.join(root, 'assets/env/dungeon/torch_lit.gltf.glb')],
   ],
 };
-const envInputs = [...ENV.hex, ...ENV.city, ...ENV.spooky, ...ENV.dungeon];
+const envInputs = [...ENV.hex, ...ENV.city, ...ENV.spooky, ...ENV.candy, ...ENV.dungeon];
 {
   const seen = new Set();
   for (const [n] of envInputs) {

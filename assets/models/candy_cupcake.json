@@ -1,0 +1,29 @@
+{
+  "name": "candy_cupcake",
+  "query": "",
+  "title": "Cupcake",
+  "source": "file",
+  "id": "candy_cupcake.glb",
+  "link": "https://poly.pizza/m/XL70IUDIrZ",
+  "author": "Quaternius",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 412,
+  "trianglesOriginal": 412,
+  "bytes": 12672,
+  "dimensions": [
+    3.468,
+    4.4,
+    3.428
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

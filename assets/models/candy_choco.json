@@ -1,0 +1,29 @@
+{
+  "name": "candy_choco",
+  "query": "",
+  "title": "Chocolate Bar",
+  "source": "file",
+  "id": "candy_choco.glb",
+  "link": "https://poly.pizza/m/vJsJ1EIiOO",
+  "author": "Quaternius",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 436,
+  "trianglesOriginal": 436,
+  "bytes": 7880,
+  "dimensions": [
+    2.895,
+    4.4,
+    0.344
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

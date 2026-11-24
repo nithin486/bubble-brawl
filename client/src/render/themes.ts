@@ -47,7 +47,7 @@ export interface Theme {
   waterfalls: boolean;
   bubbles: boolean;
   /** Underside piece that falls with each tile. */
-  under: { piece: string; sx: number; sy: number; sz: number; y: number };
+  under: { piece: string; sx: number; sy: number; sz: number; y: number; /** backdrop chunks: underside y relative to the chunk top (default -0.4) */ chunkY?: number };
   /** Permanent stepped core layers under the middle. */
   core: { y: number; r: number; s: number }[];
   tiles(world: World): TilePlan[];
@@ -56,6 +56,84 @@ export interface Theme {
   /** Extra things on the arena (not obstacles), e.g. the well plaza. */
   extras?(ctx: ThemeCtx): void;
 }
+
+// =================================================================== Candy Town (the one big map)
+
+const CANDY_TILE_Y = -1; // candy tiles are 1 m thick, grounded at y = 0: top surface at world y = 0
+const candy: Theme = {
+  id: 'candy',
+  sky: { top: '#6fd0ff', mid: '#ffb3e6', horizon: '#fff2c9', bottom: '#ffd0ee' },
+  fog: { color: '#ffd9f0', near: 90, far: 260 },
+  hemi: { sky: '#fff3fb', ground: '#d79ac2', intensity: 0.8 },
+  sun: { color: '#fff0d4', intensity: 1.7, pos: [-14, 24, 12] },
+  exposure: 0.82,
+  clouds: { color: '#ffffff', emissive: '#ffd6f0', intensity: 0.5 },
+  waterfalls: false,
+  bubbles: true,
+  under: { piece: 'candy_under', sx: 1, sy: 1, sz: 1, y: -3.2, chunkY: -3.2 },
+  core: [
+    { y: -4.4, r: 22, s: 0.95 },
+    { y: -5.6, r: 16, s: 0.9 },
+    { y: -6.8, r: 10, s: 0.85 },
+    { y: -8.0, r: 5, s: 0.8 },
+  ],
+  tiles(world) {
+    return world.arena.tiles.map((t) => ({
+      piece: (t.q + t.r) % 2 === 0 ? 'candy_tile_pink' : 'candy_tile_cream',
+      rot: 0,
+      scale: [1, 1, 1] as [number, number, number],
+      y: CANDY_TILE_Y,
+    }));
+  },
+  prop(o, add, glow) {
+    switch (o.kind) {
+      case 'fountain':
+        add('candy_sundae', 1.35);
+        glow('#ffd23f', 2.4, 0, 2.6, 0);
+        break;
+      case 'cupcake':
+        add('candy_cupcake', 1);
+        break;
+      case 'icecream':
+        add('candy_icecream', 1);
+        break;
+      case 'cake':
+        add('candy_cake', 1);
+        break;
+      case 'choco':
+        add('candy_choco', 1, 0, 0, o.rot);
+        break;
+      case 'sundae':
+        add('candy_sundae', 1);
+        break;
+      case 'swirl':
+        add('candy_swirl', 1);
+        break;
+    }
+  },
+  backdrop(ctx) {
+    const S = 4.8;
+    const blocks = [
+      { a: -0.2, d: 52, y: -1, w: 3, h: 2, main: 'candy_icecream' },
+      { a: 0.75, d: 50, y: -5, w: 2, h: 2, main: 'candy_cupcake' },
+      { a: -1.0, d: 48, y: -4, w: 2, h: 2, main: 'candy_cake' },
+      { a: 1.6, d: 48, y: -9, w: 2, h: 1, main: 'candy_swirl' },
+      { a: -1.75, d: 46, y: -8, w: 1, h: 2, main: 'candy_sundae' },
+      { a: 0.25, d: 72, y: 8, w: 2, h: 2, main: 'candy_icecream' },
+      { a: 2.7, d: 50, y: -6, w: 2, h: 2, main: 'candy_cupcake' },
+      { a: -2.6, d: 51, y: -7, w: 2, h: 2, main: 'candy_cake' },
+    ];
+    for (const b of blocks) {
+      const cx = Math.sin(b.a) * b.d;
+      const cz = -Math.cos(b.a) * b.d;
+      const cells: { x: number; z: number }[] = [];
+      for (let i = 0; i < b.w; i++) for (let j = 0; j < b.h; j++) cells.push({ x: cx + (i - (b.w - 1) / 2) * S, z: cz + (j - (b.h - 1) / 2) * S });
+      ctx.chunk(cells, b.y, 'candy_tile_pink', 1, { sx: 1, sy: 1, sz: 1 });
+      ctx.place(b.main, cx, b.y, cz, ctx.rng.range(1.1, 1.5), ctx.rng.range(0, 6.28));
+      for (const c of cells.slice(0, 2)) ctx.place(ctx.rng.pick(['candy_swirl', 'candy_sundae', 'candy_cupcake']), c.x + ctx.rng.range(-1, 1), b.y, c.z + ctx.rng.range(-1, 1), 1, ctx.rng.range(0, 6.28));
+    }
+  },
+};
 
 // =================================================================== City Streets
 
@@ -489,4 +567,4 @@ const village: Theme = {
   },
 };
 
-export const THEMES: Record<MapId, Theme> = { downtown, city, spooky, village };
+export const THEMES: Record<MapId, Theme> = { candy, downtown, city, spooky, village };

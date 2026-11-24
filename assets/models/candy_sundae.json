@@ -1,0 +1,29 @@
+{
+  "name": "candy_sundae",
+  "query": "",
+  "title": "Sundae",
+  "source": "file",
+  "id": "candy_sundae.glb",
+  "link": "https://poly.pizza/m/Id1gSe86dG",
+  "author": "Kenney",
+  "authorLink": "",
+  "licence": "CC0",
+  "needsCredit": false,
+  "triangles": 348,
+  "trianglesOriginal": 348,
+  "bytes": 11740,
+  "dimensions": [
+    1.203,
+    3.6,
+    1.389
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

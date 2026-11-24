@@ -25,6 +25,9 @@
 //   --name <slug>      output file name (default from the search words)
 //   --pick <n>         take the n-th ranked result instead of the best (1 = best)
 //   --list             only print the ranked candidates, download nothing
+//   --file <path.glb>  skip the search: process a model you exported yourself (e.g. from Blender) with the same
+//                      pipeline (meshopt, WebP textures, centring, <name>.json, CREDITS.md). Needs --name.
+//                      Optional: --title "Cupcake" --author "Quaternius" --licence CC0 --link <url>
 //   --force            overwrite an existing model of the same name
 
 import fs from 'node:fs';
@@ -44,7 +47,7 @@ const UA = { 'User-Agent': 'bubble-brawl-asset-pipeline/1.0' };
 // ------------------------------------------------------------------ args & env
 
 function parseArgs(argv) {
-  const o = { source: 'auto', style: 'stylized', maxTris: 15000, tex: 512, height: 0, rotateY: 0, name: '', pick: 1, list: false, force: false, query: [] };
+  const o = { source: 'auto', style: 'stylized', maxTris: 15000, tex: 512, height: 0, rotateY: 0, name: '', pick: 1, list: false, force: false, file: '', title: '', author: '', licence: 'CC0', link: '', query: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const v = () => argv[++i];
@@ -58,6 +61,11 @@ function parseArgs(argv) {
     else if (a === '--pick') o.pick = Number(v());
     else if (a === '--list') o.list = true;
     else if (a === '--force') o.force = true;
+    else if (a === '--file') o.file = v();
+    else if (a === '--title') o.title = v();
+    else if (a === '--author') o.author = v();
+    else if (a === '--licence') o.licence = v();
+    else if (a === '--link') o.link = v();
     else if (a === '-h' || a === '--help') o.help = true;
     else o.query.push(a);
   }
@@ -294,6 +302,7 @@ async function main() {
   }
   loadEnv();
   const o = parseArgs(process.argv.slice(2));
+  if (o.file) return fromFile(o);
   if (o.help || !o.q) {
     console.log(fs.readFileSync(import.meta.filename, 'utf8').split('\n').filter((l) => l.startsWith('//')).map((l) => l.slice(3)).join('\n'));
     process.exit(o.q ? 0 : 1);
@@ -353,6 +362,31 @@ async function main() {
   }
   console.error('✗ could not download any of the top matches');
   process.exit(4);
+}
+
+
+/** --file: run the game-ready pipeline on a local model (Blender export, downloaded glb, ...). */
+async function fromFile(o) {
+  const input = path.resolve(o.file);
+  if (!fs.existsSync(input)) throw new Error(`file not found: ${input}`);
+  const name = slug(o.name || path.basename(input).replace(/\.[^.]+$/, ''));
+  const out = path.join(MODELS, `${name}.glb`);
+  if (fs.existsSync(out) && !o.force) {
+    console.error(`✗ ${path.relative(ROOT, out)} already exists (use --force or --name)`);
+    process.exit(3);
+  }
+  fs.mkdirSync(MODELS, { recursive: true });
+  const r = await process3d(input, out, o);
+  const meta = {
+    name, query: '', title: o.title || name, source: 'file', id: path.basename(input), link: o.link, author: o.author || 'own work',
+    authorLink: '', licence: o.licence, needsCredit: !/cc0|public|own/i.test(o.licence), triangles: r.tris, trianglesOriginal: r.trisIn,
+    bytes: r.size, dimensions: r.dims, animations: r.animations, skinned: r.skinned, fetched: new Date().toISOString().slice(0, 10),
+    normalized: { pivot: 'centre x/z, ground y=0', height: o.height || null, rotateY: o.rotateY, forward: '+z' },
+  };
+  fs.writeFileSync(path.join(MODELS, `${name}.json`), JSON.stringify(meta, null, 2) + '\n');
+  writeCredits();
+  console.log(`✓ ${path.relative(ROOT, out)}${r.tris} tris${r.tris !== r.trisIn ? ` (was ${r.trisIn})` : ''}, ${kb(r.size)}, size ${r.dims.join(' × ')} m`);
+  if (r.size > 300 * 1024) console.warn('  ⚠ over the 300 KB per-prop budget');
 }
 
 function writeCredits() {
