@@ -7,6 +7,7 @@ import { TUNING } from '../../shared/config/tuning.ts';
 import { HEROES, HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 import { Stage, isTouch, type Quality } from './render/stage.ts';
 import { loadModel } from './render/models.ts';
+import { WeaponsView, WEAPON_INFO } from './render/weapons-view.ts';
 import type { Assets } from './render/assets.ts';
 import { ArenaView } from './render/arena-view.ts';
 import { MAPS, MAP_ROTATION, type MapId } from '../../shared/config/maps.ts';
@@ -85,7 +86,7 @@ export class Game {
   private autoBrain: BotBrain | null = null;
   private heroes: HeroView[] = [];
   private island!: ArenaView;
-  private mapId: MapId = 'city';
+  private mapId: MapId = 'downtown';
   private coins: CoinsView;
   private bank!: BankView;
   private fx: Fx;
@@ -125,6 +126,9 @@ export class Game {
   private showcase: Showcase;
   private trial = false;
   private powers: PowerView | null = null;
+  /** Weapon tips already shown this session. */
+  private weaponTips = new Set<string>();
+  private weapons: WeaponsView | null = null;
   private markers: Markers | null = null;
   // ---- friends rooms
   private room: Room | null = null;
@@ -299,6 +303,10 @@ export class Game {
       this.stage.scene.remove(this.bank.group);
     }
     this.bank = new BankView(this.world, this.assets.env, this.stage.scene, this.glowTex);
+    this.bank.group.visible = this.world.mode === 'coins';
+    document.body.classList.toggle('mode-weapons', this.world.mode === 'weapons');
+    if (!this.weapons) this.weapons = new WeaponsView(this.world, this.stage.scene, this.fx, this.glowTex, this.assets.env);
+    else this.weapons.setWorld(this.world);
     if (!this.powers) this.powers = new PowerView(this.world, this.stage.scene, this.glowTex);
     else this.powers.setWorld(this.world);
     if (!this.markers) this.markers = new Markers(this.stage.scene, this.assets.env, this.glowTex);
@@ -441,6 +449,7 @@ export class Game {
     this.island.update(dt, this.time);
     this.coins.update(this.world, dt, this.time);
     this.bank.update(dt, this.time, this.stage.camera.position);
+    this.weapons?.update(dt, this.time);
     this.fx.update(dt);
     const me = this.world.players[LOCAL];
     let focus = this.v.set(me.x, 0, me.z);
@@ -827,6 +836,108 @@ export class Game {
         if (big && (e.by === LOCAL || e.victim === LOCAL)) this.slowMo(0.32, 0.3);
         break;
       }
+      case 'boxPick': {
+        const info = WEAPON_INFO[e.weapon];
+        this.fx.emit(e.x, 0.9, e.z, { n: 26, color: ['#ffd84a', '#ffffff', info.color], speed: 5, up: 4, life: 0.5, size: 0.45 });
+        this.fx.ring(e.x, e.z, info.color, 2.2, 0.35, 0.4);
+        if (e.p === LOCAL) {
+          this.sfx.power();
+          this.hud.skillBanner(info.name, info.color);
+          if (this.weaponTips.has(e.weapon) === false) {
+            this.weaponTips.add(e.weapon);
+            this.hud.tip(`${info.name}: ${info.tip} · press ${this.touch ? 'the big button' : 'J or click'} to use`, 3.5);
+          }
+        }
+        break;
+      }
+      case 'fire': {
+        const H = hv(e.p);
+        const anim = e.weapon === 'banana' ? 'Interact' : e.weapon === 'freeze' ? 'Throw' : e.weapon === 'hammer' ? '2H_Melee_Attack_Spin' : e.weapon === 'hook' ? 'Spellcast_Raise' : '1H_Ranged_Shoot';
+        H.oneShot(anim, this.time, e.weapon === 'blaster' ? 2.2 : 1.6, 0.45);
+        const near = e.p === LOCAL || Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 14;
+        if (near) this.sfx.shoot(e.weapon);
+        if (e.weapon === 'blaster' || e.weapon === 'rocket') {
+          const fx = e.x + Math.sin(e.facing) * 0.8;
+          const fz = e.z + Math.cos(e.facing) * 0.8;
+          this.fx.emit(fx, 1.05, fz, { n: e.weapon === 'rocket' ? 14 : 5, color: [WEAPON_INFO[e.weapon].color, '#ffffff'], speed: 3, up: 1, life: 0.2, size: 0.4 });
+          if (e.p === LOCAL) this.rig.punch(e.weapon === 'rocket' ? 4 : 1.2);
+        }
+        if (e.weapon === 'hammer') this.fx.cone(e.x, e.z, e.facing, TUNING.weapons.hammer.radius, 360, '#ffd23f', TUNING.weapons.hammer.windup + 0.05, 0.4);
+        break;
+      }
+      case 'boom': {
+        if (e.kind === 'rocket') {
+          this.fx.emit(e.x, 1, e.z, { n: 40, color: ['#ff8a3d', '#ffd23f', '#ffffff', '#555555'], speed: 8, up: 4, life: 0.6, size: 0.7 });
+          this.fx.dome(e.x, e.z, '#ff8a3d', e.r * 1.3, 0.35);
+          this.fx.dust(e.x, e.z, true);
+        } else if (e.kind === 'freeze') {
+          this.fx.emit(e.x, 0.8, e.z, { n: 50, color: ['#c9f6ff', '#ffffff', '#7fdcff'], speed: 6, up: 3, life: 0.7, size: 0.55 });
+          this.fx.ring(e.x, e.z, '#bff4ff', e.r + 0.4, 0.5, 0.5);
+          this.fx.dome(e.x, e.z, '#bff4ff', e.r, 0.5);
+        } else {
+          this.fx.ring(e.x, e.z, '#ffd23f', e.r + 0.6, 0.4, 0.5);
+          this.fx.crack(e.x, e.z, e.r * 1.4);
+          this.fx.emit(e.x, 0.4, e.z, { n: 30, color: ['#ffd23f', '#ffffff'], speed: 8, up: 2, life: 0.4, size: 0.5 });
+          this.fx.pillar(e.x, e.z, '#fff27a', 5, 0.3, 0.5);
+        }
+        const d = Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z);
+        if (d < 16) {
+          this.sfx.boom();
+          this.rig.shake(Math.max(0.1, 0.45 - d * 0.025));
+        }
+        break;
+      }
+      case 'hook':
+        this.fx.beam(this.pos(e.p, 1.1), new THREE.Vector3(e.x, 1.1, e.z), '#ff5f7a', 0.35);
+        if (e.target >= 0) this.fx.emit(e.x, 1.1, e.z, { n: 12, color: ['#ff5f7a', '#ffffff'], speed: 4, up: 1, life: 0.3, size: 0.4 });
+        break;
+      case 'slip':
+        hv(e.p).knockSpin(2);
+        this.fx.emit(w.players[e.p].x, 0.4, w.players[e.p].z, { n: 14, color: ['#ffe14a', '#ffffff'], speed: 4, up: 3, life: 0.4, size: 0.4 });
+        if (e.p === LOCAL) this.hud.banner('SLIPPED!', 'gold', true);
+        break;
+      case 'frozen':
+        hv(e.p).flash();
+        if (e.p === LOCAL) this.hud.banner('FROZEN!', 'teal', true);
+        break;
+      case 'damage':
+        this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.n}`, 'minus');
+        if (e.victim === LOCAL && e.hp === 1) this.hud.banner('LAST HEART!', 'red', true);
+        break;
+      case 'ko': {
+        const P = w.players[e.victim];
+        this.fx.emit(e.x, 1.2, e.z, { n: 30, color: ['#ffffff', '#b38cff', '#bff8ff'], speed: 6, up: 3, life: 0.5, size: 0.5 });
+        this.fx.ring(e.x, e.z, '#b38cff', 2.6, 0.4, 0.4);
+        if (e.by === LOCAL) {
+          this.sfx.win();
+          this.hud.skillBanner(`KO! +${TUNING.weapons.bubble.koPoints}`, '#ffd23f');
+          this.hud.floater(this.pos(LOCAL, 2.8), cam, `+${TUNING.weapons.bubble.koPoints}`, 'plus');
+          this.slowMo(0.35, 0.3);
+          this.roundStats.steals++;
+        } else if (e.victim === LOCAL) {
+          this.sfx.lose();
+          this.hud.banner(e.by >= 0 ? `${w.players[e.by].name} KO'd you — MASH to escape!` : 'KO! MASH to escape!', 'red');
+          this.rig.shake(0.5);
+        }
+        if (e.by >= 0) this.hud.feed(`${this.who(e.by)} 🫧 ${this.who(e.victim)}`);
+        if (e.by >= 0 && e.by !== LOCAL) this.say(e.by, 'youRobbed', false);
+        void P;
+        break;
+      }
+      case 'pop': {
+        this.weapons?.popAt(e.x, w.players[e.victim].y, e.z);
+        this.sfx.pop();
+        if (e.by === LOCAL) {
+          this.hud.skillBanner(`POP! +${TUNING.weapons.bubble.popPoints}`, '#b38cff');
+          this.hud.floater(this.pos(LOCAL, 2.8), cam, `+${TUNING.weapons.bubble.popPoints}`, 'plus');
+        } else if (e.victim === LOCAL) this.hud.banner(`${w.players[e.by].name} popped your bubble!`, 'red', true);
+        if (e.by !== LOCAL) this.hud.feed(`${this.who(e.by)} popped ${this.who(e.victim)}'s bubble`);
+        break;
+      }
+      case 'escape':
+        this.weapons?.popAt(w.players[e.p].x, w.players[e.p].y, w.players[e.p].z);
+        if (e.p === LOCAL) this.hud.banner('ESCAPED!', 'teal', true);
+        break;
       case 'dash':
         hv(e.p).oneShot('Dodge_Forward', this.time, 1.8, 0.35);
         hv(e.p).bump(-0.2);
@@ -1236,6 +1347,8 @@ export class Game {
     this.tutT = 0;
     const key = (k: string) => `<span class="key">${k}</span>`;
     if (s === 'move') this.hud.prompt(this.touch ? 'Drag on the left to MOVE' : `${key('W')}${key('A')}${key('S')}${key('D')} to move`);
+    else if (this.world.mode === 'weapons' && s === 'coins') this.hud.prompt('Grab a 🎁 mystery box!');
+    else if (this.world.mode === 'weapons' && s === 'bank') this.hud.prompt(this.touch ? 'Tap the BIG button to attack!' : `Press ${key('J')} or click to attack!`);
     else if (s === 'coins') this.hud.prompt('Grab the coins!');
     else if (s === 'bank') this.hud.prompt('Bank it! Stand in the <i class="bub-ico"></i> bubble');
     else this.hud.prompt(null);
@@ -1250,6 +1363,13 @@ export class Game {
       if (this.tutT < dt * 1.5) this.tutAdvance('move');
       this.movedDist += Math.hypot(me.vx, me.vz) * dt;
       if (this.movedDist > 2.5) this.tutAdvance('coins');
+    } else if (w.mode === 'weapons') {
+      // box → attack → done (KO bubbles explain themselves with "POP ME!")
+      if (this.tut === 'coins' && me.weapon) this.tutAdvance('bank');
+      else if (this.tut === 'bank' && (!me.weapon || this.tutT > 6)) {
+        this.tutAdvance('done');
+        this.hud.tip('KO rivals for ⭐ · POP their bubbles for another ⭐', 4);
+      }
     } else if (this.tut === 'coins') {
       if (me.carried >= 5) this.tutAdvance('bank');
     } else if (this.tut === 'bank') {

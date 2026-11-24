@@ -9,7 +9,7 @@ const heroes: HeroId[] = ['bones', 'pinch', 'grizzle', 'bones', 'pinch', 'grizzl
 function playMatch(seed: number, firstMatch: boolean) {
   const w = new World(
     heroes.map((h, i) => ({ name: i === 0 ? 'You' : `Bot${i}`, hero: h, isBot: i !== 0 })),
-    { seed, firstMatch },
+    { seed, firstMatch, mode: 'coins' },
   );
   // player 0 is driven by a normal-difficulty brain standing in for an average human
   const rng = new Rng(seed * 7 + 1);

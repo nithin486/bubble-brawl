@@ -3,7 +3,7 @@
 import { TUNING } from './tuning.ts';
 import { hexToWorld, type ArenaShape } from '../sim/arena.ts';
 
-export type MapId = 'city' | 'spooky' | 'village';
+export type MapId = 'downtown' | 'city' | 'spooky' | 'village';
 
 export interface Obstacle {
   x: number;
@@ -139,6 +139,64 @@ function city(): MapDef {
   };
 }
 
+// ------------------------------------------------------------------ Downtown (big, clean)
+
+/**
+ * The big map: 11×11 city tiles (~53 m across). A cross road + a ring road, 12 real buildings as
+ * cover (they break lines of fire, so fights are about routes and corners), open plazas, and only a
+ * handful of parked cars. Deliberately no small clutter.
+ */
+function downtown(): MapDef {
+  const S = 4.8;
+  const R = 26.5;
+  const o: Obstacle[] = [];
+  const P = (kind: string, x: number, z: number, r: number, rot = 0, hidden = false) => o.push({ kind, x, z, r, rot, hidden });
+  // a building fills its whole tile: one visible piece + hidden circles that make the footprint square
+  const building = (i: number, j: number, kind: string, rot: number) => {
+    const x = i * S;
+    const z = j * S;
+    P(kind, x, z, 2.05, rot);
+    for (const [a, b] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) P(kind, x + a * 1.55, z + b * 1.55, 0.85, rot, true);
+  };
+  const letters = 'ABCDEFGH';
+  const faceRoad = (i: number, j: number) => Math.round(Math.atan2(-i, -j) / (Math.PI / 2)) * (Math.PI / 2);
+  // inner ring: one tower per quadrant, on the corner nearest the ring road
+  [[2, 2], [-2, 2], [2, -2], [-2, -2]].forEach(([i, j], k) => building(i, j, `building_${letters[(k * 3) % 8]}`, faceRoad(i, j)));
+  // outer ring: buildings in pairs with alleys between them
+  [[4, 2], [4, -2], [-4, 2], [-4, -2], [2, 4], [-2, 4], [2, -4], [-2, -4]].forEach(([i, j], k) => building(i, j, `building_${letters[(k * 5 + 1) % 8]}`, faceRoad(i, j)));
+  P('hydrant_gold', 0, 0, 0.45);
+  // a few parked cars on the ring road (cover in the open)
+  const cars = ['car_taxi', 'car_sedan', 'car_police', 'car_stationwagon'];
+  [[3, 1.1, 0], [-3, -1.1, 0], [1.1, -3, 1], [-1.1, 3, 1]].forEach(([a, b, alongX], k) => {
+    const x = alongX ? a * S : a * S + 1.25 * Math.sign(b);
+    const z = alongX ? b * S + 1.25 * Math.sign(a) : b * S;
+    long(o, cars[k], x, z, alongX ? Math.PI / 2 : 0, 2.3, 0.55);
+  });
+  // streetlights only at the four inner corners of the cross (light, not clutter)
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) P('streetlight', sx * (S * 0.5 + 0.4), sz * (S * 0.5 + 0.4), 0.25, sx > 0 ? -Math.PI / 2 : Math.PI / 2);
+  // small green islands in the open plazas (low: never block the view)
+  for (const [i, j] of [[1, 2], [2, 1], [-1, -2], [-2, -1], [1, -2], [-2, 1]]) P('bush', i * S, j * S, 0.45);
+  return {
+    id: 'downtown',
+    name: 'Downtown',
+    blurb: 'A big city block: towers for cover, wide roads to fight on.',
+    shape: { grid: 'square', tileSize: S, radius: R },
+    keepRadius: 15,
+    coinScale: 2.4,
+    bankSpots: [[1, 1], [-1, -1], [1, -1], [-1, 1], [3, 0], [-3, 0], [0, 3], [0, -3]].map(([i, j]) => ({ x: i * S, z: j * S })),
+    starts: ring(6, 6, Math.PI / 6),
+    pads: [
+      { x: 5 * S, z: 0 },
+      { x: -5 * S, z: 0 },
+      { x: 0, z: 5 * S },
+      { x: 0, z: -5 * S },
+    ],
+    jackpot: { x: 0, z: 0, name: 'Coin Hydrant' },
+    obstacles: o,
+    event: 'traffic',
+  };
+}
+
 // ------------------------------------------------------------------ Spooky Graveyard (bigger)
 
 function spooky(): MapDef {
@@ -262,6 +320,6 @@ function village(): MapDef {
   };
 }
 
-export const MAPS: Record<MapId, MapDef> = { city: city(), spooky: spooky(), village: village() };
+export const MAPS: Record<MapId, MapDef> = { downtown: downtown(), city: city(), spooky: spooky(), village: village() };
 /** Maps offered to players (the village was replaced after playtest feedback). */
-export const MAP_ROTATION: MapId[] = ['city', 'spooky'];
+export const MAP_ROTATION: MapId[] = ['downtown', 'city', 'spooky'];

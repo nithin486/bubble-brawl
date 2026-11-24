@@ -1,0 +1,29 @@
+{
+  "name": "mystery_box",
+  "query": "mystery box",
+  "title": "New Year Present Box",
+  "source": "sketchfab",
+  "id": "e68ab6f9dbb44af7a1dcb37e4075ada8",
+  "link": "https://sketchfab.com/3d-models/none-e68ab6f9dbb44af7a1dcb37e4075ada8",
+  "author": "Incg5764",
+  "authorLink": "https://sketchfab.com/incg5764",
+  "licence": "CC Attribution",
+  "needsCredit": true,
+  "triangles": 3160,
+  "trianglesOriginal": 3160,
+  "bytes": 80624,
+  "dimensions": [
+    0.806,
+    1.051,
+    0.838
+  ],
+  "animations": [],
+  "skinned": false,
+  "fetched": "2026-11-24",
+  "normalized": {
+    "pivot": "centre x/z, ground y=0",
+    "height": null,
+    "rotateY": 0,
+    "forward": "+z"
+  }
+}

@@ -84,4 +84,7 @@ export const KEEP_ANIMS = [
   '2H_Melee_Attack_Chop',
   'Unarmed_Melee_Attack_Punch_A',
   'Unarmed_Melee_Attack_Punch_B',
+  '1H_Ranged_Shoot',
+  'Throw',
+  '2H_Melee_Attack_Spin',
 ] as const;

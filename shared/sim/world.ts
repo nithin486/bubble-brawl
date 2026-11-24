@@ -5,7 +5,8 @@ import { HEROES, type HeroId } from '../config/heroes.ts';
 import { Arena } from './arena.ts';
 import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng } from './math.ts';
 import { MAPS, type MapDef, type MapId, type Obstacle } from '../config/maps.ts';
-import { NO_INPUT, type Hazard, type RoundMod, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
+import { Brawl } from './brawl.ts';
+import { NO_INPUT, type GameMode, type Hazard, type RoundMod, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
 
 const T = TUNING;
 
@@ -16,6 +17,9 @@ export interface PlayerSetup {
 }
 
 export class World {
+  /** 'weapons' = mystery boxes + KO points; 'coins' = the original carry-and-bank game. */
+  mode: GameMode = 'weapons';
+  brawl: Brawl;
   phase: Phase = 'countdown';
   phaseT = 0;
   round = 0;
@@ -53,10 +57,12 @@ export class World {
   private nextCoinId = 1;
   private lastCount = -1;
 
-  constructor(setups: PlayerSetup[], opts: { seed?: number; firstMatch?: boolean; map?: MapId } = {}) {
+  constructor(setups: PlayerSetup[], opts: { seed?: number; firstMatch?: boolean; map?: MapId; mode?: GameMode } = {}) {
+    this.mode = opts.mode ?? 'weapons';
+    this.brawl = new Brawl(this);
     this.rng = new Rng(opts.seed ?? (Math.random() * 2 ** 31) | 0);
     this.firstMatch = !!opts.firstMatch;
-    this.map = MAPS[opts.map ?? 'city'];
+    this.map = MAPS[opts.map ?? 'downtown'];
     this.arena = new Arena(this.map.shape);
     this.obstacles = this.map.obstacles.filter((o) => o.r > 0);
     this.players = setups.map((s, i) => newPlayer(i, s));
@@ -143,7 +149,8 @@ export class World {
     this.jackpotT = 0;
     this.jackpotWarned = false;
     this.jackpotFired = false;
-    this.spawnWave(Math.round(T.coins.firstWaveSize * this.coinScale), true);
+    if (this.mode === 'weapons') this.brawl.reset();
+    else this.spawnWave(Math.round(T.coins.firstWaveSize * this.coinScale), true);
   }
 
   /** Round Roulette: a twist each round. First round of a first match is plain; the last round is double points. */
@@ -241,13 +248,16 @@ export class World {
 
     this.roundTime += dt;
     this.tickFinale();
-    this.tickBank(dt);
-    this.tickWaves(dt);
-    this.tickPowerups(dt);
-    this.tickJackpot(dt);
+    if (this.mode === 'weapons') this.brawl.tick(dt);
+    else {
+      this.tickBank(dt);
+      this.tickWaves(dt);
+      this.tickPowerups(dt);
+      this.tickJackpot(dt);
+      this.tickCrown();
+      this.tickMods(dt);
+    }
     this.tickBombs(dt);
-    this.tickCrown();
-    this.tickMods(dt);
     this.tickHazards(dt);
     for (const p of this.players) this.tickPlayer(p, inputs[p.id] ?? NO_INPUT, dt);
     this.separate();
@@ -277,6 +287,11 @@ export class World {
     p.comboT = Math.max(0, p.comboT - dt);
     p.robbedT = Math.max(0, p.robbedT - dt);
     if (p.comboT <= 0) p.combo = 0;
+
+    if (p.state === 'bubble') {
+      this.brawl.tickBubble(p, inp.grab || inp.dash || inp.skill, dt);
+      return;
+    }
 
     switch (p.state) {
       case 'falling':
@@ -326,6 +341,7 @@ export class World {
     if (live && canAct && !p.cast) {
       if (inp.dash && p.dashCd <= 0 && p.state === 'normal') this.startDash(p, inp);
       else if (inp.skill && p.skillCd <= 0) this.startSkill(p);
+      else if (inp.grab && p.weapon) this.brawl.fire(p);
       else if (inp.grab && p.grabCd <= 0) {
         // commit to a direction now (aim assist), then lunge — the target can see it coming and dash
         this.aimAt(p, T.grab.range + T.grab.rangeForgiveness + T.grab.lunge + 0.6, T.grab.coneDeg + 70);
@@ -338,9 +354,11 @@ export class World {
       p.cast.t -= dt;
       if (p.cast.t <= 0) {
         const kind = p.cast.kind;
+        const hammer = (p.cast as { hammer?: boolean }).hammer;
         p.cast = null;
         if (p.state !== 'stunned') {
-          if (kind === 'grab') this.resolveGrab(p);
+          if (hammer) this.brawl.hammer(p);
+          else if (kind === 'grab') this.resolveGrab(p);
           else this.fireSkill(p);
         }
       }
@@ -443,6 +461,8 @@ export class World {
       }
     }
 
+    if (this.mode === 'weapons') return;
+
     // --- coins
     const r2 = T.coins.pickupRadius ** 2;
     for (let i = this.coins.length - 1; i >= 0; i--) {
@@ -539,14 +559,14 @@ export class World {
   }
 
   /** Aim assist: turn toward the richest rival within range and a wide cone. */
-  private aimAt(p: Player, range: number, coneDeg: number) {
+  aimAt(p: Player, range: number, coneDeg: number) {
     const best = this.findTarget(p, range, coneDeg);
     if (best) p.facing = facingOf(best.x - p.x, best.z - p.z);
     return best;
   }
 
   /** Anyone dashing through this attack's reach gets a DODGED! and some dash back. */
-  private dodges(p: Player, inReach: (o: Player) => boolean) {
+  dodges(p: Player, inReach: (o: Player) => boolean) {
     for (const o of this.players) {
       if (o === p || o.state !== 'dashing' || !inReach(o)) continue;
       o.dashCd *= 1 - T.dodge.dashRefund;
@@ -574,6 +594,17 @@ export class World {
         this.events.push({ t: 'grab', p: p.id, hit: false });
         return;
       }
+    }
+    if (this.mode === 'weapons') {
+      // punch: damage + shove (a bubble gets popped)
+      const dx = target.x - p.x;
+      const dz = target.z - p.z;
+      const d = len(dx, dz) || 1;
+      const sticky = p.stickyT > 0;
+      if (sticky) p.stickyT = 0;
+      this.brawl.damage(target, p, 'grab', T.weapons.punchDamage + (sticky ? 1 : 0), dx / d, dz / d, sticky ? 0.4 : T.grab.shove);
+      this.events.push({ t: 'grab', p: p.id, hit: true });
+      return;
     }
     const sticky = p.stickyT > 0;
     let want = sticky ? T.abilities.stickyFingers.steal : T.grab.steal;
@@ -646,7 +677,7 @@ export class World {
   }
 
   /** Bubble Shield soaks one hit. Returns true if it did. */
-  private shielded(o: Player, nx: number, nz: number) {
+  shielded(o: Player, nx: number, nz: number) {
     if (o.shieldT <= 0) return false;
     o.shieldT = 0;
     this.knock(o, nx, nz, 1.2);
@@ -878,6 +909,7 @@ export class World {
   }
 
   private hitPlayer(o: Player, by: Player | null, kind: 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers' | 'bomb' | 'traffic' | 'bell', nx: number, nz: number, knock: number, extra: number) {
+    if (this.mode === 'weapons') return this.brawl.damage(o, by, kind, T.weapons.skillDamage[kind as keyof typeof T.weapons.skillDamage] ?? 1, nx, nz, knock);
     if (this.shielded(o, nx, nz)) return false;
     const mult = o.id === this.crownId ? T.crown.dropMult : 1;
     const base = clamp(Math.round(o.carried * T.hit.dropFraction), T.hit.dropMin, T.hit.dropMax) * mult;
@@ -896,7 +928,7 @@ export class World {
   }
 
   /** Push a player `dist` metres along (nx,nz) using decaying velocity. */
-  private knock(o: Player, nx: number, nz: number, dist: number) {
+  knock(o: Player, nx: number, nz: number, dist: number) {
     o.kx = nx * dist * T.hit.knockDecay;
     o.kz = nz * dist * T.hit.knockDecay;
     o.vx = o.vz = 0;
@@ -935,6 +967,7 @@ export class World {
   }
 
   private startFall(p: Player) {
+    if (this.mode === 'weapons') this.brawl.fell(p);
     const lost = p.carried;
     // carried coins spill back onto the island near where you fell
     if (lost > 0) {
@@ -959,7 +992,7 @@ export class World {
     this.events.push({ t: 'fall', p: p.id, lost });
   }
 
-  private respawn(p: Player) {
+  respawn(p: Player) {
     let x = 0;
     let z = 0;
     for (let i = 0; i < 20; i++) {
@@ -984,10 +1017,10 @@ export class World {
     const ps = this.players;
     for (let i = 0; i < ps.length; i++) {
       const a = ps[i];
-      if (a.state === 'falling' || a.state === 'launched') continue;
+      if (a.state === 'falling' || a.state === 'launched' || a.state === 'bubble') continue;
       for (let j = i + 1; j < ps.length; j++) {
         const b = ps[j];
-        if (b.state === 'falling' || b.state === 'launched') continue;
+        if (b.state === 'falling' || b.state === 'launched' || b.state === 'bubble') continue;
         const dx = b.x - a.x;
         const dz = b.z - a.z;
         const d2 = dx * dx + dz * dz;
@@ -1217,6 +1250,14 @@ function newPlayer(id: number, s: PlayerSetup): Player {
     comboT: 0,
     robbedBy: -1,
     robbedT: 0,
+    hp: T.weapons.hp,
+    weapon: null,
+    ammo: 0,
+    fireCd: 0,
+    bubbleT: 0,
+    lastHitBy: -1,
+    lastHitT: 0,
+    kos: 0,
   };
 }
 

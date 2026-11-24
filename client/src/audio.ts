@@ -65,6 +65,27 @@ export class Sfx {
     s.stop(t0 + dur);
   }
 
+  /** One sound per weapon. */
+  shoot(kind: string) {
+    if (kind === 'blaster') {
+      this.tone(900, 0.09, { type: 'square', vol: 0.1, slide: 0.45 });
+      this.noise(0.05, { vol: 0.08, freq: 3000 });
+    } else if (kind === 'rocket') {
+      this.noise(0.35, { vol: 0.25, freq: 600, sweep: 2400 });
+      this.tone(160, 0.25, { type: 'sawtooth', vol: 0.12, slide: 1.8 });
+    } else if (kind === 'banana') {
+      this.tone(520, 0.12, { type: 'triangle', vol: 0.18, slide: 0.6 });
+    } else if (kind === 'freeze') {
+      this.tone(1400, 0.3, { type: 'sine', vol: 0.15, slide: 0.5 });
+      this.noise(0.25, { vol: 0.1, freq: 5000 });
+    } else if (kind === 'hook') {
+      this.tone(300, 0.2, { type: 'sawtooth', vol: 0.14, slide: 3 });
+    } else if (kind === 'hammer') {
+      this.tone(90, 0.35, { type: 'square', vol: 0.22, slide: 0.5, delay: 0.2 });
+      this.noise(0.3, { vol: 0.25, freq: 400, delay: 0.2 });
+    }
+  }
+
   pickup() {
     const now = performance.now();
     this.pickupStreak = now - this.lastPickup < 350 ? Math.min(this.pickupStreak + 1, 12) : 0;
