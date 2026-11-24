@@ -110,6 +110,15 @@ const ENV = {
     .filter((f) => f.startsWith('candy_') && f.endsWith('.glb'))
     .sort()
     .map((f) => [f.slice(0, -4), path.join(root, 'assets/models', f)]),
+  // held weapons (tools/extract-props.mjs) + the banana from assets/models
+  props: [
+    ...fs
+      .readdirSync(path.join(root, 'assets/props'))
+      .filter((f) => f.endsWith('.glb'))
+      .sort()
+      .map((f) => [f.slice(0, -4), path.join(root, 'assets/props', f)]),
+    ['weap_banana', path.join(root, 'assets/models/banana.glb')],
+  ],
   dungeon: [
     ['coin', path.join(root, 'assets/env/dungeon/coin.gltf.glb')],
     ['coin_stack', path.join(root, 'assets/env/dungeon/coin_stack_small.gltf.glb')],
@@ -117,7 +126,7 @@ const ENV = {
     ['torch_lit', path.join(root, 'assets/env/dungeon/torch_lit.gltf.glb')],
   ],
 };
-const envInputs = [...ENV.hex, ...ENV.city, ...ENV.spooky, ...ENV.candy, ...ENV.dungeon];
+const envInputs = [...ENV.hex, ...ENV.city, ...ENV.spooky, ...ENV.candy, ...ENV.props, ...ENV.dungeon];
 {
   const seen = new Set();
   for (const [n] of envInputs) {

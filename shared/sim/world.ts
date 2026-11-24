@@ -345,7 +345,12 @@ export class World {
     if (live && canAct && !p.cast) {
       if (inp.dash && p.dashCd <= 0 && p.state === 'normal') this.startDash(p, inp);
       else if (inp.skill && p.skillCd <= 0) this.startSkill(p);
-      else if (inp.grab && p.weapon) this.brawl.fire(p);
+      else if (inp.grab && p.weapon) {
+        // turn to where the scope points; assist shrinks to a small cone so the shot goes where you aimed
+        const aimed = inp.aim !== undefined && Number.isFinite(inp.aim);
+        if (aimed) p.facing = inp.aim as number;
+        this.brawl.fire(p, aimed ? { d: Number.isFinite(inp.aimD) ? (inp.aimD as number) : 8 } : undefined);
+      }
       else if (inp.grab && p.grabCd <= 0) {
         // commit to a direction now (aim assist), then lunge — the target can see it coming and dash
         this.aimAt(p, T.grab.range + T.grab.rangeForgiveness + T.grab.lunge + 0.6, T.grab.coneDeg + 70);

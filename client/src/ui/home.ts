@@ -12,6 +12,8 @@ const SVG = {
   coin: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ffc81e" stroke="#b86400" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="none" stroke="#fff6b0" stroke-width="2"/></svg>`,
   steal: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V3.5a1.5 1.5 0 0 1 3 0V10h.5V4.5a1.5 1.5 0 0 1 3 0V11h.5V7.5a1.5 1.5 0 0 1 3 0V14c0 4.4-3.1 8-7.5 8-3 0-4.8-1.3-6.3-3.6L3.8 14.6a1.5 1.5 0 0 1 2.4-1.8L7 13.8z"/></svg>`,
   bubble: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#5fe3ff" fill-opacity=".5" stroke="#fff" stroke-width="2"/><circle cx="9" cy="9" r="2.5" fill="#fff"/></svg>`,
+  box: `<svg viewBox="0 0 24 24"><path d="M3 9h18v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="#c9701f" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M2 6h20v4H2z" fill="#ffb347" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><text x="12" y="19" text-anchor="middle" font-size="9" font-weight="900" fill="#fff" font-family="sans-serif">?</text></svg>`,
+  gun: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M2 8h14l2-2h4v6h-4l-1 2h-3l-1 5H8l1-5H5L2 12z"/><circle cx="21" cy="9" r="1.4" fill="#2a1580"/></svg>`,
   trophy: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V17h3v3H8v-3h3v-2.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3zm0 4H6v1a2 2 0 0 0 1 1.7zm10 0v2.7A2 2 0 0 0 18 8V7z"/></svg>`,
 };
 
@@ -56,7 +58,7 @@ export class Home {
         <span class="bub" style="width:12px;height:12px;left:236px;top:96px"></span>
         <span class="crown">${SVG.crown}</span>
         <span class="w">BUBBLE</span><span class="w b">BRAWL</span>
-        <span class="tag">GRAB · STEAL · BANK</span>
+        <span class="tag">GRAB · SHOOT · POP</span>
       </div>
       <div class="home-top">
         <div class="chip"><span class="lv">${state.level}</span><span class="xp"><i style="width:${Math.round(state.xpFrac * 100)}%"></i></span></div>
@@ -70,13 +72,13 @@ export class Home {
       <div class="ability"></div>
       <div class="howto">
         <h3>How to play</h3>
-        <div class="step"><div class="n" style="background:linear-gradient(#ffe27a,#ffb400)">${SVG.coin}</div><div>Grab coins<small>The more you carry, the slower you get</small></div></div>
-        <div class="step"><div class="n" style="background:linear-gradient(#ff9fe0,#ff5fd2)">${SVG.steal}</div><div>Steal from rivals<small>Any hit makes them drop coins</small></div></div>
-        <div class="step"><div class="n" style="background:linear-gradient(#a5f6ff,#2aa8e0)">${SVG.bubble}</div><div>Bank them in the bubble<small>Only banked coins count!</small></div></div>
+        <div class="step"><div class="n" style="background:linear-gradient(#ffe27a,#ffb400)">${SVG.box}</div><div>Grab mystery boxes<small>Every box gives you a random weapon</small></div></div>
+        <div class="step"><div class="n" style="background:linear-gradient(#ff9fe0,#ff5fd2)">${SVG.gun}</div><div>Shoot your rivals<small>3 hearts each: hit them to knock them out</small></div></div>
+        <div class="step"><div class="n" style="background:linear-gradient(#a5f6ff,#2aa8e0)">${SVG.bubble}</div><div>Pop the bubbles<small>A knocked-out rival floats in a bubble: pop it to score!</small></div></div>
       </div>
       <div class="play-col">
         <div class="mapcard"><button class="mp l" aria-label="Previous map">${SVG.left}</button><div class="mt"><small>MAP</small><b></b><span></span></div><button class="mp r" aria-label="Next map">${SVG.right}</button></div>
-        <div class="mode"><div class="mi">${SVG.trophy}</div><div><b>COIN CLASH</b><span>${TUNING.match.rounds} rounds · vs bots</span></div></div>
+        <div class="mode"><div class="mi">${SVG.trophy}</div><div><b>WEAPON BRAWL</b><span>${TUNING.match.rounds} rounds · vs bots</span></div></div>
         <button class="play tap">PLAY<small></small></button>
         <button class="friends tap">👥 Play with friends<em>NEW</em></button>
         <div class="keyhint">${state.touch ? '' : 'Press Enter to play · ← → to change hero'}</div>

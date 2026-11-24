@@ -15,6 +15,10 @@ export class InputManager {
   private yaw = 0;
   /** When true (third-person view) a click locks the mouse so it can turn the camera. */
   mouseLook = false;
+  /** How far ahead the aim scope sits (metres); mouse up / down slides it. */
+  aimDist = 8;
+  /** Cursor position in CSS px, and when it last moved (the scope follows it on desktop). */
+  mouse = { x: 0, y: 0, t: -99 };
 
   constructor(canvas: HTMLElement) {
     window.addEventListener('keydown', (e) => {
@@ -30,7 +34,13 @@ export class InputManager {
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
     window.addEventListener('mousemove', (e) => {
-      if (document.pointerLockElement === canvas) this.yaw -= e.movementX * 0.0032;
+      this.mouse.x = e.clientX;
+      this.mouse.y = e.clientY;
+      this.mouse.t = performance.now();
+      if (document.pointerLockElement === canvas) {
+        this.yaw -= e.movementX * 0.0032;
+        this.aimDist = Math.min(16, Math.max(3, this.aimDist - e.movementY * 0.03)); // mouse up = aim farther
+      }
     });
     canvas.addEventListener('mousedown', (e) => {
       if (this.mouseLook && document.pointerLockElement !== canvas && this.enabled) {
@@ -67,8 +77,9 @@ export class InputManager {
   }
 
   /** Drag-to-look from the touch look zone. */
-  look(dx: number) {
+  look(dx: number, dy = 0) {
     this.yaw -= dx * 0.0085;
+    this.aimDist = Math.min(16, Math.max(3, this.aimDist - dy * 0.04)); // drag up = aim farther
   }
 
   /** Camera turn since last call (mouse, touch drag, Q/E). */

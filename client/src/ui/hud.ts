@@ -180,16 +180,19 @@ export class Hud {
     const lookZone = el('div', 'look-zone');
     let lid = -1;
     let lx = 0;
+    let ly = 0;
     lookZone.addEventListener('pointerdown', (e) => {
       if (lid !== -1) return;
       lid = e.pointerId;
       lx = e.clientX;
+      ly = e.clientY;
       lookZone.setPointerCapture(e.pointerId);
     });
     lookZone.addEventListener('pointermove', (e) => {
       if (e.pointerId !== lid) return;
-      input.look(e.clientX - lx);
+      input.look(e.clientX - lx, e.clientY - ly);
       lx = e.clientX;
+      ly = e.clientY;
     });
     const lend = (e: PointerEvent) => {
       if (e.pointerId === lid) lid = -1;

@@ -82,6 +82,8 @@ export class Room {
         dash: !!msg.d || !!prev?.dash,
         grab: !!msg.g || !!prev?.grab,
         skill: !!msg.s || !!prev?.skill,
+        aim: msg.a === undefined ? undefined : Number(msg.a),
+        aimD: msg.ad === undefined ? undefined : Number(msg.ad),
       });
     } else if (msg.t === 'hero') {
       const m = this.members.find((x) => x.peer === from);
@@ -124,7 +126,7 @@ export class Room {
   }
 
   sendInput(i: Input) {
-    this.t.broadcast({ t: 'in', mx: Math.round(i.mx * 100) / 100, mz: Math.round(i.mz * 100) / 100, d: i.dash ? 1 : 0, g: i.grab ? 1 : 0, s: i.skill ? 1 : 0 });
+    this.t.broadcast({ t: 'in', mx: Math.round(i.mx * 100) / 100, mz: Math.round(i.mz * 100) / 100, d: i.dash ? 1 : 0, g: i.grab ? 1 : 0, s: i.skill ? 1 : 0, ...(i.aim !== undefined ? { a: Math.round(i.aim * 100) / 100, ad: Math.round((i.aimD ?? 8) * 10) / 10 } : {}) });
   }
 
   setHero(hero: HeroId) {
