@@ -29,6 +29,8 @@ export class Room {
   members: Member[] = [];
   /** Host: latest input per remote peer (buttons latch until the sim reads them). */
   inputs = new Map<string, Input>();
+  /** Host: what came with each peer's newest input, and when the sim first used it. */
+  private notes = new Map<string, { n: number; vt: number; ax?: number; az?: number; heard: number; used: number; since: number }>();
   onLobby: (m: Member[]) => void = () => {};
   onStart: (s: StartMsg, mySeat: number) => void = () => {};
   onSnap: (s: Snapshot) => void = () => {};
@@ -78,6 +80,16 @@ export class Room {
       this.members.push({ peer: from, name: String(msg.name ?? '').slice(0, 14) || 'Friend', hero, look: cleanLook(msg.look) });
       this.sendLobby();
     } else if (msg.t === 'in') {
+      const n = Number(msg.n) || 0;
+      const old = this.notes.get(from);
+      // messages can overtake each other: an older input only adds its button presses
+      if (old && n <= old.n) {
+        const cur = this.inputs.get(from);
+        if (cur) this.inputs.set(from, { ...cur, dash: cur.dash || !!msg.d, grab: cur.grab || !!msg.g, skill: cur.skill || !!msg.s, ult: cur.ult || !!msg.u });
+        return;
+      }
+      const num = (v: unknown) => (v === undefined || !Number.isFinite(Number(v)) ? undefined : Number(v));
+      this.notes.set(from, { n, vt: Number(msg.vt) || 0, ax: num(msg.ax), az: num(msg.az), heard: performance.now(), used: old?.used ?? 0, since: old?.since ?? 0 });
       const prev = this.inputs.get(from);
       // latch button presses until the host's sim consumes them
       this.inputs.set(from, {
@@ -98,12 +110,39 @@ export class Room {
     }
   }
 
-  /** Read (and clear the buttons of) a remote player's input. */
-  takeInput(peer: string): Input | null {
+  /**
+   * The input to use for a remote player in this sim step (button presses are used once). `now` is the sim clock, and
+   * `at` where the host has their hero: the aim is a point in the world, so it is turned into a direction from there.
+   */
+  takeInput(peer: string, now: number, at: { x: number; z: number }): Input | null {
     const i = this.inputs.get(peer);
-    if (!i) return null;
+    const note = this.notes.get(peer);
+    if (!i || !note) return null;
     this.inputs.set(peer, { ...i, dash: false, grab: false, skill: false, ult: false });
-    return i;
+    if (note.used !== note.n) {
+      note.used = note.n;
+      note.since = now;
+    }
+    // nothing heard for a while (tab hidden, signal lost): stand still rather than walk on
+    if (performance.now() - note.heard > 600) return { mx: 0, mz: 0, dash: false, grab: false, skill: false };
+    const out: Input = { ...i, rewind: note.vt ? Math.max(0, Math.min(0.4, now - note.vt)) : 0 };
+    if (note.ax !== undefined && note.az !== undefined && Math.hypot(note.ax - at.x, note.az - at.z) > 0.8) {
+      out.aim = Math.atan2(note.ax - at.x, note.az - at.z);
+      out.aimD = Math.hypot(note.ax - at.x, note.az - at.z);
+    }
+    return out;
+  }
+
+  /** For the snapshot: the last input used from this peer, and how long ago it was first used. */
+  ack(peer: string, now: number): [number, number] {
+    const note = this.notes.get(peer);
+    return note ? [note.used, Math.round((now - note.since) * 1000) / 1000] : [0, 0];
+  }
+
+  /** A new match: input numbers start again. */
+  freshMatch() {
+    this.inputs.clear();
+    this.notes.clear();
   }
 
   sendLobby() {
@@ -132,8 +171,8 @@ export class Room {
     else if (msg.t === 'snap') this.onSnap(msg.s as Snapshot);
   }
 
-  sendInput(i: Input) {
-    this.t.broadcast({ t: 'in', mx: Math.round(i.mx * 100) / 100, mz: Math.round(i.mz * 100) / 100, d: i.dash ? 1 : 0, g: i.grab ? 1 : 0, s: i.skill ? 1 : 0, ...(i.ult ? { u: 1 } : {}), ...(i.aim !== undefined ? { a: Math.round(i.aim * 100) / 100, ad: Math.round((i.aimD ?? 8) * 10) / 10, ...(i.aimY !== undefined ? { ay: Math.round(i.aimY * 10) / 10 } : {}) } : {}) });
+  sendInput(i: Input, n: number, viewTime: number, aimAt?: { x: number; z: number }) {
+    this.t.broadcast({ t: 'in', n, vt: Math.round(viewTime * 1000) / 1000, ...(aimAt ? { ax: Math.round(aimAt.x * 100) / 100, az: Math.round(aimAt.z * 100) / 100 } : {}), mx: Math.round(i.mx * 100) / 100, mz: Math.round(i.mz * 100) / 100, d: i.dash ? 1 : 0, g: i.grab ? 1 : 0, s: i.skill ? 1 : 0, ...(i.ult ? { u: 1 } : {}), ...(i.aim !== undefined ? { a: Math.round(i.aim * 100) / 100, ad: Math.round((i.aimD ?? 8) * 10) / 10, ...(i.aimY !== undefined ? { ay: Math.round(i.aimY * 10) / 10 } : {}) } : {}) });
   }
 
   setHero(hero: HeroId) {

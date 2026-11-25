@@ -357,6 +357,7 @@ for (const map of ['bubblegum', 'candy', 'desert']) {
   await bb(page, () => {
     const g = window.__bb;
     g.brains.forEach((br) => (br.update = () => ({ mx: 0, mz: 0, dash: false, grab: false, skill: false })));
+    g.profile.autoFire = true; // opt-in
     const [me, o] = g.world.players;
     Object.assign(me, { x: 12, z: 2, weapon: 'blaster', ammo: 20, fireCd: 0, state: 'normal', invuln: 30 });
     Object.assign(o, { x: 12, z: -4, state: 'normal', invuln: 0, hp: 100 });

@@ -1,5 +1,5 @@
 import { release } from './render/dispose.ts';
-import { castRay, propHeight } from '../../shared/sim/ray.ts';
+import { castRay, propHeight, GUN_HEIGHT } from '../../shared/sim/ray.ts';
 import * as THREE from 'three';
 import { World, targetable } from '../../shared/sim/world.ts';
 import { BotBrain } from '../../shared/sim/bots.ts';
@@ -34,6 +34,7 @@ import { Showcase } from './render/showcase.ts';
 import { PowerView, POWER_INFO } from './render/powerups.ts';
 import { Markers } from './render/markers.ts';
 import { Room, type StartMsg, MAX_HUMANS } from './net/room.ts';
+import { GuestNet } from './net/guest.ts';
 import { FriendsPanel } from './ui/friends.ts';
 import { SnapshotEncoder, applySnapshot, type Snapshot } from '../../shared/sim/snapshot.ts';
 import type { Personality } from '../../shared/sim/bots.ts';
@@ -494,6 +495,13 @@ export class Game {
     this.seatPeers = net ? net.start.seats.map((s) => (s.isBot ? '' : s.peer)) : [];
     this.encoder = new SnapshotEncoder();
     this.pending = [];
+    this.matchId = net?.start.seed ?? 0;
+    this.guest.reset();
+    if (net && this.room) {
+      this.room.freshMatch();
+      this.world.recordPositions = this.room.isHost;
+      if (this.room.isHost) this.keepHosting();
+    }
     this.targets = this.world.players.map((p) => ({ x: p.x, z: p.z, y: 0 }));
     this.sfx.muted = attract || !this.profile.sound;
 
@@ -595,58 +603,11 @@ export class Game {
       }
     }
     this.updateAim();
-    // fixed-step simulation (hit-stop freezes it briefly — offline only; a shared match never pauses)
-    const step = TUNING.sim.dt;
-    const netClient = !!this.room && !this.room.isHost && this.mode === 'match';
-    if (netClient) {
-      if (this.hitStop > 0) this.hitStop -= dt;
-      this.clientFrame(dt);
-    } else if (this.hitStop > 0 && !this.room) this.hitStop -= dt;
-    else {
-      if (this.hitStop > 0) this.hitStop -= dt;
-      let scale = SPEED;
-      if (this.slowT > 0) {
-        this.slowT -= dt;
-        scale *= this.slowScale;
-      }
-      this.acc += dt * scale;
-      let n = 0;
-      while (this.acc >= step && n < 6 * SPEED) {
-        this.acc -= step;
-        n++;
-        const inputs: Input[] = new Array(this.world.players.length).fill(NO_INPUT);
-        inputs[LOCAL] = this.autoBrain ? this.autoBrain.update(this.world, step) : this.readLocal();
-        for (const b of this.brains) inputs[b.id] = b.update(this.world, step);
-        if (this.room?.isHost && this.mode === 'match')
-          this.seatPeers.forEach((peer, i) => {
-            if (peer && i !== LOCAL) inputs[i] = this.room!.takeInput(peer) ?? NO_INPUT;
-          });
-        const prevRound = this.world.round;
-        this.prevPos = this.world.players.map((q) => ({ x: q.x, y: q.y, z: q.z }));
-        this.world.tick(step, inputs);
-        if (this.room?.isHost && this.mode === 'match') this.pending.push(...this.world.events);
-        if (this.world.round !== prevRound) this.brains.forEach((b) => b.newRound());
-        if (this.world.round !== prevRound) this.autoBrain?.newRound();
-        for (const e of this.world.events) this.onEvent(e);
-        if (this.hitStop > 0 && !this.room) {
-          this.acc = 0;
-          break;
-        }
-      }
-      // host: send the world to friends ~15×/s
-      if (this.room?.isHost && this.mode === 'match') {
-        this.snapT += dt;
-        if (this.snapT >= 1 / 15) {
-          this.snapT = 0;
-          this.room.snapshot(this.encoder.encode(this.world, this.pending));
-          this.pending = [];
-        }
-      }
-    }
+    this.simulate(dt);
 
     // views
     // draw between the last two sim steps: smooth on 90/120 Hz screens and when a frame is late
-    this.lerpA = this.room && !this.room.isHost ? 1 : Math.min(1, this.acc / step);
+    this.lerpA = this.room && !this.room.isHost ? 1 : Math.min(1, this.acc / TUNING.sim.dt);
     // crowd readability: fade bots standing in front of you, ease the camera out, calm the glows
     {
       const me = this.world.players[LOCAL];
@@ -774,6 +735,59 @@ export class Game {
     if (this.showcase.active && this.mode === 'match') this.hud.placePodium(this.showcase.labelPoints());
   };
 
+  /** Advance the match by one drawn (or, for a hidden host, one timed) frame. */
+  private simulate(dt: number) {
+    // fixed-step simulation (hit-stop freezes it briefly — offline only; a shared match never pauses)
+    const step = TUNING.sim.dt;
+    const netClient = !!this.room && !this.room.isHost && this.mode === 'match';
+    if (netClient) {
+      if (this.hitStop > 0) this.hitStop -= dt;
+      this.clientFrame(dt);
+    } else if (this.hitStop > 0 && !this.room) this.hitStop -= dt;
+    else {
+      if (this.hitStop > 0) this.hitStop -= dt;
+      let scale = SPEED;
+      if (this.slowT > 0) {
+        this.slowT -= dt;
+        scale *= this.slowScale;
+      }
+      this.acc += dt * scale;
+      let n = 0;
+      while (this.acc >= step && n < 6 * SPEED) {
+        this.acc -= step;
+        n++;
+        const inputs: Input[] = new Array(this.world.players.length).fill(NO_INPUT);
+        inputs[LOCAL] = this.autoBrain ? this.autoBrain.update(this.world, step) : this.readLocal();
+        for (const b of this.brains) inputs[b.id] = b.update(this.world, step);
+        if (this.room?.isHost && this.mode === 'match')
+          this.seatPeers.forEach((peer, i) => {
+            if (peer && i !== LOCAL) inputs[i] = this.room!.takeInput(peer, this.world.time, this.world.players[i]) ?? NO_INPUT;
+          });
+        const prevRound = this.world.round;
+        this.prevPos = this.world.players.map((q) => ({ x: q.x, y: q.y, z: q.z }));
+        this.world.tick(step, inputs);
+        if (this.room?.isHost && this.mode === 'match') this.pending.push(...this.world.events);
+        if (this.world.round !== prevRound) this.brains.forEach((b) => b.newRound());
+        if (this.world.round !== prevRound) this.autoBrain?.newRound();
+        for (const e of this.world.events) this.onEvent(e);
+        if (this.hitStop > 0 && !this.room) {
+          this.acc = 0;
+          break;
+        }
+      }
+      // host: send the world to friends ~15×/s
+      if (this.room?.isHost && this.mode === 'match') {
+        this.snapT += dt;
+        if (this.snapT >= 1 / 15) {
+          this.snapT = 0;
+          const acks = this.seatPeers.map((peer) => (peer ? this.room!.ack(peer, this.world.time) : ([0, 0] as [number, number])));
+          this.room.snapshot(this.encoder.encode(this.world, this.pending, this.matchId, acks));
+          this.pending = [];
+        }
+      }
+    }
+  }
+
   private monitorFps(dt: number) {
     if (dt >= 0.1) return; // a hitch (tab switch, loading) says nothing about how fast the game runs
     this.fpsFrames++;
@@ -807,51 +821,81 @@ export class Game {
 
   // ---------------------------------------------------------------- friends rooms
 
-  /** Client: predict my own movement, smooth everyone else, send my input ~30×/s. */
+  /** Joining player: show my own actions at once, smooth everyone else, send my input ~30×/s. */
   private clientFrame(dt: number) {
     const w = this.world;
     const inp = this.readLocal();
     // buttons latch until the next send
-    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill, aim: inp.aim, aimD: inp.aimD, aimY: inp.aimY };
+    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill, ult: this.netInput.ult || inp.ult, aim: inp.aim, aimD: inp.aimD, aimY: inp.aimY };
+    this.guest.frame(w, LOCAL, inp, dt);
+    this.predictShot(inp, dt);
     this.sendT += dt;
     if (this.sendT >= 1 / 30) {
       this.sendT = 0;
-      this.room?.sendInput(this.netInput);
-      this.netInput = { ...this.netInput, dash: false, grab: false, skill: false };
+      const me = w.players[LOCAL];
+      const i = this.netInput;
+      const aimAt = i.aim === undefined ? undefined : { x: me.x + Math.sin(i.aim) * (i.aimD ?? 8), z: me.z + Math.cos(i.aim) * (i.aimD ?? 8) };
+      this.room?.sendInput(i, this.guest.stamp(), this.guest.viewTime, aimAt);
+      this.netInput = { ...i, dash: false, grab: false, skill: false, ult: false };
     }
-    w.players.forEach((p, i) => {
-      const t = this.targets[i];
-      if (!t) return;
-      if (i === LOCAL && w.phase === 'playing' && p.state === 'normal') {
-        // prediction: move right away, then ease toward what the host says
-        const sp = TUNING.hero.walkSpeed * Math.max(TUNING.hero.carrySlowFloor, 1 - p.carried * TUNING.hero.carrySlowPerCoin);
-        const nx = p.x + inp.mx * sp * dt;
-        const nz = p.z + inp.mz * sp * dt;
-        if (w.arena.solid(nx, nz)) {
-          p.x = nx;
-          p.z = nz;
-        }
-        p.vx = inp.mx * sp;
-        p.vz = inp.mz * sp;
-        if (Math.hypot(inp.mx, inp.mz) > 0.1) p.facing = Math.atan2(inp.mx, inp.mz);
-        const err = Math.hypot(t.x - p.x, t.z - p.z);
-        const k = err > 2.5 ? 1 : Math.min(1, dt * 5);
-        p.x += (t.x - p.x) * k;
-        p.z += (t.z - p.z) * k;
-      } else {
-        const k = Math.min(1, dt * 14);
-        p.x += (t.x - p.x) * k;
-        p.z += (t.z - p.z) * k;
-      }
-    });
+    // say so when the host goes quiet, and give up if it stays that way
+    const quiet = performance.now() / 1000 - this.guest.heardAt;
+    const playing = w.phase === 'playing' || w.phase === 'countdown';
+    this.hud.net(this.guest.ping, playing && quiet > 1.5);
+    if (playing && quiet > 15) this.roomClosed('Lost the connection to the host');
+  }
+
+  /** The laser leaves your gun the instant you press: the host still decides what it hit. */
+  private predictShot(inp: Input, dt: number) {
+    this.shotWait = Math.max(0, this.shotWait - dt);
+    const w = this.world;
+    const me = w.players[LOCAL];
+    if (!inp.grab || this.shotWait > 0 || w.phase !== 'playing' || me.state !== 'normal' || me.weapon !== 'blaster' || me.ammo <= 0 || me.cast || inp.aim === undefined) return;
+    const c = TUNING.weapons.blaster;
+    this.shotWait = c.cooldown * (w.mod === 'rapid' ? TUNING.mods.rapid.cooldownMult : 1) * (me.superT > 0 && me.hero === 'ranger' ? TUNING.weapons.super.overdrive.cooldownMult : 1);
+    const oy = me.y + GUN_HEIGHT;
+    const rise = inp.aimY === undefined ? 0 : (inp.aimY - oy) / Math.max(0.6, inp.aimD ?? 8);
+    const n = Math.hypot(1, rise);
+    const hit = castRay(w, me.x, oy, me.z, Math.sin(inp.aim) / n, rise / n, Math.cos(inp.aim) / n, c.range, me);
+    this.onEvent({ t: 'fire', p: LOCAL, weapon: 'blaster', x: me.x, z: me.z, facing: inp.aim });
+    this.onEvent({ t: 'laser', p: LOCAL, tx: hit.x, ty: hit.y, tz: hit.z, hit: -1 });
   }
 
   private onSnapshot(s: Snapshot) {
-    if (!this.world || this.mode !== 'match') return;
+    if (!this.world || this.mode !== 'match' || s.m !== this.matchId) return;
     const prevRound = this.world.round;
-    applySnapshot(this.world, s, this.targets, LOCAL);
-    if (this.world.round !== prevRound) this.markers?.setWorld();
-    for (const e of s.ev) this.onEvent(e);
+    if (this.guest.arrive(s)) {
+      applySnapshot(this.world, s, this.targets, LOCAL);
+      this.guest.correct(s, this.world, LOCAL);
+      if (this.world.round !== prevRound) this.markers?.setWorld();
+    }
+    for (const e of s.ev) {
+      // my own laser was already drawn when I pressed: only the host's verdict is news
+      if (e.t === 'fire' && e.p === LOCAL && e.weapon === 'blaster') continue;
+      if (e.t === 'laser' && e.p === LOCAL) {
+        if (e.hit >= 0) this.hud.hitMarker(false);
+        continue;
+      }
+      this.onEvent(e);
+    }
+  }
+
+  /** The host keeps the match running while its tab is hidden (a quick reply on WhatsApp must not freeze friends). */
+  private keepHosting() {
+    if (this.hostClock) return;
+    const src = URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' }));
+    this.hostClock = new Worker(src);
+    this.hostClock.onmessage = () => {
+      if (!document.hidden || !this.room?.isHost || this.mode !== 'match') return;
+      const now = performance.now();
+      let behind = Math.min(0.5, (now - this.last) / 1000);
+      this.last = now;
+      while (behind > 0) {
+        const d = Math.min(0.1, behind);
+        behind -= d;
+        this.simulate(d);
+      }
+    };
   }
 
   private openFriends(joinCode = '', createNow = false) {
@@ -1879,6 +1923,10 @@ export class Game {
     return { ...i, grab: i.grab || auto, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist, aimY: this.aimInfo?.y };
   }
   private lastStickFwd = 0;
+  private guest = new GuestNet();
+  private matchId = 0;
+  private shotWait = 0;
+  private hostClock: Worker | null = null;
   /** What each seat wears. */
   private looks: Look[] = [];
   private adOpen = false;

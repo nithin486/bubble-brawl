@@ -194,6 +194,22 @@ const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
   check('the match still ends normally', ended && b.gone);
 }
 
+// ------------------------------------------------------------------ friends rooms: shots judged as the shooter saw them
+for (const rewind of [0, 0.25]) {
+  const w = arena();
+  w.recordPositions = true;
+  const [a, b] = w.players;
+  park(w, a, b);
+  place(a, BX, BZ, Math.PI / 2); place(b, BX + 4, BZ);
+  a.weapon = 'blaster'; a.ammo = 5; a.isBot = false;
+  run(w, 0.5); // the host remembers where b stood
+  b.z = BZ + 2.2; // …then b has moved aside by the time the shot arrives
+  const aim = { aim: Math.PI / 2, aimD: 4, aimY: b.y + 1.05 };
+  w.tick(DT, w.players.map((q) => (q === a ? { ...noInput, ...aim, grab: true, rewind } : noInput)));
+  check(rewind ? 'a delayed friend hits what they saw' : 'without delay that shot misses', rewind ? b.hp < W.hp : b.hp === W.hp, `rival ${b.hp.toFixed(0)}`);
+  check(`rewinding never moves anyone (${rewind} s)`, Math.abs(b.x - (BX + 4)) < 0.3 && Math.abs(b.z - (BZ + 2.2)) < 0.3, `${b.x.toFixed(2)}, ${b.z.toFixed(2)}`);
+}
+
 // ------------------------------------------------------------------ shop and purchases
 {
   const wallet = { coins: 200, owned: [] as string[], look: { ...DEFAULT_LOOK }, redeemed: [] as string[], adDay: '', adCount: 0 };

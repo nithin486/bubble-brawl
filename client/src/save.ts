@@ -43,16 +43,22 @@ const KEY = 'bb_profile_v1';
 
 export function loadProfile(): Profile {
   const today = new Date().toISOString().slice(0, 10);
-  const base: Profile = { matches: 0, coins: 0, xp: 0, map: DEFAULT_MAP, name: '', camera: 'third', missions: startMissions(), form: 0, hero: DEFAULT_HERO, firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto', aimSpeed: 'normal', autoFire: true, aimAssist: true, buttons: 'normal', vibrate: true, owned: [], look: { ...DEFAULT_LOOK }, redeemed: [], adDay: '', adCount: 0 };
+  const base: Profile = { matches: 0, coins: 0, xp: 0, map: DEFAULT_MAP, name: '', camera: 'third', missions: startMissions(), form: 0, hero: DEFAULT_HERO, firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto', aimSpeed: 'normal', autoFire: false, aimAssist: true, buttons: 'normal', vibrate: true, owned: [], look: { ...DEFAULT_LOOK }, redeemed: [], adDay: '', adCount: 0 };
   try {
     const raw = platform.store.getItem(KEY);
     if (raw) {
-      const p = { ...base, ...JSON.parse(raw) } as Profile & { mapV?: number; unlocked?: HeroId[] };
+      const saved = JSON.parse(raw);
+      const p = { ...base, ...saved, fireV: saved.fireV } as Profile & { mapV?: number; fireV?: number; unlocked?: HeroId[] };
       // one-time move to the new default map
       if ((p.mapV ?? 0) < 3) {
         p.map = DEFAULT_MAP;
         p.hero = DEFAULT_HERO;
         p.mapV = 3;
+      }
+      // auto-attack became opt-in: switch it off once for everyone who had the old default
+      if (!p.fireV) {
+        p.autoFire = false;
+        p.fireV = 1;
       }
       // unlocks now come from the level alone
       delete p.unlocked;
@@ -69,7 +75,7 @@ export function loadProfile(): Profile {
   } catch {
     /* storage unavailable */
   }
-  return { ...base, mapV: 3 } as Profile;
+  return { ...base, mapV: 3, fireV: 1 } as Profile;
 }
 
 export function saveProfile(p: Profile) {

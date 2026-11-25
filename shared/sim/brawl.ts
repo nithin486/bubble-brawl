@@ -379,7 +379,7 @@ export class Brawl {
   // ------------------------------------------------------------------ firing
 
   /** The action button with a weapon in hand. Returns false if it didn't fire (cooldown). */
-  fire(p: Player, aimed?: { d: number; y?: number }): boolean {
+  fire(p: Player, aimed?: { d: number; y?: number; rewind?: number }): boolean {
     const w = this.w;
     const k = p.weapon;
     if (!k || p.fireCd > 0) return false;
@@ -455,7 +455,7 @@ export class Brawl {
   }
 
   /** Bubble Laser: an instant beam from the gun to exactly the point under the crosshair (bots aim at a chest, with wobble). */
-  private laser(p: Player, aimed?: { d: number; y?: number }) {
+  private laser(p: Player, aimed?: { d: number; y?: number; rewind?: number }) {
     const w = this.w;
     const c = W.blaster;
     const oy = p.y + GUN_HEIGHT;
@@ -470,7 +470,9 @@ export class Brawl {
       facing += (w.rng.next() * 2 - 1) * (weak + (strong - weak) * w.skill) * (Math.PI / 180);
     }
     const n = Math.hypot(1, rise);
-    const hit = castRay(w, p.x, oy, p.z, dirX(facing) / n, rise / n, dirZ(facing) / n, c.range, p);
+    const cast = () => castRay(w, p.x, oy, p.z, dirX(facing) / n, rise / n, dirZ(facing) / n, c.range, p);
+    // a friend's shot is judged against where they saw their target
+    const hit = aimed?.rewind ? w.rewound(p.id, aimed.rewind, cast) : cast();
     w.events.push({ t: 'laser', p: p.id, tx: hit.x, ty: hit.y, tz: hit.z, hit: hit.player?.id ?? -1 });
     if (hit.player) this.damage(hit.player, p, 'blaster', c.damage, dirX(facing), dirZ(facing), c.knock);
   }

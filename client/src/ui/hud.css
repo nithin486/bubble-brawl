@@ -780,3 +780,7 @@ body[data-buttons='large'] #hud:not(.desktop) .controls { zoom: 1.18; }
 .results .rw-coins .coin-ico { vertical-align: middle; }
 .results .big-btn.double:disabled { filter: grayscale(.6); opacity: .8; }
 .credits a { color: var(--yellow); pointer-events: auto; }
+
+.netbadge { position: absolute; top: 12px; right: calc(66px + var(--safe-r)); font: 800 12px var(--body); padding: 3px 9px; border-radius: 99px; background: #0a102cb0; color: #bfe9ff; pointer-events: none; }
+.netbadge:empty { display: none; }
+.netbadge.bad { background: #c42a5ad0; color: #fff; }

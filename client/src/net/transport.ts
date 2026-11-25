@@ -89,7 +89,8 @@ export async function peerJoin(code: string): Promise<Transport> {
     });
     peer.on('open', (id) => {
       (t as { id: string }).id = id;
-      conn = peer.connect(host, { reliable: true, serialization: 'json' });
+      // unordered: every message still arrives, but one that gets lost no longer holds back the ones behind it
+      conn = peer.connect(host, { reliable: false, serialization: 'json' });
       conn.on('open', () => resolve(t));
       conn.on('data', (d) => t.onMessage(host, d as Msg));
       conn.on('close', () => t.onLeave(host));
@@ -98,6 +99,25 @@ export async function peerJoin(code: string): Promise<Transport> {
 }
 
 // ------------------------------------------------------------------ BroadcastChannel (local test)
+
+/**
+ * Test only: ?localnet&lag=90&jit=60&loss=0.03 makes tab-to-tab messages behave like a phone network (one-way delay,
+ * jitter, and lost packets that are re-sent later). &ordered=1 holds everything behind a late message, as an ordered
+ * channel does.
+ */
+function slowly(deliver: (e: MessageEvent) => void) {
+  const q = new URLSearchParams(location.search);
+  const lag = Number(q.get('lag')) || 0;
+  const jit = Number(q.get('jit')) || 0;
+  const loss = Number(q.get('loss')) || 0;
+  if (!lag && !jit && !loss) return deliver;
+  let last = 0;
+  return (e: MessageEvent) => {
+    let at = performance.now() + lag + Math.random() * jit + (Math.random() < loss ? 2 * lag + 200 : 0);
+    if (q.has('ordered')) at = last = Math.max(last, at);
+    setTimeout(() => deliver(e), at - performance.now());
+  };
+}
 
 export function localHost(code: string): Promise<Transport> {
   const ch = new BroadcastChannel(PREFIX + code);
@@ -117,7 +137,7 @@ export function localHost(code: string): Promise<Transport> {
     },
   };
   const known = new Set<string>();
-  ch.onmessage = (e) => {
+  ch.onmessage = slowly((e) => {
     const { from, to, msg } = e.data as { from: string; to: string; msg: Msg };
     if (from === id || (to !== id && to !== '*')) return;
     if (msg.t === 'knock') {
@@ -132,7 +152,7 @@ export function localHost(code: string): Promise<Transport> {
       return;
     }
     t.onMessage(from, msg);
-  };
+  });
   return Promise.resolve(t);
 }
 
@@ -153,12 +173,12 @@ export function localJoin(code: string): Promise<Transport> {
       ch.close();
     },
   };
-  ch.onmessage = (e) => {
+  ch.onmessage = slowly((e) => {
     const { from, to, msg } = e.data as { from: string; to: string; msg: Msg };
     if (from !== 'host' || (to !== id && to !== '*')) return;
     if (msg.t === 'bye') t.onLeave('host');
     else t.onMessage('host', msg);
-  };
+  });
   ch.postMessage({ from: id, to: 'host', msg: { t: 'knock' } });
   return Promise.resolve(t);
 }

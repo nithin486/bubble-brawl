@@ -346,6 +346,15 @@ export class Hud {
     if (!document.querySelector('.rotate')) document.body.append(rot);
   }
 
+  private netEl: HTMLElement | null = null;
+  /** Friends rooms: delay to the host, and a warning while nothing is arriving. */
+  net(ping: number, quiet: boolean) {
+    if (!this.netEl) this.root.append((this.netEl = el('div', 'netbadge')));
+    const text = quiet ? 'Weak connection…' : ping >= 0 ? `${Math.max(10, Math.round(ping / 10) * 10)} ms` : '';
+    if (this.netEl.textContent !== text) this.netEl.textContent = text;
+    this.netEl.classList.toggle('bad', quiet || ping > 250);
+  }
+
   set fps(v: string) {
     this.fpsEl.textContent = v;
   }

@@ -3,6 +3,12 @@
 Rules below were read on 25 November 2026. Stores change them: re-check before submitting.
 Run `npm run release:check` at any time to see what is still missing.
 
+| You want to publish on | What to run | Then |
+|---|---|---|
+| Website | `git push` (today's setup) or `npm run deploy` (section 2) | open the address and play |
+| CrazyGames | `npm run package:crazygames` | upload `release/crazygames-upload.zip` contents (section 1) |
+| Google Play | publish the website first | package the live address (section 3) |
+
 ## First: three decisions only you can make
 
 1. **Name.** Google Play already lists a "Bubble Brawl" (by Pasha Utt) and a "Bubble Brawl : Sort & Conquer". Search
@@ -22,7 +28,8 @@ Not built: season pass, starter pack, CrazyGames in-game purchases (invite only)
 
 ## 1. CrazyGames
 
-1. `npm run build:crazygames` → upload the **contents** of `dist-crazygames/` at https://developer.crazygames.com/games
+1. `npm run package:crazygames` → unzip `release/crazygames-upload.zip` and upload those files at
+   https://developer.crazygames.com/games (or drag in the contents of `dist-crazygames/`)
 2. Turn on: Data Module ("Yes, using the Data Module"), multiplayer / online with friends, lobby size 2–6, mobile support,
    landscape.
 3. Covers (drafts in `store/crazygames/`): 1920×1080, 800×1200, 800×800, title only. Check them yourself.
@@ -46,6 +53,12 @@ purchase check. It replaces the current GitHub-backed Worker, so afterwards **pu
 
 1. Developer account: US$25 once. New personal accounts need a **closed test with at least 12 testers opted in for
    14 days in a row** before production.
+**Easier way to build the app (not tried here):** https://www.pwabuilder.com → enter your live address → Android.
+Set the package id from `android/app.json`, display fullscreen, orientation landscape, start URL `/?source=play`,
+switch on Google Play billing if offered, let it create a new signing key. The download holds the `.aab` to upload,
+the signing key with its passwords (**back them up, never commit them**) and an `assetlinks.json`. Check that it targets
+API 36 or newer, then continue at step 4. If billing is not offered there, use the command-line way:
+
 2. Install Node, JDK 17, then `npm i -g @bubblewrap/cli`, and in an empty folder:
    `bubblewrap init --manifest="https://<your-site>/manifest.webmanifest"`
    Use: package id from `android/app.json`, display fullscreen, orientation landscape, start URL `/?source=play`.
@@ -80,8 +93,10 @@ Phone: left thumb moves, drag right side to aim, buttons to fire, dash, skill an
 
 ## Known limits
 
-* Friends rooms run on the host's device through the free PeerJS service. If the host leaves or switches apps, the match
-  stops. The host uploads roughly 100 KB per second with five friends. Not tested between two real phones.
+* Friends rooms run on the host's device through the free PeerJS service. If the host leaves, the match ends; a short
+  switch to another app is bridged, a locked or closed phone is not. With five friends the host uploads about 85 KB per second
+  (about 15 MB a match), worked out from the message size. Network feel was measured with a simulated connection
+  (`node tools/net-feel.mjs`), not between two real phones.
 * Progress and coins live on the player's device (or CrazyGames account): a determined player can edit them.
 * A paid coin pack is confirmed by the server, but the coin balance itself is not stored there; it is lost if the app's
   data is cleared.

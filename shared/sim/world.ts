@@ -44,6 +44,11 @@ export class World {
   waveT = 0;
   finale = false;
   powerups: PowerUp[] = [];
+  /** Seconds this match has been ticking (the clock friends' devices follow). */
+  time = 0;
+  /** Host of a friends room: remember where everyone stood, to judge shots as the shooter saw them. */
+  recordPositions = false;
+  private past: { t: number; at: number[] }[] = [];
   /** Richest carrier wears the crown (-1 = nobody). */
   crownId = -1;
   /** This round's twist (Round Roulette). */
@@ -236,6 +241,11 @@ export class World {
   /** Advance the world by dt seconds. inputs[i] is player i's intent. */
   tick(dt: number, inputs: Input[]) {
     this.events.length = 0;
+    this.time += dt;
+    if (this.recordPositions) {
+      this.past.push({ t: this.time, at: this.players.flatMap((p) => [p.x, p.z, p.y]) });
+      while (this.past.length > 40) this.past.shift();
+    }
     if (this.phase === 'countdown') {
       this.phaseT -= dt;
       const c = Math.ceil(this.phaseT);
@@ -386,7 +396,7 @@ export class World {
         // turn to where the scope points; assist shrinks to a small cone so the shot goes where you aimed
         const aimed = inp.aim !== undefined && Number.isFinite(inp.aim);
         if (aimed) p.facing = inp.aim as number;
-        this.brawl.fire(p, aimed ? { d: Number.isFinite(inp.aimD) ? (inp.aimD as number) : 8, y: Number.isFinite(inp.aimY) ? inp.aimY : undefined } : undefined);
+        this.brawl.fire(p, aimed ? { d: Number.isFinite(inp.aimD) ? (inp.aimD as number) : 8, y: Number.isFinite(inp.aimY) ? inp.aimY : undefined, rewind: inp.rewind } : undefined);
       }
       else if (inp.grab && p.grabCd <= 0) {
         // commit to a direction now (aim assist), then lunge — the target can see it coming and dash
@@ -410,6 +420,105 @@ export class World {
       }
     }
 
+    this.locomote(p, inp, dt, live);
+
+    if (!this.arena.solid(p.x, p.z)) {
+      this.startFall(p);
+      return;
+    }
+
+    if (!live) return;
+
+    // --- bounce pads
+    if (p.padCd <= 0 && p.state !== 'stunned') {
+      for (const pad of this.pads) {
+        if (!this.arena.solid(pad.x, pad.z)) continue;
+        if ((p.x - pad.x) ** 2 + (p.z - pad.z) ** 2 < T.arena.bouncePadSize ** 2) {
+          const d = len(pad.x, pad.z);
+          const tx = pad.x - (pad.x / d) * T.arena.bounceDistance;
+          const tz = pad.z - (pad.z / d) * T.arena.bounceDistance;
+          p.state = 'launched';
+          p.launch = { fx: p.x, fz: p.z, tx, tz, t: 0 };
+          p.facing = facingOf(-pad.x, -pad.z);
+          p.kx = p.kz = 0;
+          p.bankT = 0;
+          p.cast = null;
+          this.events.push({ t: 'bounce', p: p.id });
+          return;
+        }
+      }
+    }
+
+    if (this.mode === 'weapons') return;
+
+    // --- coins
+    const r2 = T.coins.pickupRadius ** 2;
+    for (let i = this.coins.length - 1; i >= 0; i--) {
+      const c = this.coins[i];
+      if (c.delay > 0 || c.y > 1.2 || c.anyT > 0) continue;
+      if (c.blockId === p.id && c.blockT > 0) continue;
+      if ((c.x - p.x) ** 2 + (c.z - p.z) ** 2 < r2) {
+        p.carried += c.v;
+        p.combo = p.comboT > 0 ? p.combo + 1 : 1;
+        p.comboT = T.combo.window;
+        this.coins.splice(i, 1);
+        this.events.push({ t: 'pickup', p: p.id, x: c.x, z: c.z, v: c.v, combo: p.combo });
+      }
+    }
+
+    // magnet: loose coins nearby slide toward you
+    const magR = p.magnetT > 0 ? T.powerups.magnet.radius : this.mod === 'magnet' ? T.mods.magnet.radius : 0;
+    if (magR > 0) {
+      const M = T.powerups.magnet;
+      for (const c of this.coins) {
+        if (!c.grounded || c.anyT > 0) continue;
+        const dx = p.x - c.x;
+        const dz = p.z - c.z;
+        const d = Math.hypot(dx, dz);
+        if (d > magR || d < 0.05) continue;
+        const step = Math.min(d, M.pull * dt * (1.3 - d / magR));
+        c.x += (dx / d) * step;
+        c.z += (dz / d) * step;
+      }
+    }
+
+    // power bubbles
+    const pr2 = T.powerups.pickupRadius ** 2;
+    for (let i = this.powerups.length - 1; i >= 0; i--) {
+      const u = this.powerups[i];
+      if (u.age < 0.6 || (u.x - p.x) ** 2 + (u.z - p.z) ** 2 > pr2) continue;
+      this.powerups.splice(i, 1);
+      this.givePower(p, u.kind, u.x, u.z);
+    }
+
+    // --- banking
+    const inBank = (p.x - this.bank.x) ** 2 + (p.z - this.bank.z) ** 2 < T.bank.radius ** 2;
+    if (inBank && p.carried > 0 && !inp.skipBank && (p.state === 'normal' || p.state === 'dashing')) {
+      if (p.bankT === 0) this.events.push({ t: 'bankProgress', p: p.id });
+      p.bankT += dt;
+      if (p.bankT >= T.bank.bankSeconds) {
+        const n = p.carried;
+        const v = this.bankValue(n);
+        p.bankedRound += v.total;
+        p.carried = 0;
+        p.bankT = 0;
+        p.stats.banks++;
+        p.stats.bestBank = Math.max(p.stats.bestBank, v.total);
+        this.events.push({ t: 'bank', p: p.id, n, total: v.total, mult: v.mult, label: v.label, x: this.bank.x, z: this.bank.z });
+        // a big deposit overloads the bubble: it pops and floats off to a new spot
+        if (n >= T.bankPopAt && !this.bank.glide) {
+          this.bank.moveT = Math.max(this.bank.moveT, T.bank.moveEvery - T.bank.warnSeconds);
+          this.bank.warned = false;
+        }
+      }
+    } else p.bankT = 0;
+  }
+
+  /**
+   * One step of walking, dashing, being knocked about, obstacles and heights. The host runs it for everyone; a friend's
+   * device runs the very same rules for its own hero, so it can move the moment a key goes down.
+   */
+  locomote(p: Player, inp: Input, dt: number, live: boolean) {
     // --- movement
     let moveX = 0;
     let moveZ = 0;
@@ -508,97 +617,6 @@ export class World {
       const h = T3.heightAt(p.x, p.z);
       p.y = h > p.y ? Math.min(h, p.y + 9 * dt) : Math.max(h, p.y - 16 * dt);
     }
-
-    if (!this.arena.solid(p.x, p.z)) {
-      this.startFall(p);
-      return;
-    }
-
-    if (!live) return;
-
-    // --- bounce pads
-    if (p.padCd <= 0 && p.state !== 'stunned') {
-      for (const pad of this.pads) {
-        if (!this.arena.solid(pad.x, pad.z)) continue;
-        if ((p.x - pad.x) ** 2 + (p.z - pad.z) ** 2 < T.arena.bouncePadSize ** 2) {
-          const d = len(pad.x, pad.z);
-          const tx = pad.x - (pad.x / d) * T.arena.bounceDistance;
-          const tz = pad.z - (pad.z / d) * T.arena.bounceDistance;
-          p.state = 'launched';
-          p.launch = { fx: p.x, fz: p.z, tx, tz, t: 0 };
-          p.facing = facingOf(-pad.x, -pad.z);
-          p.kx = p.kz = 0;
-          p.bankT = 0;
-          p.cast = null;
-          this.events.push({ t: 'bounce', p: p.id });
-          return;
-        }
-      }
-    }
-
-    if (this.mode === 'weapons') return;
-
-    // --- coins
-    const r2 = T.coins.pickupRadius ** 2;
-    for (let i = this.coins.length - 1; i >= 0; i--) {
-      const c = this.coins[i];
-      if (c.delay > 0 || c.y > 1.2 || c.anyT > 0) continue;
-      if (c.blockId === p.id && c.blockT > 0) continue;
-      if ((c.x - p.x) ** 2 + (c.z - p.z) ** 2 < r2) {
-        p.carried += c.v;
-        p.combo = p.comboT > 0 ? p.combo + 1 : 1;
-        p.comboT = T.combo.window;
-        this.coins.splice(i, 1);
-        this.events.push({ t: 'pickup', p: p.id, x: c.x, z: c.z, v: c.v, combo: p.combo });
-      }
-    }
-
-    // magnet: loose coins nearby slide toward you
-    const magR = p.magnetT > 0 ? T.powerups.magnet.radius : this.mod === 'magnet' ? T.mods.magnet.radius : 0;
-    if (magR > 0) {
-      const M = T.powerups.magnet;
-      for (const c of this.coins) {
-        if (!c.grounded || c.anyT > 0) continue;
-        const dx = p.x - c.x;
-        const dz = p.z - c.z;
-        const d = Math.hypot(dx, dz);
-        if (d > magR || d < 0.05) continue;
-        const step = Math.min(d, M.pull * dt * (1.3 - d / magR));
-        c.x += (dx / d) * step;
-        c.z += (dz / d) * step;
-      }
-    }
-
-    // power bubbles
-    const pr2 = T.powerups.pickupRadius ** 2;
-    for (let i = this.powerups.length - 1; i >= 0; i--) {
-      const u = this.powerups[i];
-      if (u.age < 0.6 || (u.x - p.x) ** 2 + (u.z - p.z) ** 2 > pr2) continue;
-      this.powerups.splice(i, 1);
-      this.givePower(p, u.kind, u.x, u.z);
-    }
-
-    // --- banking
-    const inBank = (p.x - this.bank.x) ** 2 + (p.z - this.bank.z) ** 2 < T.bank.radius ** 2;
-    if (inBank && p.carried > 0 && !inp.skipBank && (p.state === 'normal' || p.state === 'dashing')) {
-      if (p.bankT === 0) this.events.push({ t: 'bankProgress', p: p.id });
-      p.bankT += dt;
-      if (p.bankT >= T.bank.bankSeconds) {
-        const n = p.carried;
-        const v = this.bankValue(n);
-        p.bankedRound += v.total;
-        p.carried = 0;
-        p.bankT = 0;
-        p.stats.banks++;
-        p.stats.bestBank = Math.max(p.stats.bestBank, v.total);
-        this.events.push({ t: 'bank', p: p.id, n, total: v.total, mult: v.mult, label: v.label, x: this.bank.x, z: this.bank.z });
-        // a big deposit overloads the bubble: it pops and floats off to a new spot
-        if (n >= T.bankPopAt && !this.bank.glide) {
-          this.bank.moveT = Math.max(this.bank.moveT, T.bank.moveEvery - T.bank.warnSeconds);
-          this.bank.warned = false;
-        }
-      }
-    } else p.bankT = 0;
   }
 
   private startDash(p: Player, inp: Input) {
@@ -1107,6 +1125,22 @@ export class World {
   }
 
   /** Soft body separation so heroes don't overlap. */
+  /** Run `fn` with everyone but the shooter standing where they were `seconds` ago, then put them back. */
+  rewound<T>(shooter: number, seconds: number, fn: () => T): T {
+    const when = this.time - seconds;
+    const past = seconds > 0.02 ? [...this.past].reverse().find((s) => s.t <= when) ?? this.past[0] : undefined;
+    if (!past) return fn();
+    const now = this.players.map((p) => [p.x, p.z, p.y]);
+    this.players.forEach((p, i) => {
+      if (i !== shooter && !p.gone) [p.x, p.z, p.y] = past.at.slice(i * 3, i * 3 + 3);
+    });
+    try {
+      return fn();
+    } finally {
+      this.players.forEach((p, i) => ([p.x, p.z, p.y] = now[i]));
+    }
+  }
+
   /** A friend left: take them off the map for good (their score stays on the board). */
   remove(id: number) {
     const p = this.players[id];

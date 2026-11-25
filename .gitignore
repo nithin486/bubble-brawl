@@ -17,3 +17,4 @@ android/build/
 *.jks
 # draft store pictures: npm run build && node tools/store-art.mjs
 store/
+release/

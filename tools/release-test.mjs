@@ -58,12 +58,13 @@ async function guard(name, fn) {
 // ------------------------------------------------------------ website: shop, no ads, offline
 await guard('web', async () => {
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 640 } });
-  await ctx.addInitScript(seed({ coins: 200, mapV: 3, matches: 3, xp: 50 }));
+  await ctx.addInitScript(seed({ coins: 200, mapV: 3, matches: 3, xp: 50, autoFire: true }));
   const page = await ctx.newPage();
   watch(page);
   await page.goto(WEB + '?debug&q=low');
   check('website boots', await booted(page));
   check('play with friends is open', !(await page.locator('.friends').isDisabled()));
+  check('auto-attack is off, also for earlier players', await page.evaluate(() => window.__bb.profile.autoFire === false));
   await page.click('.wallet');
   check('the wallet opens the shop', await until(page, () => document.querySelector('.panel.shop'), null, 5000));
   check('no coin packs or videos on a plain website', (await page.locator('.shop .pack, .shop .ad').count()) === 0);
@@ -192,6 +193,26 @@ await guard('rooms', async () => {
   check('both get the results', (await until(host, () => document.querySelector('.panel.results'))) && (await until(guest, () => document.querySelector('.panel.results'))));
   await host.click('.big-btn:has-text("REMATCH")');
   check('rematch brings both back', (await until(host, () => window.__bb.world.phase === 'playing' && !document.querySelector('.panel.results'))) && (await until(guest, () => window.__bb.world.phase === 'playing' && window.__bb.world.roundTime < 60 && !document.querySelector('.panel.results'))));
+  await guest.waitForTimeout(1500);
+  const link = await guest.evaluate(() => ({ badge: document.querySelector('.netbadge')?.textContent ?? '', ping: Math.round(window.__bb.guest.ping), seq: window.__bb.guest.seq }));
+  const used = await host.evaluate(() => window.__bb.room.ack(window.__bb.seatPeers[1], window.__bb.world.time));
+  check('the host is using the newest input from the friend', used[0] > 20 && link.seq - used[0] < 25, `sent ${link.seq}, used ${used[0]}`);
+  check('the guest sees the delay to the host', /\d+ ms/.test(link.badge), `badge "${link.badge}", ${link.ping} ms`);
+  // the host switches to another app: no frames are drawn, yet the match must go on
+  await host.evaluate(() => {
+    window.__raf = window.requestAnimationFrame;
+    window.requestAnimationFrame = (f) => (window.__held = f);
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+  });
+  const t0 = await guest.evaluate(() => window.__bb.world.roundTime);
+  await guest.waitForTimeout(3000);
+  const t1 = await guest.evaluate(() => window.__bb.world.roundTime);
+  check('a hidden host keeps the match running', t1 - t0 > 2, `${(t1 - t0).toFixed(1)} s in 3 s`);
+  await host.evaluate(() => {
+    delete document.hidden;
+    window.requestAnimationFrame = window.__raf;
+    requestAnimationFrame(window.__held);
+  });
   await guest.evaluate(() => window.__bb.room.leave());
   await guest.close();
   check('a leaver is removed, not replaced by a bot', await until(host, () => window.__bb.world.players[1].gone && !window.__bb.world.players[1].isBot && window.__bb.brains.length === 0, null, 20000));

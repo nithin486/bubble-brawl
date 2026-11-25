@@ -7,6 +7,7 @@
     "dev": "node tools/build-assets.mjs && vite",
     "build": "node tools/build-assets.mjs && tsc --noEmit && vite build",
     "build:crazygames": "node tools/build-assets.mjs && tsc --noEmit && vite build --mode crazygames",
+    "package:crazygames": "npm run build:crazygames && python tools/package.py",
     "assetlinks": "node tools/assetlinks.mjs",
     "release:check": "node tools/release-check.mjs",
     "preview": "vite preview",

@@ -22,6 +22,8 @@ export interface Input {
   aimY?: number;
   /** Use the Super (when the meter is full). */
   ult?: boolean;
+  /** Friends rooms: how many seconds in the past this player was seeing the others when they pressed fire. */
+  rewind?: number;
   /** Bots only: first-match handicap — walk through the bank without banking. */
   skipBank?: boolean;
 }
