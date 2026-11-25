@@ -367,7 +367,7 @@ export class Game {
   }
 
   private startMatch(hero: HeroId, attract = false, net?: { start: StartMsg; seat: number }) {
-    if (!net && !this.mapReady(this.mapId)) this.mapId = MAP_ROTATION[0]; // art still downloading: play on the first map
+    if (!net && !this.mapReady(this.mapId)) this.mapId = MAP_ROTATION.find((id) => this.mapReady(id))!; // art still downloading: play on a map that is here (one has no pack)
     const rng = new Rng((Math.random() * 1e9) | 0);
     const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
     const botHeroes: HeroId[] = HERO_IDS;
