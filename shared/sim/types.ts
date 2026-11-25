@@ -18,6 +18,12 @@ export interface Input {
   aim?: number;
   /** Distance to the aim point in metres (rocket / bomb land there). */
   aimD?: number;
+  /** World height of the point under the crosshair (shots go exactly there). */
+  aimY?: number;
+  /** Use the Super (when the meter is full). */
+  ult?: boolean;
+  /** Friends rooms: how many seconds in the past this player was seeing the others when they pressed fire. */
+  rewind?: number;
   /** Bots only: first-match handicap — walk through the bank without banking. */
   skipBank?: boolean;
 }
@@ -84,6 +90,13 @@ export interface Player {
   lastHitBy: number;
   lastHitT: number;
   kos: number;
+  /** Super meter 0..1, seconds of an active Super, seconds of damage boost, KOs since last knocked out. */
+  /** A friend who left the room: out of the match, kept in the standings. */
+  gone: boolean;
+  charge: number;
+  superT: number;
+  rageT: number;
+  streak: number;
 }
 
 export interface MysteryBox {
@@ -160,7 +173,7 @@ export interface Hazard {
   hit: number[];
 }
 
-export type PowerKind = 'magnet' | 'speed' | 'shield' | 'bomb';
+export type PowerKind = 'magnet' | 'speed' | 'shield' | 'bomb' | 'heal' | 'rage' | 'energy';
 
 export interface PowerUp {
   id: number;
@@ -209,7 +222,7 @@ export type SimEvent =
   | { t: 'jackpot'; n: number }
   | { t: 'steal'; from: number; to: number; n: number; sticky: boolean }
   | { t: 'weaponSteal'; from: number; to: number; weapon: WeaponKind }
-  | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | 'traffic' | 'bell' | AbilityId | WeaponKind; drop: number; x: number; z: number }
+  | { t: 'hit'; victim: number; by: number; kind: 'grab' | 'bomb' | 'traffic' | 'bell' | 'quake' | AbilityId | WeaponKind; drop: number; x: number; z: number }
   | { t: 'grab'; p: number; hit: boolean }
   | { t: 'grabStart'; p: number; facing: number }
   | { t: 'dodge'; p: number; from: number }
@@ -233,8 +246,13 @@ export type SimEvent =
   | { t: 'roundEnd'; round: number; winner: number; lost: { p: number; n: number }[] }
   | { t: 'matchEnd'; ranking: number[] }
   | { t: 'boxPick'; p: number; weapon: WeaponKind; x: number; z: number }
+  | { t: 'super'; p: number; hero: string; x: number; z: number }
+  | { t: 'superEnd'; p: number }
+  | { t: 'streak'; p: number; n: number }
+  | { t: 'twist'; mod: RoundMod }
+  | { t: 'laser'; p: number; tx: number; ty: number; tz: number; hit: number }
   | { t: 'fire'; p: number; weapon: WeaponKind; x: number; z: number; facing: number }
-  | { t: 'boom'; kind: 'rocket' | 'freeze' | 'hammer'; x: number; z: number; r: number; hits: number }
+  | { t: 'boom'; kind: 'rocket' | 'freeze' | 'hammer' | 'quake'; x: number; z: number; r: number; hits: number }
   | { t: 'hook'; p: number; target: number; x: number; z: number }
   | { t: 'slip'; p: number }
   | { t: 'frozen'; p: number }

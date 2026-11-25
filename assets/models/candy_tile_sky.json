@@ -1,29 +1,12 @@
 {
-  "name": "candy_tile_sky",
-  "query": "",
-  "title": "candy_tile_sky (Blender)",
-  "source": "file",
-  "id": "candy_tile_sky.glb",
-  "link": "",
-  "author": "Bubble Brawl",
-  "authorLink": "",
-  "licence": "own work",
-  "needsCredit": false,
-  "triangles": 120,
-  "trianglesOriginal": 120,
-  "bytes": 3248,
-  "dimensions": [
-    4.8,
-    1,
-    4.8
-  ],
-  "animations": [],
-  "skinned": false,
-  "fetched": "2026-11-24",
-  "normalized": {
-    "pivot": "centre x/z, ground y=0",
-    "height": null,
-    "rotateY": 0,
-    "forward": "+z"
-  }
+ "name": "candy_tile_sky",
+ "title": "Candy Tile Sky",
+ "source": "own",
+ "author": "Bubble Brawl (Blender, Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "centre x/y, base z=0",
+  "forward": "-Y (glTF +Z)"
+ }
 }

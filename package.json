@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "node tools/build-assets.mjs && vite",
     "build": "node tools/build-assets.mjs && tsc --noEmit && vite build",
+    "build:crazygames": "node tools/build-assets.mjs && tsc --noEmit && vite build --mode crazygames",
+    "package:crazygames": "npm run build:crazygames && python tools/package.py",
+    "assetlinks": "node tools/assetlinks.mjs",
+    "release:check": "node tools/release-check.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "assets": "node tools/build-assets.mjs",
     "model": "node scripts/fetch_model.js",
-    "test": "node tools/sim-smoke.ts && node tools/maps-smoke.ts && node tools/weapons-smoke.ts && node tools/weapons-test.ts && node tools/map-reach.ts bubblegum",
+    "test": "node tools/sim-smoke.ts && node tools/maps-smoke.ts && node tools/weapons-smoke.ts && node tools/weapons-test.ts && node tools/purchase-test.mjs && node tools/map-reach.ts bubblegum",
     "build:packed": "node tools/build-assets.mjs && tsc --noEmit && VITE_PACKED=1 vite build && node tools/pack-assets.mjs",
     "deploy": "npm run build && npx wrangler@4 deploy",
     "build:site": "npm run build && rm -rf site && cp -r dist site"

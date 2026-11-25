@@ -1,0 +1,37 @@
+.panel.shop { width: min(660px, 94vw); max-height: 94vh; overflow: auto; position: relative; display: flex; flex-direction: column; gap: 10px; }
+.shop-head { display: flex; align-items: center; gap: 14px; justify-content: center; }
+.shop-head h1 { margin: 0; }
+.shop-tabs { display: flex; gap: 8px; justify-content: center; }
+.shop-tabs button { font: 400 16px var(--display); color: #fff; background: #0e1636; border: 0; border-radius: 999px; padding: 6px 20px; box-shadow: inset 0 0 0 2px #ffffff50; cursor: pointer; }
+.shop-tabs button.on { background: var(--yellow); color: #1d0d52; }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.shop-item { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px; border: 0; border-radius: 16px; background: #0e1636c0; color: #fff; cursor: pointer; box-shadow: inset 0 0 0 2px #ffffff30; font-family: var(--body); }
+.shop-item .sw { width: 46px; height: 46px; border-radius: 50%; box-shadow: inset 0 0 0 3px #ffffff90, 0 3px 8px #0008; }
+.shop-item .sw.laser { width: 78px; height: 18px; border-radius: 99px; margin: 14px 0; }
+.shop-item b { font-size: 13px; }
+.shop-item span { font: 400 14px var(--display); display: flex; align-items: center; gap: 4px; color: var(--yellow); }
+.shop-item span .ico { width: 16px; height: 16px; }
+.shop-item.worn { box-shadow: inset 0 0 0 3px var(--green); }
+.shop-item.worn span { color: var(--green); }
+.shop-item.poor span { opacity: .55; }
+.shop-get { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+.shop-get > span { font: 400 16px var(--display); width: 100%; text-align: center; opacity: .9; }
+.shop-get .big-btn { font-size: 16px; padding: 8px 14px; min-width: 0; }
+.shop-get .big-btn small { display: block; font-size: 12px; opacity: .85; }
+.shop-get .big-btn .ico { width: 18px; height: 18px; }
+.shop-get .big-btn:disabled { filter: grayscale(.8); opacity: .7; }
+button.wallet { border: 0; cursor: pointer; font: inherit; color: inherit; }
+button.wallet em { font: 400 18px var(--display); font-style: normal; color: var(--yellow); margin-left: 2px; }
+@media (max-height: 520px) {
+  .panel.shop { gap: 5px; padding: 8px 12px 14px; }
+  .shop-head h1 { font-size: 22px; }
+  .shop-tabs button { font-size: 13px; padding: 4px 16px; }
+  .shop-grid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .shop-item { padding: 5px 3px; gap: 1px; border-radius: 12px; }
+  .shop-item .sw { width: 30px; height: 30px; }
+  .shop-item .sw.laser { width: 54px; height: 12px; margin: 9px 0; }
+  .shop-item b { font-size: 11px; }
+  .shop-item span { font-size: 12px; }
+  .shop-get > span { display: none; }
+  .shop-get .big-btn { font-size: 13px; padding: 5px 10px; }
+}

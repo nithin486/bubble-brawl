@@ -1,3 +1,5 @@
+import { bakePiece } from './arena-view.ts';
+import { heroScale } from '../../../shared/sim/ray.ts';
 import * as THREE from 'three';
 import { addOutlines } from './style.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -64,7 +66,19 @@ const HELD_PIECE: Record<WeaponKind, string> = {
   banana: 'weap_banana',
 };
 
+/** Tracks of the arms, chest and head (the rest is hips and legs). */
+const UPPER = /^(chest|head|upperarm|lowerarm|wrist|hand)/i;
+const RANGED = new Set<WeaponKind>(['blaster', 'rocket', 'hook']);
+
 const LOOPS = new Set(['1H_Ranged_Aiming', '2H_Ranged_Aiming', '2H_Melee_Idle', 'Idle', 'Running_A', 'Walking_A', 'Jump_Idle', 'Interact', 'Cheer']);
+
+const qHand = new THREE.Quaternion();
+const qAim = new THREE.Quaternion();
+const qTilt = new THREE.Quaternion();
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+
+const HELD_BAKED = new Map<THREE.Object3D, THREE.Mesh>();
 
 export class HeroView {
   root = new THREE.Group();
@@ -95,6 +109,7 @@ export class HeroView {
   readonly player: Player;
   readonly isLocal: boolean;
   celebrating = false;
+  private grow = 1;
   /** Strong carry glow only for you and the crown-holder; others get a soft one. */
   loudGlow = true;
   /** 1 = solid; lower when this hero stands in front of you in a crowd. */
@@ -139,13 +154,25 @@ export class HeroView {
           const k = new THREE.SkinnedMesh(sk.geometry, xray);
           k.bind(sk.skeleton, sk.bindMatrix);
           x = k;
-        } else x = new THREE.Mesh(m.geometry, xray);
+        } else x = new THREE.Mesh(m.geometry, xray.clone());
         x.frustumCulled = false;
         x.renderOrder = 20;
         x.userData.outline = true; // not a real part: skipped by outlines / material lists
         m.add(x);
       }
     this.root.add(this.model);
+    this.model.traverse((o) => {
+      if (/^(1H|2H)_|Knife|Axe|Sword/i.test(o.name)) this.ownArms.push(o);
+    });
+    // skinned bounds are the bind pose only, so give each mesh a roomy fixed sphere: heroes off screen are not drawn
+    this.root.updateMatrixWorld(true);
+    this.model.traverse((o) => {
+      const m = o as THREE.SkinnedMesh;
+      if (!m.isSkinnedMesh) return;
+      const scale = m.getWorldScale(new THREE.Vector3()).x || 1;
+      m.boundingSphere = new THREE.Sphere(m.worldToLocal(this.root.localToWorld(new THREE.Vector3(0, 1, 0))), 2.4 / scale);
+      m.frustumCulled = true;
+    });
     this.handR = this.model.getObjectByName('handslotr') ?? this.model.getObjectByName('handslot.r') ?? null; // (the glTF loader strips the dot from node names)
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const [name, clip] of asset.clips) {
@@ -156,6 +183,21 @@ export class HeroView {
       }
       this.actions.set(name, a);
     }
+    // split poses for gun play: legs keep running while the arms and chest hold the aim
+    const layer = (key: string, from: string, upper: boolean, loop: boolean) => {
+      const clip = asset.clips.get(from);
+      if (!clip) return;
+      const tracks = clip.tracks.filter((t) => UPPER.test(t.name) === upper);
+      const a = this.mixer.clipAction(new THREE.AnimationClip(key, clip.duration, tracks));
+      if (!loop) a.setLoop(THREE.LoopOnce, 1);
+      this.actions.set(key, a);
+      if (loop) LOOPS.add(key);
+    };
+    layer('legs:Idle', 'Idle', false, true);
+    layer('legs:Run', 'Running_A', false, true);
+    layer('aim:1H', '1H_Ranged_Aiming', true, true);
+    layer('aim:2H', '2H_Ranged_Aiming', true, true);
+    layer('aim:shoot', '1H_Ranged_Shoot', true, false);
 
     // ground ring in the player's colour (local player gets a thicker, brighter ring)
     const ringGeo = new THREE.RingGeometry(isLocal ? 0.6 : 0.72, 0.8, 40);
@@ -219,6 +261,8 @@ export class HeroView {
     const gone = (now >= this.hideFrom && now < this.hideUntil) || this.player.state === 'falling' || this.player.state === 'bubble';
     const want = gone ? null : kind;
     if (want === this.heldKind) return;
+    // put the hero's own blades away while a weapon is in hand
+    for (const m of this.ownArms) m.visible = !want;
     if (this.heldKind) {
       const o = this.heldObjs.get(this.heldKind);
       if (o) o.visible = false;
@@ -229,7 +273,13 @@ export class HeroView {
     if (!o) {
       const src = this.env?.get(HELD_PIECE[want]);
       if (!src || !this.handR) return;
-      o = src.clone(true);
+      // a held prop has up to 15 materials (15 draw calls each, per hero): bake it into one coloured mesh
+      let baked = HELD_BAKED.get(src);
+      if (!baked) {
+        const b = bakePiece(src);
+        HELD_BAKED.set(src, (baked = new THREE.Mesh(b.geo, b.mat)));
+      }
+      o = baked.clone();
       o.traverse((m) => {
         const mesh = m as THREE.Mesh;
         if (mesh.isMesh) {
@@ -253,6 +303,7 @@ export class HeroView {
         o = holder;
       }
       addOutlines(o, 0.014 / this.baseScale);
+      o.traverse((m) => (m.renderOrder = 21)); // after the see-through silhouette, which must not paint over the gun
       this.handR.add(o);
       this.heldObjs.set(want, o);
     }
@@ -285,6 +336,74 @@ export class HeroView {
     a.play();
     this.current = a;
     this.currentName = name;
+  }
+
+  private upper: THREE.AnimationAction | null = null;
+  private shootUntil = 0;
+
+  /** The arm layer on top of the legs (null = whole-body clips again). */
+  private setUpper(name: string | null, restart = false) {
+    const a = name ? (this.actions.get(name) ?? null) : null;
+    if (a === this.upper && !restart) return;
+    if (this.upper && this.upper !== a) this.upper.fadeOut(0.1);
+    if (a) {
+      a.reset();
+      a.setEffectiveWeight(1);
+      a.fadeIn(this.upper === a ? 0 : 0.08).play();
+    }
+    this.upper = a;
+  }
+
+  /** Recoil of a gun shot (arms only). */
+  shoot(now: number) {
+    this.shootUntil = now + 0.16;
+    this.setUpper('aim:shoot', true);
+    if (this.upper) this.upper.timeScale = 2.4;
+  }
+
+  /** Up / down angle of the gun (radians), from what the crosshair is on. */
+  aimPitch = 0;
+
+  /** For shader warm-up: a see-through copy of this hero (used when someone blocks your view) and the ice block. */
+  warm() {
+    const g = new THREE.Group();
+    const ghost = skeletonClone(this.model);
+    ghost.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || m.userData.outline) return;
+      const mat = (m.material as THREE.Material).clone();
+      mat.transparent = true;
+      mat.opacity = 0.35;
+      m.material = mat;
+    });
+    g.add(ghost, makeIce());
+    return g;
+  }
+
+  /** World position of the held gun's muzzle (null when no gun is shown). */
+  muzzle(out: THREE.Vector3) {
+    const o = this.heldKind && RANGED.has(this.heldKind) ? this.heldObjs.get(this.heldKind) : null;
+    if (!o) return null;
+    o.updateWorldMatrix(true, false);
+    o.getWorldPosition(out);
+    const reach = NON_KAYKIT[this.heldKind!]!.len * 0.62;
+    out.x += Math.sin(this.yaw) * Math.cos(this.aimPitch) * reach;
+    out.y += Math.sin(this.aimPitch) * reach;
+    out.z += Math.cos(this.yaw) * Math.cos(this.aimPitch) * reach;
+    return out;
+  }
+
+  /** A gun points where you aim, whatever the arm animation is doing. */
+  private pointGun() {
+    const k = this.heldKind;
+    if (!k || !RANGED.has(k) || !this.handR) return;
+    const o = this.heldObjs.get(k);
+    if (!o) return;
+    this.handR.updateWorldMatrix(true, false);
+    this.handR.getWorldQuaternion(qHand).invert();
+    // the gun models are built with the muzzle on +x
+    qAim.setFromAxisAngle(Y_AXIS, this.yaw - Math.PI / 2).multiply(qTilt.setFromAxisAngle(Z_AXIS, this.aimPitch));
+    o.quaternion.copy(qHand).multiply(qAim);
   }
 
   /** Play a one-shot clip that overrides locomotion for its length. */
@@ -330,6 +449,7 @@ export class HeroView {
   private handR: THREE.Object3D | null = null;
   private heldObjs = new Map<WeaponKind, THREE.Object3D>();
   private heldKind: WeaponKind | null = null;
+  private ownArms: THREE.Object3D[] = [];
   private hideFrom = 0;
   private hideUntil = 0;
   private facePivot = new THREE.Group();
@@ -345,7 +465,7 @@ export class HeroView {
       if (this.jumpT === 0) this.bump(0.5);
     }
     // smooth turning
-    this.yaw += angleDiff(this.yaw, p.facing) * Math.min(1, dt * 18);
+    this.yaw += angleDiff(this.yaw, p.facing) * Math.min(1, dt * (p.weapon ? 30 : 18));
     if (Math.abs(this.tumble) > 0.01) {
       const step = Math.sign(this.tumble) * Math.min(Math.abs(this.tumble), dt * 22);
       this.tumble -= step;
@@ -360,6 +480,7 @@ export class HeroView {
     this.facePivot.rotation.y = this.yaw;
 
     let footstep = false;
+    let armed = false;
     const speed = Math.hypot(p.vx, p.vz);
     const busy = now < this.oneShotUntil;
     if (this.celebrating) {
@@ -370,6 +491,18 @@ export class HeroView {
       if (this.currentName !== 'Jump_Full_Short') this.oneShot('Jump_Full_Short', now, 1.3);
     } else if (p.state === 'stunned') {
       if (this.currentName !== 'Hit_B') this.oneShot('Hit_B', now, 0.6);
+    } else if (!busy && p.weapon && RANGED.has(p.weapon) && p.state !== 'bubble') {
+      // gun out: legs follow the movement, arms hold the aim
+      const back = p.vx * Math.sin(this.yaw) + p.vz * Math.cos(this.yaw) < -0.6;
+      if (speed > 0.6) {
+        this.play('legs:Run', 0.12, (back ? -1 : 1) * (0.65 + (speed / TUNING.hero.walkSpeed) * 0.55));
+        this.dustT -= dt;
+        if (this.dustT <= 0) {
+          this.dustT = 0.22;
+          footstep = true;
+        }
+      } else this.play('legs:Idle', 0.15);
+      armed = true;
     } else if (!busy) {
       if (p.bankT > 0 && speed < 1.5) this.play('Interact', 0.15, 1.4);
       else if (speed > 0.6) {
@@ -386,6 +519,9 @@ export class HeroView {
         this.play(this.actions.has(want) ? want : 'Idle', 0.18);
       }
     }
+    if (armed) {
+      if (now >= this.shootUntil) this.setUpper(p.weapon === 'rocket' ? 'aim:2H' : 'aim:1H');
+    } else this.setUpper(null);
     const iced = now < this.iceUntil;
     if (iced) {
       if (!this.ice) {
@@ -398,11 +534,13 @@ export class HeroView {
     } else if (this.ice) this.ice.visible = false;
     if (!hitStop && !iced) this.mixer.update(dt);
     this.syncHeld(p.weapon, now);
+    this.pointGun();
 
     // squash & stretch
     this.squash *= Math.exp(-dt * 10);
     const sq = this.squash;
-    const s = this.baseScale;
+    this.grow += (heroScale(p) - this.grow) * Math.min(1, dt * 9);
+    const s = this.baseScale * this.grow;
     this.model.scale.set(s * (1 + sq * 0.5), s * (1 - sq), s * (1 + sq * 0.5));
 
     // flash on hit, blink while invulnerable

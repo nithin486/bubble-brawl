@@ -56,10 +56,10 @@ for (let seed = 1; seed <= N; seed++) {
   const rng = new Rng(seed * 7 + 1);
   const brains = w.players.map((p) => new BotBrain(p.id, new Rng(rng.int(1, 1e9)), 0));
   let winner = -1;
-  for (let s = 0; s < 60 * 120 && winner < 0; s++) {
+  for (let s = 0; s < 60 * (TUNING.match.roundSeconds + 30) && winner < 0; s++) {
     w.tick(TUNING.sim.dt, brains.map((b) => b.update(w, TUNING.sim.dt)));
     for (const e of w.events) if (e.t === 'roundEnd') winner = e.winner;
   }
   if (winner === 0) wins++;
 }
-console.log(`first-match round-1 win rate (weapons) for an average player: ${wins}/${N}`);
+console.log(`first-match win rate (weapons) for an average player: ${wins}/${N}`);

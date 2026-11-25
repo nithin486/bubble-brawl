@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "lang": "en",
+  "name": "Bubblaze",
+  "short_name": "Bubblaze",
+  "description": "A fast cartoon arena shooter: grab mystery boxes, blast your rivals and pop their bubbles.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#16204f",
+  "theme_color": "#16204f",
+  "categories": ["games"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -10,6 +10,10 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
 export interface Snapshot {
+  /** Host clock, match id, and per seat [last input number used, seconds since]. */
+  t: number;
+  m: number;
+  ack?: [number, number][];
   k: 0 | 1; // 1 = keyframe (full coin list)
   ph: number;
   pt: number;
@@ -30,6 +34,8 @@ export interface Snapshot {
   tf: number[]; // fallAt for warned tiles [index, fallAt, ...]
   /** weapons mode: boxes [id,x,z,respawn], shots [id,kind,owner,x,z,vx,vz], mines [id,owner,x,z], throws [id,owner,fx,fz,tx,tz,t,total] */
   wb?: number[][];
+  /** Between keyframes: only the boxes that are away, [id, respawn]. */
+  wr?: number[][];
   ws?: (number | string)[][];
   wm?: number[][];
   wt?: number[][];
@@ -41,7 +47,7 @@ export class SnapshotEncoder {
   private sent = new Map<number, number[]>();
   private sinceKey = 99;
 
-  encode(w: World, events: SimEvent[]): Snapshot {
+  encode(w: World, events: SimEvent[], match = 0, ack?: [number, number][]): Snapshot {
     const key = this.sinceKey++ >= 45; // a full coin list every ~3 s (and on the first send)
     if (key) this.sinceKey = 0;
     const cu: number[][] = [];
@@ -67,7 +73,11 @@ export class SnapshotEncoder {
       ts += String(t.state);
       if (t.state === 1) tf.push(i, r2(t.fallAt));
     });
+    if (!w.arena.tiles.some((t) => t.state !== 0)) ts = ''; // an untouched island needs no tile list
     return {
+      t: Math.round(w.time * 1000) / 1000,
+      m: match,
+      ...(ack ? { ack } : {}),
       k: key ? 1 : 0,
       ph: PHASES.indexOf(w.phase),
       pt: r2(w.phaseT),
@@ -82,7 +92,7 @@ export class SnapshotEncoder {
         r1(p.dashCd), r1(p.grabCd), r1(p.skillCd), r1(p.invuln), r1(p.stickyT), r2(p.bankT),
         r1(p.magnetT), r1(p.speedT), r1(p.shieldT), p.combo, p.isBot ? 1 : 0,
         p.stats.steals, p.stats.stolen, p.stats.falls, p.stats.bestBank, p.stats.banks,
-        p.hp, WEAPON_IDS.indexOf(p.weapon), p.ammo, r1(p.fireCd), r1(p.bubbleT), p.kos,
+        p.hp, WEAPON_IDS.indexOf(p.weapon), p.ammo, r1(p.fireCd), r1(p.bubbleT), p.kos, r2(p.charge), r1(p.superT), r1(p.rageT), p.gone ? 1 : 0,
       ]),
       ca: w.players.filter((p) => p.cast).map((p) => [p.id, p.cast!.kind, r2(p.cast!.t), r2(p.cast!.total)]),
       cu,
@@ -95,7 +105,9 @@ export class SnapshotEncoder {
       tf,
       ...(w.mode === 'weapons'
         ? {
-            wb: w.brawl.boxes.map((b) => [b.id, r2(b.x), r2(b.z), r1(b.respawn)]),
+            ...(key
+              ? { wb: w.brawl.boxes.map((b) => [b.id, r2(b.x), r2(b.z), r1(b.respawn)]) }
+              : { wr: w.brawl.boxes.filter((b) => b.respawn > 0).map((b) => [b.id, r1(b.respawn)]) }),
             ws: w.brawl.projectiles.map((x) => [x.id, x.kind, x.owner, r2(x.x), r2(x.z), r1(x.vx), r1(x.vz)]),
             wm: w.brawl.mines.map((m) => [m.id, m.owner, r2(m.x), r2(m.z)]),
             wt: w.brawl.throws.map((t) => [t.id, t.owner, r2(t.fx), r2(t.fz), r2(t.tx), r2(t.tz), r2(t.t), r2(t.total)]),
@@ -119,13 +131,11 @@ export function applySnapshot(w: World, s: Snapshot, targets: { x: number; z: nu
     const p = w.players[i];
     if (!p) return;
     targets[i] = { x: a[0], z: a[1], y: a[2] };
-    // the local player is predicted on this device; everyone else is smoothed toward the target
+    // positions are drawn by the guest's own smoothing (and prediction, for the local hero)
     if (i !== localId) {
       p.vx = a[3];
       p.vz = a[4];
-      p.facing = a[5];
     }
-    p.y = a[2];
     p.state = STATES[a[6]];
     p.stateT = a[7];
     p.carried = a[8];
@@ -155,6 +165,10 @@ export function applySnapshot(w: World, s: Snapshot, targets: { x: number; z: nu
       p.fireCd = a[31];
       p.bubbleT = a[32];
       p.kos = a[33];
+      p.charge = a[34] as number;
+      p.superT = a[35] as number;
+      p.rageT = a[36] as number;
+      p.gone = !!a[37];
     }
     p.cast = null;
   });
@@ -187,9 +201,10 @@ export function applySnapshot(w: World, s: Snapshot, targets: { x: number; z: nu
   w.powerups = s.pu.map((u) => ({ id: u[0] as number, kind: u[1] as PowerKind, x: u[2] as number, z: u[3] as number, age: u[4] as number }));
   w.bombs = s.bo.map((x) => ({ id: x[0], owner: x[1], x: x[2], z: x[3], fuse: x[4] }));
   w.hazards = s.hz;
-  if (s.wb) {
+  if (s.wb || s.wr) {
     const br = w.brawl;
-    br.boxes = s.wb.map((b) => ({ id: b[0], x: b[1], z: b[2], respawn: b[3] }));
+    if (s.wb) br.boxes = s.wb.map((b) => ({ id: b[0], x: b[1], z: b[2], respawn: b[3] }));
+    else for (const b of br.boxes) b.respawn = s.wr!.find((r) => r[0] === b.id)?.[1] ?? 0;
     br.projectiles = (s.ws ?? []).map((x) => ({ id: x[0] as number, kind: x[1] as 'blaster' | 'rocket', owner: x[2] as number, x: x[3] as number, z: x[4] as number, vx: x[5] as number, vz: x[6] as number, left: 1 }));
     br.mines = (s.wm ?? []).map((m) => ({ id: m[0], owner: m[1], x: m[2], z: m[3], arm: 0, life: 1 }));
     br.throws = (s.wt ?? []).map((t) => ({ id: t[0], owner: t[1], fx: t[2], fz: t[3], tx: t[4], tz: t[5], t: t[6], total: t[7] }));

@@ -129,21 +129,37 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
       }
     });
     celify(g.scene, true);
-    // mergeSkinned(g.scene); — disabled: merged skins deformed wrongly (KayKit parts); revisit
-    // normalise height using the body meshes only (weapons stick out)
-    const box = new THREE.Box3();
-    g.scene.updateMatrixWorld(true);
-    g.scene.traverse((o) => {
-      const m = o as THREE.SkinnedMesh;
-      if (m.isMesh && !/Axe|Knife|Sword|Shield|Staff|Wand|Crossbow|Spellbook|Mug|Throwable/i.test(m.name)) {
-        m.geometry.computeBoundingBox();
-        box.union(m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld));
-      }
-    });
-    const h = box.max.y - box.min.y || 2;
-    heroes.set(id, { scene: g.scene, clips, scale: 1.8 / h });
+    mergeSkinned(g.scene); // ~25 draw calls per hero down to a few
+    heroes.set(id, { scene: g.scene, clips, scale: HERO_HEIGHT / heroHeight(g.scene) });
   });
   return { heroes, env, packs: new Set<string>() };
+}
+
+/** Every hero stands this tall (the hit shape in shared/sim/ray.ts is built for it). */
+export const HERO_HEIGHT = 1.8;
+
+/**
+ * Standing height as drawn: body only (weapons stick out). A skinned part's raw vertices say nothing about its size
+ * (compression stores them in a unit box and the bones scale them back), so each vertex is posed by the skeleton first.
+ */
+export function heroHeight(root: THREE.Object3D) {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  root.traverse((o) => {
+    const m = o as THREE.SkinnedMesh;
+    if (!m.isMesh || /Axe|Knife|Sword|Shield|Staff|Wand|Crossbow|Spellbook|Mug|Throwable/i.test(m.name)) return;
+    let part: THREE.Box3;
+    if (m.isSkinnedMesh) {
+      m.skeleton.update();
+      m.computeBoundingBox();
+      part = m.boundingBox!;
+    } else {
+      m.geometry.computeBoundingBox();
+      part = m.geometry.boundingBox!;
+    }
+    box.union(part.clone().applyMatrix4(m.matrixWorld));
+  });
+  return box.max.y - box.min.y || 2;
 }
 
 /**
@@ -168,12 +184,28 @@ export function mergeSkinned(root: THREE.Object3D) {
   for (const list of groups.values()) {
     if (list.length < 2) continue;
     const first = list[0];
-    if (!list.every((m) => m.matrix.equals(first.matrix) && m.bindMatrix.equals(first.bindMatrix))) continue;
+    // Mesh quantisation bakes a different scale / offset into every part's bind matrices. Each part's vertices are
+    // therefore moved into the first part's space before merging (this is what the old merge got wrong).
+    const toFirst = (m: THREE.SkinnedMesh): THREE.Matrix4 | null => {
+      let out: THREE.Matrix4 | null = null;
+      for (let i = 0; i < m.skeleton.bones.length; i++) {
+        const j = first.skeleton.bones.indexOf(m.skeleton.bones[i]);
+        if (j < 0) continue;
+        const ref = new THREE.Matrix4().multiplyMatrices(first.skeleton.boneInverses[j], first.bindMatrix);
+        const own = new THREE.Matrix4().multiplyMatrices(m.skeleton.boneInverses[i], m.bindMatrix);
+        const c = ref.invert().multiply(own);
+        if (!out) out = c;
+        else if (c.elements.some((v, k) => Math.abs(v - out!.elements[k]) > 2e-3)) return null; // not the same for every bone
+      }
+      return out;
+    };
+    const moves = list.map(toFirst);
+    if (moves.some((m) => !m)) continue;
     // one skeleton with every bone any part uses
     const bones: THREE.Bone[] = [];
     const inverses: THREE.Matrix4[] = [];
     const indexOf = new Map<THREE.Bone, number>();
-    for (const m of list)
+    for (const m of list) // the first part comes first: its bind space is the merged mesh's
       m.skeleton.bones.forEach((bone, i) => {
         if (indexOf.has(bone)) return;
         indexOf.set(bone, bones.length);
@@ -182,7 +214,7 @@ export function mergeSkinned(root: THREE.Object3D) {
       });
     const geos: THREE.BufferGeometry[] = [];
     let ok = true;
-    for (const m of list) {
+    for (const [n, m] of list.entries()) {
       const src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
       const g = new THREE.BufferGeometry();
       for (const a of ATTRS) {
@@ -200,6 +232,10 @@ export function mergeSkinned(root: THREE.Object3D) {
         ok = false;
         break;
       }
+      g.getAttribute('position').applyMatrix4(moves[n]!);
+      const nm = new THREE.Matrix3().getNormalMatrix(moves[n]!);
+      const normal = g.getAttribute('normal') as THREE.BufferAttribute;
+      normal.applyNormalMatrix(nm);
       // remap this part's joint indices into the shared skeleton
       const idx = new Uint16Array(si.count * 4);
       for (let i = 0; i < si.count; i++) for (let c = 0; c < 4; c++) idx[i * 4 + c] = indexOf.get(m.skeleton.bones[si.getComponent(i, c)]) ?? 0;

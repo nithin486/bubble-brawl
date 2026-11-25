@@ -1,10 +1,17 @@
 {
-  // Bubble Brawl on Cloudflare Workers (static assets only — the game needs no server code yet).
-  // Deploy: npm run deploy   (needs `npx wrangler login` once, or CLOUDFLARE_API_TOKEN)
+  // Bubblaze on Cloudflare Workers: the game files are static assets (free, not counted against the daily
+  // request limit); only /api/* runs code (confirming Android coin purchases).
+  // Deploy: npm run deploy          (needs `npx wrangler@4 login` once)
+  // Secret: npx wrangler@4 secret put PLAY_SERVICE_ACCOUNT    (only for the Android app's coin packs)
   "name": "bubble-brawl",
-  "compatibility_date": "2025-06-01",
+  "compatibility_date": "2026-11-01",
+  "main": "deploy/api.js",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // keep in step with android/app.json
+  "vars": { "PLAY_PACKAGE": "in.nithin486.bubblaze" }
 }

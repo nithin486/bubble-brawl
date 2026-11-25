@@ -1,29 +1,12 @@
 {
-  "name": "candy_block",
-  "query": "",
-  "title": "candy_block (Blender)",
-  "source": "file",
-  "id": "candy_block.glb",
-  "link": "",
-  "author": "Bubble Brawl",
-  "authorLink": "",
-  "licence": "own work",
-  "needsCredit": false,
-  "triangles": 240,
-  "trianglesOriginal": 240,
-  "bytes": 5064,
-  "dimensions": [
-    4.8,
-    2.4,
-    4.8
-  ],
-  "animations": [],
-  "skinned": false,
-  "fetched": "2026-11-24",
-  "normalized": {
-    "pivot": "centre x/z, ground y=0",
-    "height": null,
-    "rotateY": 0,
-    "forward": "+z"
-  }
+ "name": "candy_block",
+ "title": "Candy Block",
+ "source": "own",
+ "author": "Bubble Brawl (Blender, Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "centre x/y, base z=0",
+  "forward": "-Y (glTF +Z)"
+ }
 }

@@ -1,3 +1,4 @@
+import { release } from './dispose.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TUNING } from '../../../shared/config/tuning.ts';
@@ -8,7 +9,7 @@ import type { Fx } from './fx.ts';
 
 /** Names, colours and icons for the six weapons (HUD, banners, pickups). */
 export const WEAPON_INFO: Record<WeaponKind, { name: string; icon: string; color: string; tip: string }> = {
-  blaster: { name: 'BUBBLE BLASTER', icon: '🫧', color: '#5fe3ff', tip: 'Rapid bubble shots' },
+  blaster: { name: 'BUBBLE LASER', icon: '🫧', color: '#5fe3ff', tip: 'Hold fire for a rapid beam' },
   rocket: { name: 'ROCKET LAUNCHER', icon: '🚀', color: '#ff7a3d', tip: 'Big boom, 2 damage' },
   banana: { name: 'BANANA TRAP', icon: '🍌', color: '#ffe14a', tip: 'Drop it behind you: chasers slip' },
   freeze: { name: 'FREEZE BOMB', icon: '❄️', color: '#9fe8ff', tip: 'Throw it: freezes everyone it hits' },
@@ -251,6 +252,8 @@ function soapBubbleMaterial() {
 /** Draws mystery boxes, shots, banana traps, freeze bombs, KO bubbles and what each hero holds. */
 export class WeaponsView {
   group = new THREE.Group();
+  /** The seat you play (set by the game each match). */
+  localId = 0;
   private world: World;
   private fx: Fx;
   private boxes = new Map<number, BoxView>();
@@ -301,16 +304,19 @@ export class WeaponsView {
 
   setWorld(world: World) {
     this.world = world;
-    for (const b of this.boxes.values()) this.group.remove(b.root);
-    for (const m of this.shots.values()) this.group.remove(m);
-    for (const m of this.mines.values()) this.group.remove(m.g);
-    for (const t of this.throws.values()) this.group.remove(t.ball, t.ring);
+    for (const b of this.boxes.values()) release(b.root);
+    for (const m of this.shots.values()) release(m);
+    for (const m of this.mines.values()) release(m.g);
+    for (const t of this.throws.values()) {
+      release(t.ball);
+      release(t.ring);
+    }
     this.boxes.clear();
     this.shots.clear();
     this.mines.clear();
     this.throws.clear();
-    for (const b of this.bubbles) this.group.remove(b);
-    for (const h of this.held) this.group.remove(h);
+    for (const b of this.bubbles) release(b);
+    for (const h of this.held) release(h);
     this.bubbles = world.players.map(() => {
       const m = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), this.bubbleMat);
       m.visible = false;
@@ -327,6 +333,84 @@ export class WeaponsView {
       return s;
     });
     this.group.visible = world.mode === 'weapons';
+  }
+
+  // ---- Bubble Laser beams: white core, cyan beam, pink glow, a flash at the gun and a burst where it lands.
+  // Normal blending: an additive beam vanishes against the pale candy ground. Pooled: nothing is allocated per shot.
+  private beams: { g: THREE.Group; mats: THREE.Material[]; parts: THREE.Mesh[]; muzzle: THREE.Sprite; end: THREE.Sprite; t: number }[] = [];
+  private beamNext = 0;
+  private static beamGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+  /** Longer than the fire interval, so holding fire draws one unbroken beam. */
+  private static LIFE = 0.26;
+
+  private makeBeam() {
+    const layers: [string, number, number][] = [['#ffffff', 0.075, 1], ['#00c8ff', 0.16, 0.92], ['#ff2fc0', 0.29, 0.42]];
+    const g = new THREE.Group();
+    const mats: THREE.Material[] = [];
+    const parts: THREE.Mesh[] = [];
+    layers.forEach(([color, r, opacity], i) => {
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, toneMapped: false, fog: false });
+      mat.userData.base = opacity;
+      const mesh = new THREE.Mesh(WeaponsView.beamGeo, mat);
+      mesh.userData.r = r;
+      mesh.renderOrder = 10 - i;
+      mesh.frustumCulled = false;
+      g.add(mesh);
+      mats.push(mat);
+      parts.push(mesh);
+    });
+    const sprite = (color: string) => new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color, transparent: true, depthWrite: false, toneMapped: false }));
+    const muzzle = sprite('#7ff3ff');
+    const end = sprite('#ff6ad5');
+    muzzle.renderOrder = end.renderOrder = 11;
+    this.group.add(g, muzzle, end);
+    return { g, mats, parts, muzzle, end, t: 0 };
+  }
+
+  /** Create the pooled beams up front so the first shot costs nothing. */
+  warm() {
+    while (this.beams.length < 14) this.beams.push(this.makeBeam());
+  }
+
+  laser(from: THREE.Vector3, to: THREE.Vector3, hit: boolean, colors: string[] = ['#ffffff', '#00c8ff', '#ff2fc0']) {
+    if (this.beams.length < 14) this.warm();
+    this.beamNext = (this.beamNext + 1) % this.beams.length;
+    const b = this.beams[this.beamNext];
+    b.g.position.copy(from);
+    b.g.lookAt(to);
+    b.g.scale.set(1, 1, from.distanceTo(to));
+    b.g.visible = b.muzzle.visible = b.end.visible = true;
+    b.muzzle.position.copy(from);
+    b.end.position.copy(to);
+    b.end.userData.s = hit ? 1.9 : 1.15;
+    b.t = WeaponsView.LIFE;
+    colors.forEach((c, i) => (b.mats[i] as THREE.MeshBasicMaterial | undefined)?.color.set(c));
+    b.muzzle.material.color.set(colors[1]);
+    b.end.material.color.set(colors[2]);
+    // bubbles shed along the beam and a pop where it lands
+    for (let k = 1; k <= 5; k++) {
+      const u = (k - Math.random()) / 5.2;
+      this.fx.emit(from.x + (to.x - from.x) * u, from.y + (to.y - from.y) * u, from.z + (to.z - from.z) * u, { n: 1, color: [colors[1], colors[2], '#ffffff'], speed: 0.8, up: 0.7, life: 0.36, size: 0.26 });
+    }
+    this.fx.emit(to.x, to.y, to.z, { n: hit ? 14 : 7, color: hit ? ['#ffffff', colors[2], colors[1]] : [colors[1], '#ffffff'], speed: hit ? 4.5 : 2.6, up: 1.3, life: 0.3, size: hit ? 0.38 : 0.26 });
+  }
+
+  private tickBeams(dt: number) {
+    for (const b of this.beams) {
+      if (!b.g.visible) continue;
+      b.t -= dt;
+      const k = Math.max(0, b.t / WeaponsView.LIFE);
+      const thin = 0.5 + 0.5 * Math.min(1, k * 2.4); // full width until the last third
+      b.parts.forEach((m, i) => {
+        m.scale.set(m.userData.r * thin, m.userData.r * thin, 1);
+        const mat = b.mats[i] as THREE.MeshBasicMaterial;
+        mat.opacity = mat.userData.base * Math.min(1, k * 3);
+      });
+      b.muzzle.scale.setScalar(0.85 * thin);
+      b.end.scale.setScalar(b.end.userData.s * (1.25 - k * 0.45));
+      b.muzzle.material.opacity = b.end.material.opacity = Math.min(1, k * 1.8);
+      if (b.t <= 0) b.g.visible = b.muzzle.visible = b.end.visible = false;
+    }
   }
 
   /** A box was opened: its weapon icon pops up out of it (called by the game on 'boxPick'). */
@@ -356,6 +440,7 @@ export class WeaponsView {
   }
 
   update(dt: number, time: number) {
+    this.tickBeams(dt);
     const w = this.world;
     if (w.mode !== 'weapons') return;
     const br = w.brawl;
@@ -475,7 +560,6 @@ export class WeaponsView {
       const u = p.t / 1.1;
       if (u >= 1) {
         this.group.remove(p.s);
-        p.s.material.dispose();
         this.pops.splice(i, 1);
         continue;
       }
@@ -627,7 +711,8 @@ export class WeaponsView {
         b.scale.set(1.15 * wob, 1.15 / wob, 1.15 * wob);
       }
       const h = this.held[i];
-      h.visible = !!p.weapon && !inBubble && p.state !== 'falling';
+      // rivals show what they carry; yours is on the rack, so nothing floats in front of your aim
+      h.visible = i !== this.localId && !!p.weapon && !inBubble && p.state !== 'falling';
       if (h.visible) {
         const tex = this.weaponTex(p.weapon!);
         if (h.material.map !== tex) {

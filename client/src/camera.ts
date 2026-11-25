@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const tmpF = new THREE.Vector3();
+const tmpA = new THREE.Vector3();
+const tmpB = new THREE.Vector3();
 
 export type CamPreset = 'third' | 'far' | 'close' | 'action' | 'bird';
 /** Presets a player can pick (bird is a dev view). */
@@ -46,6 +49,10 @@ export class CameraRig {
   /** Desired vertical FOV for this preset (Stage keeps aspect handling). */
   presetFov = 45;
 
+  /** Third person with a weapon: the camera moves over the right shoulder so the crosshair is clear of your hero. */
+  armed = false;
+  private armedS = 0;
+
   /** Vertical look (third person): 1 = default; bigger = higher, more top-down; smaller = lower, looking farther. */
   heightMul = 1;
   private heightS = 1;
@@ -62,7 +69,52 @@ export class CameraRig {
   pitch = 0;
   addPitch(d: number) {
     if (!this.turns || !d) return;
-    this.pitch = Math.min(0.55, Math.max(-0.5, this.pitch + d));
+    this.pitch = Math.min(0.6, Math.max(-0.85, this.pitch + d));
+  }
+
+  /** Where the third-person camera may not go (walls, decks, tall props). Set by the game. */
+  blocked: ((x: number, y: number, z: number) => boolean) | null = null;
+  private pull = 1;
+  private feet = 0;
+
+  /**
+   * Third-person shooter camera: over the right shoulder, looking exactly along yaw / pitch.
+   * The crosshair (screen centre) never lags, swings or re-targets: walls only pull the camera closer.
+   */
+  private shoulderCam(dt: number, hero: THREE.Vector3) {
+    this.armedS += ((this.armed ? 1 : 0) - this.armedS) * Math.min(1, dt * 9);
+    const sh = this.armedS;
+    const k = (this.presetFar - 1) * 0.5 + 1;
+    const side = 0.35 + sh * 0.6;
+    const back = (5.9 - sh * 1.2) * k * this.heightMul;
+    const lift = 0.95 - sh * 0.15;
+    this.feet = Math.abs(hero.y - this.feet) > 3 ? hero.y : this.feet + (hero.y - this.feet) * Math.min(1, dt * 14);
+    const cp = Math.cos(this.pitch);
+    const f = tmpF.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
+    const anchor = tmpA.set(hero.x + Math.cos(this.yaw) * side, this.feet + 1.55, hero.z - Math.sin(this.yaw) * side);
+    const to = tmpB.copy(anchor).addScaledVector(f, -back);
+    to.y = Math.max(this.feet + 0.45, to.y + lift);
+    // pull in front of whatever is between the shoulder and the camera
+    let free = 1;
+    if (this.blocked)
+      for (let i = 1; i <= 16; i++) {
+        const t = i / 16;
+        if (this.blocked(anchor.x + (to.x - anchor.x) * t, anchor.y + (to.y - anchor.y) * t, anchor.z + (to.z - anchor.z) * t)) {
+          free = Math.max(0.22, t - 0.09);
+          break;
+        }
+      }
+    this.pull += (free - this.pull) * Math.min(1, dt * (free < this.pull ? 22 : 4));
+    const cam = this.camera;
+    cam.position.copy(anchor).lerp(to, this.pull);
+    if (this.shakeT > 0) {
+      this.shakeT -= dt;
+      const a = this.shakeAmp * (this.shakeT / 0.3) * (this.armed ? 0.25 : 0.7);
+      cam.position.x += (Math.random() - 0.5) * a;
+      cam.position.y += (Math.random() - 0.5) * a;
+    }
+    cam.lookAt(tmpB.copy(cam.position).add(f));
+    cam.updateMatrixWorld();
   }
 
   /** Manual turn (mouse / right-side drag / Q-E). */
@@ -75,6 +127,8 @@ export class CameraRig {
   /** Point the camera behind a hero facing `facing` (sim convention: atan2(x, z)). */
   faceBehind(facing: number) {
     this.yaw = facing + Math.PI;
+    this.pitch = -0.16;
+    this.pull = 1;
   }
 
   /** Screen-relative stick → world direction, for whatever way the camera faces. */
@@ -84,10 +138,14 @@ export class CameraRig {
     return { x: mx * c + mz * s, z: -mx * s + mz * c };
   }
 
+  /** Player's chosen camera distance (1 = standard). */
+  presetFar = 1;
+
   /** Third person: while running forward and not turning by hand, swing gently behind the hero. */
   autoFollow(dt: number, facing: number, forward: number) {
     this.manualT += dt;
-    if (!this.turns || this.manualT < 1.2 || forward < 0.35) return;
+    // never while a weapon is out: the crosshair moves only when you move it
+    if (!this.turns || this.armed || this.manualT < 2.5 || forward < 0.35) return;
     let d = facing + Math.PI - this.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.yaw += d * Math.min(1, dt * 1.6 * forward);
@@ -118,6 +176,13 @@ export class CameraRig {
   }
 
   update(dt: number, focus: THREE.Vector3, lead: THREE.Vector3) {
+    if (this.turns && this.zoomTarget === 0) {
+      this.target.copy(focus);
+      this.vel.set(0, 0, 0);
+      this.zoom = 0;
+      this.shoulderCam(dt, focus);
+      return;
+    }
     // critically damped smooth-damp toward focus + lead (settles in ~0.5 s)
     const goal = new THREE.Vector3().copy(focus).addScaledVector(lead, this.leadK);
     goal.y = focus.y * 0.8;
@@ -143,10 +208,17 @@ export class CameraRig {
       off.z += Math.abs(this.pitch) * 0.6;
     }
     const yaw = this.turns ? this.yaw : 0;
+    this.armedS += ((this.armed && this.turns ? 1 : 0) - this.armedS) * Math.min(1, dt * 7);
+    const sh = this.armedS * (1 - this.zoom);
+    off.multiplyScalar(1 - sh * 0.04);
+    off.x += sh * 1.25;
+    off.y += sh * 0.15;
     off.applyAxisAngle(UP, yaw);
     this.camera.position.copy(this.target).add(off);
     const lo = this.lookOffset.clone();
     if (this.turns) lo.y += this.pitch * 7.5;
+    lo.x += sh * 1.25;
+    lo.y -= sh * 0.15;
     const look = new THREE.Vector3().copy(this.target).add(lo.applyAxisAngle(UP, yaw));
     look.y += this.zoom * 0.6;
     if (this.shakeT > 0) {

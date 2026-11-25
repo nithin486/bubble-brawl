@@ -1,4 +1,4 @@
-// Bubble Brawl on Cloudflare Workers: serves the built game (site/ in this repo) from GitHub,
+// Bubblaze on Cloudflare Workers: serves the built game (site/ in this repo) from GitHub,
 // with Cloudflare's cache in front. Deployed through the Cloudflare API; see README.
 const BASE = 'https://raw.githubusercontent.com/nithin486/bubble-brawl/claude/youthful-wright-wwuz3r/site';
 const TYPES = {
@@ -10,6 +10,7 @@ const TYPES = {
   woff2: 'font/woff2',
   woff: 'font/woff',
   png: 'image/png',
+  webp: 'image/webp',
   svg: 'image/svg+xml',
   webmanifest: 'application/manifest+json',
 };

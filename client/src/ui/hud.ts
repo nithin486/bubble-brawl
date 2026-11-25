@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { WEAPON_INFO, weaponIcon } from '../render/weapons-view.ts';
+import { WEAPON_INFO } from '../render/weapons-view.ts';
+import { weaponShot } from '../render/portraits.ts';
 import './hud.css';
 import type { World } from '../../../shared/sim/world.ts';
 import type { Player } from '../../../shared/sim/types.ts';
@@ -7,7 +8,11 @@ import { TUNING } from '../../../shared/config/tuning.ts';
 import { HEROES, type HeroId } from '../../../shared/config/heroes.ts';
 import type { InputManager } from '../input.ts';
 import { powerIconCanvas, POWER_INFO } from '../render/powerups.ts';
+import { haptics } from '../input.ts';
+import { heroScale } from '../../../shared/sim/ray.ts';
 import type { PowerKind } from '../../../shared/sim/types.ts';
+import { UI } from './icons.ts';
+import { CREDITS_HTML } from './credits.ts';
 
 export const ICONS = {
   grab: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V3.5a1.5 1.5 0 0 1 3 0V10h.5V4.5a1.5 1.5 0 0 1 3 0V11h.5V7.5a1.5 1.5 0 0 1 3 0V14c0 4.4-3.1 8-7.5 8-3 0-4.8-1.3-6.3-3.6L3.8 14.6a1.5 1.5 0 0 1 2.4-1.8L7 13.8z"/></svg>`,
@@ -32,6 +37,21 @@ const el = (tag: string, cls = '', html = '') => {
   if (html) e.innerHTML = html;
   return e;
 };
+/** Write markup only when it changed. (Reading innerHTML back never matches SVG strings and rewrote them every frame.) */
+const written = new WeakMap<Element, string>();
+function setHTML(e: Element, html: string) {
+  if (written.get(e) === html) return false;
+  written.set(e, html);
+  e.innerHTML = html;
+  return true;
+}
+/** Replay a CSS animation class on the next frame, without forcing the page to lay out. */
+function restart(e: Element, cls: string) {
+  e.classList.remove(cls);
+  requestAnimationFrame(() => e.classList.add(cls));
+}
+const powerShots = new Map<PowerKind, string>();
+const powerShot = (k: PowerKind) => powerShots.get(k) ?? (powerShots.set(k, powerIconCanvas(k, 96).toDataURL()), powerShots.get(k)!);
 const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 interface Tag {
@@ -42,6 +62,8 @@ interface Tag {
   name: HTMLElement;
   say: HTMLElement;
   sayUntil: number;
+  /** Last screen position written. */
+  at?: string;
 }
 
 /** Info the game passes each frame that the sim doesn't know (bot intent, nemesis, targeting). */
@@ -53,21 +75,21 @@ export interface HudExtra {
 }
 
 export const MOD_INFO: Record<string, { name: string; text: string; icon: string; color: string }> = {
-  none: { name: 'CLASSIC', text: 'Grab coins, steal, bank them!', icon: '🪙', color: '#ffd84a' },
-  giant: { name: 'GIANT COINS', text: 'Fewer coins, but each is worth 3', icon: '💰', color: '#ffd84a' },
-  thieves: { name: 'THIEF PARTY', text: 'Grabs steal DOUBLE and recharge fast', icon: '🖐️', color: '#ff5fd2' },
-  bombs: { name: 'BOMB RAIN', text: 'Bubble bombs fall from the sky — watch the red circles', icon: '💣', color: '#ff8a3d' },
-  turbo: { name: 'TURBO', text: 'Everyone runs 35% faster', icon: '⚡', color: '#ffd23f' },
-  magnet: { name: 'MAGNET STORM', text: 'Everyone pulls nearby coins', icon: '🧲', color: '#ff5f7a' },
-  goldrush: { name: 'GOLD RUSH', text: 'The jackpot erupts every 9 seconds', icon: '⛲', color: '#7ff3ff' },
-  double: { name: 'FINAL ROUND · DOUBLE POINTS', text: 'Every bank counts ×2 — anyone can still win!', icon: '✨', color: '#ff5fd2' },
+  none: { name: 'CLASSIC', text: 'Grab coins, steal, bank them!', icon: UI.coin, color: '#ffd84a' },
+  giant: { name: 'GIANT COINS', text: 'Fewer coins, but each is worth 3', icon: UI.coin, color: '#ffd84a' },
+  thieves: { name: 'THIEF PARTY', text: 'Grabs steal DOUBLE and recharge fast', icon: UI.gift, color: '#ff5fd2' },
+  bombs: { name: 'BOMB RAIN', text: 'Bubble bombs fall from the sky — watch the red circles', icon: UI.bomb, color: '#ff8a3d' },
+  turbo: { name: 'TURBO', text: 'Everyone runs 35% faster', icon: UI.bolt, color: '#ffd23f' },
+  magnet: { name: 'MAGNET STORM', text: 'Everyone pulls nearby coins', icon: UI.coin, color: '#ff5f7a' },
+  goldrush: { name: 'GOLD RUSH', text: 'The jackpot erupts every 9 seconds', icon: UI.coin, color: '#7ff3ff' },
+  double: { name: 'DOUBLE POINTS', text: 'Every bank counts ×2 — anyone can still win!', icon: UI.star, color: '#ff5fd2' },
   // weapons-mode twists
-  rapid: { name: 'RAPID FIRE', text: 'Every weapon reloads twice as fast', icon: '🔫', color: '#5fe3ff' },
-  ammo: { name: 'DOUBLE AMMO', text: 'Every box gives you twice the ammo', icon: '🎒', color: '#9dff7a' },
-  rockets: { name: 'ROCKET PARTY', text: 'Every mystery box is a Rocket Launcher — boom!', icon: '🚀', color: '#ff7a3d' },
-  blasters: { name: 'BLASTER BASH', text: 'Every mystery box is a Bubble Blaster', icon: '🫧', color: '#5fe3ff' },
-  frost: { name: 'DEEP FREEZE', text: 'Every mystery box is a Freeze Bomb — keep moving!', icon: '❄️', color: '#9fe8ff' },
-  boxfest: { name: 'BOX FEST', text: 'Mystery boxes come back almost instantly', icon: '🎁', color: '#ffd84a' },
+  rapid: { name: 'RAPID FIRE', text: 'Every weapon reloads twice as fast', icon: UI.bolt, color: '#5fe3ff' },
+  ammo: { name: 'DOUBLE AMMO', text: 'Every box gives you twice the ammo', icon: UI.ammo, color: '#9dff7a' },
+  rockets: { name: 'ROCKET PARTY', text: 'Every mystery box is a Rocket Launcher — boom!', icon: UI.rocket, color: '#ff7a3d' },
+  blasters: { name: 'LASER PARTY', text: 'Every mystery box is a Bubble Laser', icon: UI.bubble, color: '#5fe3ff' },
+  frost: { name: 'DEEP FREEZE', text: 'Every mystery box is a Freeze Bomb — keep moving!', icon: UI.snow, color: '#9fe8ff' },
+  boxfest: { name: 'BOX FEST', text: 'Mystery boxes come back almost instantly', icon: UI.gift, color: '#ffd84a' },
 };
 
 /** Weapons mode shows its own words for the shared twists. */
@@ -75,7 +97,7 @@ const WEAPON_MODS = ['turbo', 'bombs', 'rapid', 'ammo', 'rockets', 'blasters', '
 export function modInfo(mod: string, mode: string) {
   const base = MOD_INFO[mod] ?? MOD_INFO.none;
   if (mode !== 'weapons') return base;
-  if (mod === 'none') return { ...base, name: 'CLASSIC', text: 'Grab mystery boxes, shoot rivals, pop bubbles!', icon: '🎁' };
+  if (mod === 'none') return { ...base, name: 'CLASSIC', text: 'Grab mystery boxes, shoot rivals, pop bubbles!', icon: UI.gift };
   if (mod === 'double') return { ...base, text: 'Every KO and every pop counts ×2 — anyone can still win!' };
   if (mod === 'bombs') return { ...base, text: 'Bubble bombs fall from the sky — watch the red circles' };
   return base;
@@ -85,7 +107,7 @@ export class Hud {
   root = el('div');
   private timer = el('div', 'timer stroke');
   private roundEl = el('div', 'round stroke');
-  private finaleTag = el('div', 'finale-tag', 'FINAL 15s · ISLAND CRUMBLING');
+  private finaleTag = el('div', 'finale-tag', `FINAL ${TUNING.finale.seconds}s · ISLAND CRUMBLING`);
   private board = el('div', 'board');
   private rows: HTMLElement[] = [];
   private carryPill = el('div', 'pill carry');
@@ -98,6 +120,8 @@ export class Hud {
   private btnGrab: HTMLElement;
   private btnDash: HTMLElement;
   private skillTip = el('div', 'btn-tip stroke', 'Press SKILL!');
+  private btnUlt = el('div', 'btn ult tap');
+  private ultWas = -1;
   private fpsEl = el('div', 'fps');
   private panel: HTMLElement | null = null;
   private feedEl = el('div', 'feed');
@@ -107,6 +131,11 @@ export class Hud {
   private powersEl = el('div', 'powers');
   private powerChips = new Map<PowerKind, HTMLElement>();
   private flashEl = el('div', 'flash');
+  private rack = el('div', 'rack');
+  private slots = new Map<string, HTMLElement>();
+  private rackLabel = el('span', 'label');
+  private respawn = el('div', 'respawn', '<i></i><div><b></b><span></span></div>');
+  private lastRack = '';
   private lastCombo = 0;
   private lastCarry = -1;
   private lastBanked = -1;
@@ -138,12 +167,23 @@ export class Hud {
     const mine = el('div', 'mine');
     mine.append(this.carryPill, this.bankPill);
     this.root.append(mine, this.comboEl, this.powersEl, this.flashEl, this.bankValEl);
-    for (const k of ['magnet', 'speed', 'shield'] as PowerKind[]) {
-      const c = el('div', 'pchip', `<img src="${powerIconCanvas(k, 96).toDataURL()}"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="#ffffff40" stroke-width="4"/><circle class="t" cx="20" cy="20" r="17" fill="none" stroke="${POWER_INFO[k].color}" stroke-width="4" stroke-dasharray="106.8" transform="rotate(-90 20 20)"/></svg>`);
+    for (const k of ['magnet', 'speed', 'shield', 'rage'] as PowerKind[]) {
+      const c = el('div', 'pchip', `<img src="${powerShot(k)}"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="#ffffff40" stroke-width="4"/><circle class="t" cx="20" cy="20" r="17" fill="none" stroke="${POWER_INFO[k].color}" stroke-width="4" stroke-dasharray="106.8" transform="rotate(-90 20 20)"/></svg>`);
       this.powerChips.set(k, c);
       this.powersEl.append(c);
     }
     this.root.append(this.promptEl);
+    if (world.mode === 'weapons') {
+      for (const k of Object.keys(WEAPON_INFO) as (keyof typeof WEAPON_INFO)[]) {
+        const slot = el('div', 'slot', `<img alt="${WEAPON_INFO[k].name}" src="${weaponShot(k)}"><div class="cool"></div><b></b>`);
+        slot.style.setProperty('--wc', WEAPON_INFO[k].color);
+        this.slots.set(k, slot);
+        this.rack.append(slot);
+      }
+      this.rack.append(this.rackLabel);
+      this.root.append(this.rack);
+    }
+    this.root.append(this.respawn);
 
     // name tags
     world.players.forEach((p) => {
@@ -176,23 +216,53 @@ export class Hud {
     this.btnSkill = el('div', 'btn skill tap', `<div class="cd"></div>${ICONS[ab]}<span class="lbl">SKILL</span><span class="num"></span><span class="hits"></span>${touch ? '' : '<span class="key">K</span>'}`);
     this.btnGrab = el('div', 'btn grab tap', `<div class="cd"></div>${ICONS.grab}<span class="lbl">GRAB</span>${touch ? '' : '<span class="key">J</span>'}`);
     this.btnDash = el('div', 'btn dash tap', `<div class="cd"></div>${ICONS.dash}<span class="lbl">DASH</span>${touch ? '' : '<span class="key">SPACE</span>'}`);
+    this.btnUlt.innerHTML = `<div class="cd"></div>${UI.star}<span class="lbl">SUPER</span><span class="pct">0%</span>${touch ? '' : '<span class="key">F</span>'}`;
+    this.btnUlt.style.setProperty('--hc', HEROES[me.hero].color);
+    this.btnUlt.setAttribute('aria-label', `Super: ${HEROES[me.hero].superName}`);
+    if (world.mode === 'weapons') ctr.append(this.btnUlt);
     ctr.append(this.btnSkill, this.btnGrab, this.btnDash, this.skillTip);
     this.root.append(ctr);
-    const bind = (b: HTMLElement, k: 'dash' | 'grab' | 'skill') => {
+    const bind = (b: HTMLElement, k: 'dash' | 'grab' | 'skill' | 'ult') => {
       const down = (e: Event) => {
         e.preventDefault();
         b.classList.add('down');
         input.press(k);
+        if (touch && (k !== 'ult' || this.ultWas >= 100)) haptics.buzz(k === 'ult' ? 40 : 12);
       };
       const up = () => b.classList.remove('down');
       b.addEventListener('pointerdown', down);
       b.addEventListener('pointerup', up);
-      b.addEventListener('pointerleave', up);
+      if (k !== 'grab') b.addEventListener('pointerleave', up);
       b.addEventListener('pointercancel', up);
     };
     bind(this.btnSkill, 'skill');
     bind(this.btnGrab, 'grab');
     bind(this.btnDash, 'dash');
+    bind(this.btnUlt, 'ult');
+    // the fire button: hold to keep firing, and slide the thumb to aim while you shoot
+    let aimId = -1;
+    let ax = 0;
+    let ay = 0;
+    this.btnGrab.addEventListener('pointerdown', (e) => {
+      aimId = e.pointerId;
+      ax = e.clientX;
+      ay = e.clientY;
+      this.btnGrab.setPointerCapture(e.pointerId);
+      input.holdFire(true);
+    });
+    this.btnGrab.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== aimId) return;
+      input.look(e.clientX - ax, e.clientY - ay);
+      ax = e.clientX;
+      ay = e.clientY;
+    });
+    const release = (e: PointerEvent) => {
+      if (e.pointerId !== aimId) return;
+      aimId = -1;
+      input.holdFire(false);
+    };
+    this.btnGrab.addEventListener('pointerup', release);
+    this.btnGrab.addEventListener('pointercancel', release);
 
     // floating joystick on the left half
     const zone = el('div', 'stick-zone');
@@ -272,8 +342,17 @@ export class Hud {
     zone.addEventListener('pointercancel', end);
 
     this.root.append(this.fpsEl);
-    const rot = el('div', 'rotate', `<div class="phone"></div><div>Rotate your phone</div><div style="font-size:16px;opacity:.8">Bubble Brawl plays in landscape</div>`);
-    document.body.append(rot);
+    const rot = el('div', 'rotate', `<div class="phone"></div><div>Rotate your phone</div><div style="font-size:16px;opacity:.8">Bubblaze plays in landscape</div>`);
+    if (!document.querySelector('.rotate')) document.body.append(rot);
+  }
+
+  private netEl: HTMLElement | null = null;
+  /** Friends rooms: delay to the host, and a warning while nothing is arriving. */
+  net(ping: number, quiet: boolean) {
+    if (!this.netEl) this.root.append((this.netEl = el('div', 'netbadge')));
+    const text = quiet ? 'Weak connection…' : ping >= 0 ? `${Math.max(10, Math.round(ping / 10) * 10)} ms` : '';
+    if (this.netEl.textContent !== text) this.netEl.textContent = text;
+    this.netEl.classList.toggle('bad', quiet || ping > 250);
   }
 
   set fps(v: string) {
@@ -288,9 +367,7 @@ export class Hud {
     if (!t || t.root.style.opacity === '0') return;
     if (!t.sayUntil && this.tags.filter((x) => x.sayUntil > now).length >= 2) return;
     t.say.textContent = text;
-    t.say.classList.remove('on');
-    void t.say.offsetWidth;
-    t.say.classList.add('on');
+    restart(t.say, 'on');
     t.sayUntil = now + dur;
   }
 
@@ -298,7 +375,7 @@ export class Hud {
   roulette(mod: string, round: number, mode = 'coins') {
     const keys = mode === 'weapons' ? WEAPON_MODS : Object.keys(MOD_INFO).filter((k) => k !== 'double' && k !== 'none' && !WEAPON_MODS.includes(k));
     const card = el('div', 'roulette');
-    card.innerHTML = `<div class="rl-top stroke">ROUND ${round}</div><div class="rl-reel"><span class="rl-ic"></span></div><div class="rl-name stroke"></div><div class="rl-text"></div>`;
+    card.innerHTML = `<div class="rl-top stroke">${TUNING.match.rounds === 1 ? `${TUNING.match.roundSeconds / 60} MINUTE BRAWL` : `ROUND ${round}`}</div><div class="rl-reel"><span class="rl-ic"></span></div><div class="rl-name stroke"></div><div class="rl-text"></div>`;
     this.root.append(card);
     const ic = card.querySelector('.rl-ic') as HTMLElement;
     const nm = card.querySelector('.rl-name') as HTMLElement;
@@ -309,14 +386,14 @@ export class Hud {
     const tick = () => {
       if (i < spins) {
         const k = modInfo(keys[i % keys.length], mode);
-        ic.textContent = k.icon;
+        ic.innerHTML = k.icon;
         nm.textContent = k.name;
         nm.style.color = k.color;
         i++;
         this.onTick?.();
         setTimeout(tick, 60 + i * 18);
       } else {
-        ic.textContent = final.icon;
+        ic.innerHTML = final.icon;
         nm.textContent = final.name;
         nm.style.color = final.color;
         tx.textContent = final.text;
@@ -328,6 +405,14 @@ export class Hud {
     setTimeout(() => card.classList.add('out'), 3400);
     setTimeout(() => card.remove(), 3900);
   }
+  /** The twist changed mid-match. */
+  twist(mod: string, mode = 'weapons') {
+    const m = modInfo(mod, mode);
+    if (!m) return;
+    this.banner(m.name, mod === 'double' ? 'red' : 'gold');
+    setTimeout(() => this.banner(m.text, 'teal', true), 900);
+  }
+
   onTick: (() => void) | null = null;
   onLand: (() => void) | null = null;
 
@@ -343,7 +428,8 @@ export class Hud {
     this.timer.classList.toggle('final', world.finale && playing);
     const dots = Array.from({ length: TUNING.match.rounds }, (_, i) => `<i class="${i + 1 < world.round ? 'done' : i + 1 === world.round ? 'now' : ''}"></i>`).join('');
     const rh = `<span>ROUND ${world.round}</span>${dots}`;
-    if (this.roundEl.innerHTML !== rh) this.roundEl.innerHTML = rh;
+    setHTML(this.roundEl, rh);
+    if (TUNING.match.rounds === 1 && this.roundEl.style.display !== 'none') this.roundEl.style.display = 'none';
     this.finaleTag.classList.toggle('on', world.finale && playing);
 
     // scoreboard: total banked this match (+ this round), hidden during the finale
@@ -352,6 +438,7 @@ export class Hud {
       const r = this.rows[p.id];
       r.style.order = String(i);
       r.classList.toggle('far', i >= 3 && p.id !== localId);
+      r.classList.toggle('gone', p.gone);
       const rk = r.querySelector('.rk')!;
       if (rk.textContent !== String(i + 1)) rk.textContent = String(i + 1);
       const v = world.finale && playing && p.id !== localId ? '???' : String(p.bankedTotal + p.bankedRound);
@@ -366,7 +453,7 @@ export class Hud {
         const full = TUNING.weapons.hp;
         this.carryPill.innerHTML =
           me.state === 'bubble'
-            ? `<span class="hearts">🫧</span><small>MASH TO ESCAPE!</small>`
+            ? `${UI.bubble}<small>BUBBLED</small>`
             : `<span class="hpbar">${hpFill(me.hp, full)}<b>${Math.ceil(me.hp)}</b></span><small>HEALTH</small>`;
         this.carryPill.classList.toggle('low', me.hp <= TUNING.weapons.hitHp && me.state !== 'bubble');
         if (hpKey < this.lastCarry) this.bumpEl(this.carryPill);
@@ -374,10 +461,27 @@ export class Hud {
       }
       const pts = me.bankedTotal + me.bankedRound;
       if (pts !== this.lastBanked) {
-        this.bankPill.innerHTML = `<span style="font-size:20px">⭐</span>${pts} <small style="font-size:11px;font-family:var(--body);font-weight:900">POINTS</small>`;
+        this.bankPill.innerHTML = `${UI.star}${pts} <small style="font-size:11px;font-family:var(--body);font-weight:900">POINTS</small>`;
         if (pts > this.lastBanked && this.lastBanked >= 0) this.bumpEl(this.bankPill);
         this.lastBanked = pts;
       }
+      // the rack: which of the six you hold, its ammo and reload
+      const held = me.weapon;
+      const rackKey = `${held}:${me.ammo}:${me.state === 'bubble'}`;
+      if (rackKey !== this.lastRack) {
+        this.lastRack = rackKey;
+        for (const [k, slot] of this.slots) {
+          const on = k === held;
+          slot.classList.toggle('held', on);
+          slot.classList.toggle('empty', on && me.ammo <= 0);
+          if (on) slot.querySelector('b')!.textContent = String(me.ammo);
+          else (slot.querySelector('.cool') as HTMLElement).style.setProperty('--p', '0%');
+        }
+        this.rack.classList.toggle('off', me.state === 'bubble');
+        this.rackLabel.textContent = held ? WEAPON_INFO[held].name : '';
+        this.rack.style.setProperty('--wc', held ? WEAPON_INFO[held].color : '#fff');
+      }
+      if (held) this.cooldown(this.slots.get(held)!, me.fireCd, TUNING.weapons[held].cooldown, false, '.cool');
       // action button: weapon + ammo, or a punch
       const key = me.weapon ? `${me.weapon}:${me.ammo}` : 'punch';
       if (this.btnGrab.dataset.w !== key) {
@@ -386,7 +490,7 @@ export class Hud {
         this.btnGrab.classList.toggle('armed', !!info);
         this.btnGrab.style.setProperty('--wc', info?.color ?? '');
         const svg = this.btnGrab.querySelector('svg, .wicon');
-        const icon = info && me.weapon ? Object.assign(document.createElement('img'), { className: 'wicon', src: weaponIcon(me.weapon, 96).toDataURL() }) : null;
+        const icon = info && me.weapon ? Object.assign(document.createElement('img'), { className: 'wicon', src: weaponShot(me.weapon) }) : null;
         if (svg && icon) svg.replaceWith(icon);
         else if (svg && !icon && svg.classList.contains('wicon')) svg.outerHTML = ICONS.grab;
         this.btnGrab.querySelector('.lbl')!.textContent = info ? `x${me.ammo}` : 'PUNCH';
@@ -397,10 +501,25 @@ export class Hud {
       this.lastCarry = me.carried;
     }
     const banked = me.bankedTotal + me.bankedRound;
-    if (banked !== this.lastBanked) {
+    if (world.mode === 'coins' && banked !== this.lastBanked) {
       this.bankPill.innerHTML = `<i class="bub-ico"></i>${banked} <small style="font-size:11px;font-family:var(--body);font-weight:900">BANKED</small>`;
       if (banked > this.lastBanked && this.lastBanked >= 0) this.bumpEl(this.bankPill);
       this.lastBanked = banked;
+    }
+
+    // knocked out or fallen: say what happens next
+    const down = playing && (me.state === 'bubble' || me.state === 'falling');
+    this.respawn.classList.toggle('on', down);
+    if (down) {
+      const secs = String(Math.max(1, Math.ceil(me.stateT)));
+      const num = this.respawn.querySelector('i')!;
+      if (num.textContent !== secs) num.textContent = secs;
+      const title = me.state === 'bubble' ? 'BUBBLED!' : 'FELL OFF!';
+      const b = this.respawn.querySelector('b')!;
+      if (b.textContent !== title) {
+        b.textContent = title;
+        this.respawn.querySelector('span')!.textContent = me.state === 'bubble' ? (this.touch ? 'Tap the buttons fast to escape' : 'Mash the action keys to escape') : 'Back on the map in a moment';
+      }
     }
 
     // combo counter
@@ -414,11 +533,18 @@ export class Hud {
     }
     // active power-ups with time rings
     const P = TUNING.powerups;
-    const times: Record<string, [number, number]> = { magnet: [me.magnetT, P.magnet.seconds], speed: [me.speedT, P.speed.seconds], shield: [me.shieldT, P.shield.seconds] };
+    const WP = TUNING.weapons.pickups;
+    const times: Record<string, [number, number]> = {
+      magnet: [me.magnetT, P.magnet.seconds],
+      speed: [me.speedT, world.mode === 'weapons' ? WP.speedSeconds : P.speed.seconds],
+      shield: [me.shieldT, world.mode === 'weapons' ? WP.shieldSeconds : P.shield.seconds],
+      rage: [me.rageT, WP.rageSeconds],
+    };
+    if (world.mode === 'weapons') this.updateSuper(me);
     for (const [k, c] of this.powerChips) {
       const [t, max] = times[k];
       c.classList.toggle('on', t > 0);
-      if (t > 0) (c.querySelector('.t') as SVGCircleElement).style.strokeDashoffset = String(106.8 * (1 - t / max));
+      if (t > 0) (c.querySelector('.t') as SVGCircleElement).style.strokeDashoffset = String(106.8 * (1 - Math.min(1, t / max)));
     }
 
     // tags above heads
@@ -433,20 +559,24 @@ export class Hud {
     for (const p of order2) {
       const i = p.id;
       const t = this.tags[i];
-      this.v.set(p.x, p.y + 2.25, p.z).project(camera);
+      this.v.set(p.x, p.y + 2.25 * heroScale(p), p.z).project(camera);
       const sx = (this.v.x * 0.5 + 0.5) * w;
       const sy = (-this.v.y * 0.5 + 0.5) * h;
       const box = { x: sx - 40, y: sy - 34, w: 80, h: 34 };
       const overlaps = placed.some((q) => box.x < q.x + q.w && box.x + box.w > q.x && box.y < q.y + q.h && box.y + box.h > q.y);
       const important = prio(p) >= 200;
-      const vis = p.state !== 'falling' && this.v.z < 1 && (!overlaps || p.id === localId);
+      const vis = !p.gone && p.state !== 'falling' && this.v.z < 1 && (!overlaps || p.id === localId);
       if (vis) placed.push(box);
-      t.root.style.opacity = vis ? '1' : '0';
+      const opacity = vis ? '1' : '0';
+      if (t.root.style.opacity !== opacity) t.root.style.opacity = opacity;
       t.root.classList.toggle('compact', vis && overlaps && !important);
-      t.root.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`;
-      t.root.style.left = '0';
-      t.root.style.top = '0';
-      const crown = p.id === world.crownId ? '👑' : '';
+      // whole pixels, and only when the tag really moved
+      const at = `translate3d(${Math.round(sx)}px, ${Math.round(sy)}px, 0) translate(-50%, -100%)`;
+      if (vis && t.at !== at) {
+        t.at = at;
+        t.root.style.transform = at;
+      }
+      const crown = p.id === world.crownId ? UI.crown : '';
       const c =
         world.mode === 'weapons'
           ? p.state === 'bubble'
@@ -455,7 +585,7 @@ export class Hud {
           : p.carried > 0
             ? `${crown}<i class="coin-ico"></i>${p.carried}`
             : crown;
-      if (t.count.innerHTML !== c) t.count.innerHTML = c;
+      setHTML(t.count, c);
       // red "!" = this bot is coming for you; skull = your nemesis
       const threat = !!extra?.threats.has(p.id);
       const nem = extra?.nemesis === p.id;
@@ -488,7 +618,7 @@ export class Hud {
       const p = list[i];
       e.classList.toggle('crown', !!p && p === crownP);
       if (!p || !coinMode) e.style.display = 'none';
-      else this.edgeArrow(e, p.x, 1, p.z, camera, true, `${p === crownP ? '👑' : ''}${p.carried}`);
+      else this.edgeArrow(e, p.x, 1, p.z, camera, true, `${p === crownP ? '♛ ' : ''}${p.carried}`);
     });
 
     // what banking is worth right now (greed tiers)
@@ -498,13 +628,12 @@ export class Hud {
       me.carried > 0
         ? `<span>BANK = <b>${bv.total}</b></span>${bv.mult > 1 ? `<em>×${bv.mult}</em>` : ''}${nextTier ? `<small>${nextTier.min - me.carried} more → ×${nextTier.mult}${world.mod === 'double' ? '×2' : ''}</small>` : ''}`
         : '';
-    if (this.bankValEl.innerHTML !== bvHtml) this.bankValEl.innerHTML = bvHtml;
+    setHTML(this.bankValEl, bvHtml);
     this.bankValEl.classList.toggle('hot', bv.mult >= 1.5);
     // current twist
     const mi = modInfo(world.mod, world.mode);
     const modHtml = world.mod !== 'none' && mi ? `${mi.icon} ${mi.name}` : '';
-    if (this.modEl.innerHTML !== modHtml) this.modEl.innerHTML = modHtml;
-    this.modEl.style.display = modHtml ? 'block' : 'none';
+    if (setHTML(this.modEl, modHtml)) this.modEl.style.display = modHtml ? 'flex' : 'none';
     // buttons light up only when they'd land
     this.btnGrab.classList.toggle('can', !!extra && extra.grabTarget >= 0 && me.grabCd <= 0.05);
     this.btnSkill.classList.toggle('hot', !!extra && extra.skillHits > 0 && me.skillCd <= 0);
@@ -522,14 +651,34 @@ export class Hud {
     void now;
   }
 
-  private cooldown(b: HTMLElement, cd: number, max: number, showNum: boolean) {
-    const p = cd > 0 ? (cd / max) * 100 : 0;
-    (b.querySelector('.cd') as HTMLElement).style.setProperty('--p', `${p}%`);
+  /** The Super button fills as you fight; it glows when ready and drains while the Super runs. */
+  private updateSuper(me: Player) {
+    const S = TUNING.weapons.super;
+    const active = me.superT > 0;
+    const max = me.hero === 'ranger' ? S.overdrive.seconds : me.hero === 'pinch' ? S.rush.seconds : S.titan.seconds;
+    const pct = active ? Math.round((Math.min(1, me.superT / max) * 100) / 4) * 4 : Math.floor(me.charge * 100 + 0.001);
+    const state = active ? 'active' : pct >= 100 ? 'full' : '';
+    if (pct === this.ultWas && this.btnUlt.dataset.s === state) return;
+    this.ultWas = pct;
+    this.btnUlt.dataset.s = state;
+    (this.btnUlt.querySelector('.cd') as HTMLElement).style.setProperty('--p', `${100 - pct}%`);
+    this.btnUlt.querySelector('.pct')!.textContent = active ? '' : pct >= 100 ? (this.touch ? 'TAP!' : 'PRESS F') : `${pct}%`;
+  }
+
+  private cooldown(b: HTMLElement, cd: number, max: number, showNum: boolean, ring = '.cd') {
+    const p = cd > 0 ? Math.ceil(Math.min(1, cd / max) * 12.5) * 8 : 0; // in steps: a smooth conic gradient repaints every frame
+    const r = b.querySelector(ring) as HTMLElement;
+    if (r.dataset.p !== String(p)) {
+      r.dataset.p = String(p); // touch the DOM only when the ring actually moves
+      r.style.setProperty('--p', `${p}%`);
+    }
     if (showNum) {
       const n = b.querySelector('.num') as HTMLElement;
       const t = cd > 0 ? String(Math.ceil(cd)) : '';
-      if (n.textContent !== t) n.textContent = t;
-      (b.querySelector('svg') as SVGElement).style.opacity = cd > 0 ? '0.35' : '1';
+      if (n.textContent !== t) {
+        n.textContent = t;
+        (b.querySelector('svg') as SVGElement).style.opacity = cd > 0 ? '0.35' : '1';
+      }
     }
   }
 
@@ -559,9 +708,7 @@ export class Hud {
   }
 
   private bumpEl(e: HTMLElement) {
-    e.classList.remove('bump');
-    void e.offsetWidth;
-    e.classList.add('bump');
+    restart(e, 'bump');
   }
 
   // ---------------------------------------------------------------- moments
@@ -603,12 +750,40 @@ export class Hud {
     this.xhair.classList.toggle('armed', armed);
   }
 
+  private lockEl: HTMLElement | null = null;
+  /** Desktop: the mouse is not captured yet, so aiming needs one click. */
+  lockHint(on: boolean) {
+    if (!this.lockEl) {
+      if (!on) return;
+      this.lockEl = el('div', 'lockhint', '<b>CLICK TO AIM</b><span>Move the mouse to aim · hold left button to fire · Esc to pause</span>');
+      this.root.append(this.lockEl);
+    }
+    this.lockEl.classList.toggle('on', on);
+  }
+
+  /** The crosshair kicks open on every shot. */
+  shotKick() {
+    const x = this.xhair;
+    if (!x) return;
+    restart(x, 'kick');
+  }
+
+  private marker: HTMLElement | null = null;
+  /** The X over the crosshair that says your shot landed (gold and bigger for a knock-out). */
+  hitMarker(ko: boolean) {
+    this.marker?.remove();
+    const m = el('div', `hitx${ko ? ' ko' : ''}`, '<i></i><i></i><i></i><i></i>');
+    this.root.append(m);
+    this.marker = m;
+    setTimeout(() => m.remove(), ko ? 520 : 200);
+  }
+
   private wcard: HTMLElement | null = null;
   /** Weapon pickup card: big icon, name and what it does (slides up above the buttons, 2.2 s). */
   weaponCard(kind: keyof typeof WEAPON_INFO) {
     const info = WEAPON_INFO[kind];
     this.wcard?.remove();
-    const c = el('div', 'wcard', `<img src="${weaponIcon(kind, 128).toDataURL()}"><div><b>${info.name}</b><span>${info.tip}</span></div>`);
+    const c = el('div', 'wcard', `<img src="${weaponShot(kind)}"><div><b>${info.name}</b><span>${info.tip}</span></div>`);
     c.style.setProperty('--wc', info.color);
     this.root.append(c);
     this.wcard = c;
@@ -626,11 +801,7 @@ export class Hud {
   /** Full-screen colour flash for big moments. */
   flash(color: string, strength = 0.55) {
     this.flashEl.style.background = `radial-gradient(circle, transparent 30%, ${color})`;
-    this.flashEl.style.transition = 'none';
-    this.flashEl.style.opacity = String(strength);
-    void this.flashEl.offsetWidth;
-    this.flashEl.style.transition = 'opacity .45s ease-out';
-    this.flashEl.style.opacity = '0';
+    this.flashEl.animate([{ opacity: strength }, { opacity: 0 }], { duration: 450, easing: 'ease-out' });
   }
 
   /** Huge ability name in the hero's colour. */
@@ -692,7 +863,10 @@ export class Hud {
     if (!this.attract) this.root.classList.remove('menu');
     this.panel?.remove();
     this.panel = null;
+    if (this.panelKey) window.removeEventListener('keydown', this.panelKey);
+    this.panelKey = null;
   }
+  private panelKey: ((e: KeyboardEvent) => void) | null = null;
 
   private open(inner: HTMLElement) {
     this.closePanel();
@@ -719,7 +893,9 @@ export class Hud {
   showRoundEnd(world: World, localId: number, winner: number, lostMine: number, reward: number) {
     const p = el('div', 'panel');
     const won = winner === localId;
-    p.append(el('h1', 'stroke', won ? 'ROUND WON!' : `${world.players[winner].name} wins round ${world.round}`));
+    p.classList.toggle('win', won);
+    p.append(el('span', 'verdict', `ROUND ${world.round} OF ${TUNING.match.rounds}`));
+    p.append(el('h1', 'stroke', won ? 'ROUND WON!' : `${world.players[winner].name} takes it`));
     if (reward > 0) p.append(el('div', 'reward stroke', `+${reward} <i class="coin-ico"></i> first win bonus!`));
     p.append(this.standings(world.players, localId, (x) => x.bankedRound, () => 'this round'));
     if (lostMine > 0) p.append(el('div', 'lost', `You lost ${lostMine} unbanked coins. Bank before the bell!`));
@@ -733,14 +909,17 @@ export class Hud {
     localId: number,
     opts: {
       podium: { name: string; place: number }[];
-      unlocked: HeroId | null;
+      unlocks: { name: string; img: string }[];
+      missions: { text: string; xp: number }[];
+      next: { level: number; name: string; img: string } | null;
       coinsWon: number;
       xpWon: number;
       level: number;
       levelUp: boolean;
       xpFrac: number;
-      trial: HeroId | null;
       waitForHost?: boolean;
+      /** Watch a video to double the coins (null where there are no ads). */
+      double?: (() => Promise<boolean>) | null;
       onRematch: () => void;
       onHome: () => void;
     },
@@ -749,8 +928,10 @@ export class Hud {
     const ranking = world.ranking();
     const rank = ranking.indexOf(localId) + 1;
     const title = rank === 1 ? 'YOU WIN!' : rank === 2 ? '2nd PLACE!' : rank === 3 ? '3rd PLACE!' : `${rank}th place`;
-    p.append(el('h1', 'stroke' + (rank === 1 ? ' gold' : ''), title));
-    p.append(this.standings(world.players, localId, (x) => x.bankedTotal, (x) => `${x.roundsWon} round${x.roundsWon === 1 ? '' : 's'}`));
+    p.classList.add(rank === 1 ? 'win' : 'loss');
+    p.append(el('span', 'verdict', rank === 1 ? 'VICTORY' : rank <= 3 ? 'ON THE PODIUM' : 'DEFEAT'));
+    p.append(el('h1', 'stroke' + (rank > 3 ? ' lose' : ''), title));
+    p.append(this.standings(world.players, localId, (x) => x.bankedTotal, (x) => (world.mode === 'weapons' ? `${x.kos} KO${x.kos === 1 ? '' : 's'}` : `${x.stats.banks} banks`)));
 
     const by = (f: (x: Player) => number) => [...world.players].sort((a, b) => f(b) - f(a))[0];
     const thief = by((x) => x.stats.stolen);
@@ -767,14 +948,26 @@ export class Hud {
     rw.innerHTML = `<div class="rw-coins stroke"><i class="coin-ico"></i>+${opts.coinsWon}</div>
       <div class="rw-xp"><span class="lv">${opts.level}</span><span class="bar"><i style="width:${Math.round(opts.xpFrac * 100)}%"></i></span><b class="stroke">+${opts.xpWon} XP</b></div>`;
     p.append(rw);
+    if (opts.double) {
+      const d = el('button', 'big-btn alt tap double', `▶ DOUBLE COINS`) as HTMLButtonElement;
+      d.addEventListener('click', async () => {
+        d.disabled = true;
+        if (await opts.double!()) {
+          rw.querySelector('.rw-coins')!.innerHTML = `<i class="coin-ico"></i>+${opts.coinsWon * 2}`;
+          d.textContent = 'DOUBLED ✓';
+        } else d.textContent = 'NO VIDEO RIGHT NOW';
+      });
+      rw.append(d);
+    }
+    for (const m of opts.missions) p.append(el('div', 'mdone', `<span>MISSION COMPLETE</span><b>${m.text}</b><em>+${m.xp} XP</em>`));
     if (opts.levelUp) p.append(el('div', 'unlock stroke', `LEVEL UP! You are level ${opts.level}`));
-    if (opts.unlocked) p.append(el('div', 'unlock stroke', `<img src="${this.portraits.get(opts.unlocked)}"> NEW HERO: ${HEROES[opts.unlocked].name.toUpperCase()}!`));
-    else if (opts.trial) p.append(el('div', 'sub', `That was a free trial of ${HEROES[opts.trial].name}. Keep playing to unlock!`));
+    for (const u of opts.unlocks) p.append(el('div', 'unlock stroke', `<img src="${u.img}" alt=""> UNLOCKED: ${u.name.toUpperCase()}`));
+    if (!opts.unlocks.length && opts.next) p.append(el('div', 'sub', `Next: ${opts.next.name} at level ${opts.next.level}`));
 
     const row = el('div', 'btn-row');
-    const home = el('button', 'big-btn alt tap', 'HOME');
+    const home = el('button', 'big-btn alt tap', `${UI.home}HOME`);
     home.addEventListener('click', opts.onHome);
-    const re = el('button', 'big-btn tap', opts.waitForHost ? 'WAITING FOR HOST…' : 'REMATCH');
+    const re = el('button', 'big-btn tap', opts.waitForHost ? 'WAITING FOR HOST…' : `${UI.again}REMATCH`);
     if (opts.waitForHost) (re as HTMLButtonElement).disabled = true;
     else re.addEventListener('click', opts.onRematch);
     row.append(home, re);
@@ -785,47 +978,72 @@ export class Hud {
     const names = el('div', 'podium-names');
     names.innerHTML = opts.podium.map((x) => `<div class="pn p${x.place}"><b class="stroke">${x.place}</b><span>${x.name}</span></div>`).join('');
     v.prepend(names);
+    if (rank === 1) {
+      const colors = ['#ffd23f', '#ff5fd2', '#3fe0ff', '#7dff6a', '#ff9a3d'];
+      v.prepend(el('div', 'confetti', Array.from({ length: 24 }, (_, i) => `<i style="left:${(i * 41) % 100}%;background:${colors[i % 5]};animation-delay:-${((i * 7) % 32) / 10}s"></i>`).join('')));
+    }
     this.root.classList.add('menu');
-    re.focus();
+    re.focus({ preventScroll: true }); // your place and score stay in view
     const key = (e: KeyboardEvent) => {
       if (e.code === 'Enter' && !opts.waitForHost) {
         window.removeEventListener('keydown', key);
         opts.onRematch();
       }
     };
+    this.panelKey = key;
     window.addEventListener('keydown', key);
   }
 
+  /** Art and sound credits (CC-BY models must be named). */
+  showCredits(back: () => void) {
+    const p = el('div', 'panel menu-panel credits');
+    p.append(el('h1', 'stroke', 'Credits'));
+    p.append(el('div', 'cr', CREDITS_HTML));
+    p.append(el('div', 'cr', '<a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a>'));
+    const row = el('div', 'btn-row');
+    const b = el('button', 'big-btn tap', 'BACK');
+    b.addEventListener('click', back);
+    row.append(b);
+    p.append(row);
+    this.open(p);
+  }
+
   showPause(
-    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; canUnlockAll: boolean; camera: string },
-    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; unlockAll: () => void; camera: () => void },
+    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; camera: string; aimSpeed: string; autoFire: boolean | null; aimAssist: boolean | null; buttons: string | null; vibrate: boolean | null },
+    on: { buttons: () => void; vibrate: () => void; resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; camera: () => void; aimSpeed: () => void; autoFire: () => void; aimAssist: () => void; credits: () => void },
   ) {
-    const p = el('div', 'panel');
+    const p = el('div', 'panel menu-panel');
     p.append(el('h1', 'stroke', state.inMatch ? 'Paused' : 'Settings'));
-    const t = (label: string, val: string, onClick: () => void, isOn: boolean) => {
-      const r = el('div', 'toggle', `<span>${label}</span>`);
-      const b = el('button', isOn ? 'on' : '', val);
+    const t = (icon: string, label: string, val: string, onClick: () => void, kind: 'switch' | 'cycle' | 'act', isOn = false) => {
+      const r = el('div', 'toggle', `<span class="tl"><i>${icon}</i>${label}</span>`);
+      const b = el('button', `tap ${kind === 'act' ? '' : kind}${isOn ? ' on' : ''}`, val);
+      b.setAttribute('aria-label', `${label}: ${val}`);
       b.addEventListener('click', onClick);
       r.append(b);
       p.append(r);
     };
-    t('Sound', state.sound ? 'ON' : 'OFF', () => on.toggle('sound'), state.sound);
-    t('Screen shake', state.shake ? 'ON' : 'OFF', () => on.toggle('shake'), state.shake);
-    t('Camera view', state.camera, () => on.camera(), true);
-    t('Graphics', state.quality.toUpperCase(), () => on.quality(), true);
-    // playtest builds only: skip the unlock flow
-    if (state.canUnlockAll) t('All heroes (playtest)', 'UNLOCK', () => on.unlockAll(), false);
+    t(state.sound ? UI.soundOn : UI.soundOff, 'Sound', state.sound ? 'ON' : 'OFF', () => on.toggle('sound'), 'switch', state.sound);
+    t(UI.shake, 'Screen shake', state.shake ? 'ON' : 'OFF', () => on.toggle('shake'), 'switch', state.shake);
+    t(UI.camera, 'Camera view', state.camera, () => on.camera(), 'cycle');
+    t(UI.display, 'Graphics', state.quality.toUpperCase(), () => on.quality(), 'cycle');
+    t(UI.bolt, 'Aim speed', state.aimSpeed.toUpperCase(), () => on.aimSpeed(), 'cycle');
+    if (state.aimAssist !== null) t(UI.star, 'Aim assist', state.aimAssist ? 'ON' : 'OFF', () => on.aimAssist(), 'switch', state.aimAssist);
+    if (state.autoFire !== null) t(UI.star, 'Auto-attack', state.autoFire ? 'ON' : 'OFF', () => on.autoFire(), 'switch', state.autoFire);
+    if (state.buttons !== null) t(UI.gear, 'Button size', state.buttons.toUpperCase(), () => on.buttons(), 'cycle');
+    if (state.vibrate !== null) t(UI.shake, 'Vibration', state.vibrate ? 'ON' : 'OFF', () => on.vibrate(), 'switch', state.vibrate);
+    if (!state.inMatch) t(UI.heroes, 'Credits', 'VIEW', () => on.credits(), 'act');
     const row = el('div', 'btn-row');
     if (state.inMatch) {
-      const h = el('button', 'big-btn alt tap', 'QUIT');
+      const h = el('button', 'big-btn alt tap', `${UI.home}QUIT`);
       h.addEventListener('click', on.home);
       row.append(h);
     }
-    const b = el('button', 'big-btn tap', state.inMatch ? 'RESUME' : 'DONE');
+    const b = el('button', 'big-btn tap', state.inMatch ? `${UI.play}RESUME` : 'DONE');
     b.addEventListener('click', on.resume);
     row.append(b);
     p.append(row);
-    if (state.inMatch) p.append(el('div', 'sub', this.touch ? '' : 'Move: WASD · Dash: Space · Grab: J / click · Skill: K / right-click'));
+    if (state.inMatch && !this.touch)
+      p.append(el('div', 'keys', '<span><kbd>W A S D</kbd>Move</span><span><kbd>SPACE</kbd>Dash</span><span><kbd>J</kbd><kbd>CLICK</kbd>Fire / punch</span><span><kbd>K</kbd><kbd>RIGHT CLICK</kbd>Skill</span><span><kbd>F</kbd>Super</span>'));
     this.open(p);
   }
 }

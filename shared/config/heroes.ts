@@ -20,6 +20,9 @@ export interface HeroDef {
   abilityAnim: string;
   grabAnim: string;
   color: string; // UI accent
+  /** The charged-up special: name and what it does. */
+  superName: string;
+  superText: string;
 }
 
 export const HEROES: Record<HeroId, HeroDef> = {
@@ -35,6 +38,8 @@ export const HEROES: Record<HeroId, HeroDef> = {
     abilityAnim: 'Spellcast_Raise',
     grabAnim: 'Unarmed_Melee_Attack_Punch_A',
     color: '#7fe3ff',
+    superName: 'BONE QUAKE',
+    superText: 'A huge shockwave: damages and launches every rival around you.',
   },
   pinch: {
     id: 'pinch',
@@ -48,6 +53,8 @@ export const HEROES: Record<HeroId, HeroDef> = {
     abilityAnim: 'Dualwield_Melee_Attack_Stab',
     grabAnim: 'Dualwield_Melee_Attack_Slice',
     color: '#ff8fc8',
+    superName: 'SHADOW RUSH',
+    superText: '7 seconds of blazing speed, harder hits, endless dashes, and bots lose track of you.',
   },
   grizzle: {
     id: 'grizzle',
@@ -61,6 +68,8 @@ export const HEROES: Record<HeroId, HeroDef> = {
     abilityAnim: '2H_Melee_Attack_Chop',
     grabAnim: 'Unarmed_Melee_Attack_Punch_B',
     color: '#9dff7a',
+    superName: 'TITAN',
+    superText: 'Grow huge for 8 seconds: full health, tough, and you flatten whoever you touch.',
   },
   ranger: {
     id: 'ranger',
@@ -75,6 +84,8 @@ export const HEROES: Record<HeroId, HeroDef> = {
     abilityAnim: 'Spellcast_Raise',
     grabAnim: 'Unarmed_Melee_Attack_Punch_A',
     color: '#ff9a2e',
+    superName: 'OVERDRIVE',
+    superText: '7 seconds of an endless, faster, stronger laser.',
   },
 };
 

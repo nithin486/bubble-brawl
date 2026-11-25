@@ -2,17 +2,16 @@
 // Lives next to World and uses its movement, knockback, aim assist and events.
 import { TUNING } from '../config/tuning.ts';
 import { dirX, dirZ, facingOf, len } from './math.ts';
+import { castRay, GUN_HEIGHT } from './ray.ts';
 import { WEAPONS, type MysteryBox, type Mine, type Player, type Projectile, type Throw, type WeaponKind } from './types.ts';
 import type { World } from './world.ts';
 
 const W = TUNING.weapons;
 const HERO_R = TUNING.hero.radius;
-/** Assist cone (degrees, total) when you aim with the scope: only a rival almost under it pulls the shot. */
-export const AIMED_CONE = 12;
 /** Assist cone without the scope: shots go where you face, with only a small snap onto a rival (was 150°, felt random). */
 export const AIM_CONE = 50;
 
-export type HitKind = 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers' | 'bomb' | 'traffic' | 'bell' | WeaponKind;
+export type HitKind = 'quake' | 'grab' | 'rattleBurst' | 'groundSlam' | 'stickyFingers' | 'bomb' | 'traffic' | 'bell' | WeaponKind;
 
 export class Brawl {
   boxes: MysteryBox[] = [];
@@ -22,6 +21,9 @@ export class Brawl {
   private w: World;
   private nextId = 1;
   private clock = 0;
+  private pickupT = 0;
+  /** Titan: when each rival can be flattened again. */
+  private touchT = new Map<number, number>();
   /** Player id -> time until which weapon stuns (freeze, banana slip) can't catch them again: no stun-locking. */
   private stunImmune = new Map<number, number>();
 
@@ -69,7 +71,11 @@ export class Brawl {
       p.bubbleT = 0;
       p.lastHitBy = -1;
       p.lastHitT = 0;
+      p.charge = 0;
+      p.superT = p.rageT = p.streak = 0;
     }
+    this.pickupT = 0;
+    this.touchT.clear();
   }
 
   /** Final round: every KO and pop counts double. */
@@ -85,9 +91,10 @@ export class Brawl {
     if (w.mod === 'rockets') return 'rocket';
     if (w.mod === 'blasters') return 'blaster';
     if (w.mod === 'frost') return 'freeze';
-    const total = WEAPONS.reduce((a, k) => a + W.odds[k], 0);
+    const pool = WEAPONS;
+    const total = pool.reduce((a, k) => a + W.odds[k], 0);
     let r = w.rng.next() * total;
-    for (const k of WEAPONS) {
+    for (const k of pool) {
       r -= W.odds[k];
       if (r <= 0) return k;
     }
@@ -132,6 +139,8 @@ export class Brawl {
         break;
       }
     }
+    this.tickSupers(dt);
+    this.tickPickups(dt);
     this.tickProjectiles(dt);
     this.tickMines(dt);
     this.tickThrows(dt);
@@ -152,8 +161,6 @@ export class Brawl {
           const r = o.state === 'bubble' ? W.bubble.popRadius : HERO_R + 0.35;
           if ((o.x - s.x) ** 2 + (o.z - s.z) ** 2 > r * r) continue;
           done = true;
-          const sp = Math.hypot(s.vx, s.vz) || 1;
-          if (s.kind === 'blaster') this.damage(o, w.players[s.owner], 'blaster', W.blaster.damage, s.vx / sp, s.vz / sp, W.blaster.knock);
           break;
         }
       if (done) {
@@ -229,19 +236,162 @@ export class Brawl {
     }
   }
 
+  // ------------------------------------------------------------------ Supers, pickups, streaks
+
+  private addCharge(p: Player, n: number) {
+    // an instant Super would otherwise come round far more often than the lasting ones
+    if (p.superT <= 0) p.charge = Math.min(1, p.charge + n * (p.hero === 'bones' ? W.super.quake.chargeRate : 1));
+  }
+
+  private streak(p: Player) {
+    const w = this.w;
+    const S = W.streak;
+    p.streak++;
+    if (p.streak % S.every !== 0) return;
+    p.hp = Math.min(W.hp, p.hp + S.heal);
+    p.speedT = Math.max(p.speedT, S.speedSeconds);
+    this.addCharge(p, S.charge);
+    w.events.push({ t: 'streak', p: p.id, n: p.streak });
+  }
+
+  /** Unleash the hero's Super (the meter must be full). */
+  activateSuper(p: Player) {
+    const w = this.w;
+    const S = W.super;
+    if (p.charge < 1) return;
+    p.charge = 0;
+    w.events.push({ t: 'super', p: p.id, hero: p.hero, x: p.x, z: p.z });
+    if (p.hero === 'ranger') {
+      p.superT = S.overdrive.seconds;
+      p.weapon = 'blaster';
+      p.ammo = 999;
+      p.fireCd = 0;
+    } else if (p.hero === 'pinch') {
+      p.superT = S.rush.seconds;
+      p.hp = Math.min(W.hp, p.hp + S.rush.heal);
+      p.dashCd = 0;
+    } else if (p.hero === 'grizzle') {
+      p.superT = S.titan.seconds;
+      p.hp = W.hp;
+    } else {
+      const c = S.quake;
+      let hits = 0;
+      for (const o of w.players) {
+        if (o === p) continue;
+        const dx = o.x - p.x;
+        const dz = o.z - p.z;
+        const d = len(dx, dz);
+        if (d > c.radius + HERO_R) continue;
+        hits++;
+        this.damage(o, p, 'quake', c.damage, d > 0.01 ? dx / d : 1, d > 0.01 ? dz / d : 0, c.knock);
+      }
+      p.shieldT = Math.max(p.shieldT, c.shield);
+      w.events.push({ t: 'boom', kind: 'quake', x: p.x, z: p.z, r: c.radius, hits });
+    }
+  }
+
+  private endSuper(p: Player) {
+    if (p.superT <= 0) return;
+    p.superT = 0;
+    if (p.hero === 'ranger' && p.weapon === 'blaster' && p.ammo > 200) {
+      p.weapon = null;
+      p.ammo = 0;
+    }
+    this.w.events.push({ t: 'superEnd', p: p.id });
+  }
+
+  private tickSupers(dt: number) {
+    const w = this.w;
+    for (const p of w.players) {
+      p.rageT = Math.max(0, p.rageT - dt);
+      if (p.state !== 'bubble') this.addCharge(p, W.super.perSecond * dt);
+      if (p.superT <= 0) continue;
+      if (p.superT <= dt) {
+        this.endSuper(p);
+        continue;
+      }
+      p.superT -= dt;
+      if (p.hero === 'pinch') p.dashCd = Math.min(p.dashCd, W.super.rush.dashCooldown);
+      if (p.hero === 'grizzle') {
+        const c = W.super.titan;
+        for (const o of w.players) {
+          if (o === p || o.state === 'bubble' || (this.touchT.get(o.id) ?? 0) > this.clock) continue;
+          const dx = o.x - p.x;
+          const dz = o.z - p.z;
+          const d = len(dx, dz);
+          if (d > c.touchRadius) continue;
+          if (this.damage(o, p, 'quake', c.touchDamage, d > 0.01 ? dx / d : 1, d > 0.01 ? dz / d : 0, c.knock)) this.touchT.set(o.id, this.clock + c.touchEvery);
+        }
+      }
+    }
+  }
+
+  /** Power bubbles: health, speed, shield, damage boost and Super energy, appearing around the map. */
+  private tickPickups(dt: number) {
+    const w = this.w;
+    const P = W.pickups;
+    for (const u of w.powerups) u.age += dt;
+    w.powerups = w.powerups.filter((u) => w.arena.safe(u.x, u.z));
+    // take
+    for (let i = w.powerups.length - 1; i >= 0; i--) {
+      const u = w.powerups[i];
+      if (u.age < 0.5) continue;
+      const p = w.players.find((q) => q.state !== 'bubble' && q.state !== 'falling' && q.state !== 'launched' && (q.x - u.x) ** 2 + (q.z - u.z) ** 2 < TUNING.powerups.pickupRadius ** 2);
+      if (!p) continue;
+      w.powerups.splice(i, 1);
+      if (u.kind === 'heal') p.hp = Math.min(W.hp, p.hp + P.heal);
+      else if (u.kind === 'speed') p.speedT = P.speedSeconds;
+      else if (u.kind === 'shield') p.shieldT = P.shieldSeconds;
+      else if (u.kind === 'rage') p.rageT = P.rageSeconds;
+      else if (p.superT <= 0) p.charge = Math.min(1, p.charge + P.energy);
+      w.events.push({ t: 'power', p: p.id, kind: u.kind, x: u.x, z: u.z });
+    }
+    // spawn
+    this.pickupT += dt;
+    if (this.pickupT < (w.roundTime < P.first + 0.5 ? P.first : P.every)) return;
+    this.pickupT = 0;
+    if (w.powerups.length >= Math.round(P.max * Math.max(1, w.coinScale / 2))) return;
+    const kinds = Object.keys(P.weights) as (keyof typeof P.weights)[];
+    let r = w.rng.next() * kinds.reduce((a, k) => a + P.weights[k], 0);
+    let kind = kinds[0];
+    for (const k of kinds) {
+      r -= P.weights[k];
+      if (r <= 0) {
+        kind = k;
+        break;
+      }
+    }
+    // near a box spot: open, reachable ground
+    for (let tries = 0; tries < 40; tries++) {
+      const base = this.boxes[w.rng.int(0, this.boxes.length - 1)];
+      if (!base) return;
+      const a = w.rng.next() * Math.PI * 2;
+      const x = base.x + Math.sin(a) * (2 + w.rng.next() * 3);
+      const z = base.z + Math.cos(a) * (2 + w.rng.next() * 3);
+      if (!w.arena.safe(x, z) || !w.clear(x, z, 0.8) || !w.terrain.flatAround(x, z, 1.2)) continue;
+      const u = { id: this.nextId++, kind, x, z, age: 0 };
+      w.powerups.push(u);
+      w.events.push({ t: 'powerSpawn', id: u.id, kind, x, z });
+      return;
+    }
+  }
+
   // ------------------------------------------------------------------ firing
 
   /** The action button with a weapon in hand. Returns false if it didn't fire (cooldown). */
-  fire(p: Player, aimed?: { d: number }): boolean {
+  fire(p: Player, aimed?: { d: number; y?: number; rewind?: number }): boolean {
     const w = this.w;
     const k = p.weapon;
     if (!k || p.fireCd > 0) return false;
     const c = W[k];
-    p.fireCd = c.cooldown * (w.mod === 'rapid' ? TUNING.mods.rapid.cooldownMult : 1);
+    p.fireCd = c.cooldown * (w.mod === 'rapid' ? TUNING.mods.rapid.cooldownMult : 1) * (p.superT > 0 && p.hero === 'ranger' ? W.super.overdrive.cooldownMult : 1);
     // aim assist toward the best rival in front (a small cone when the player is aiming with the scope)
     // bots keep a wider snap (they can't fine-aim a stick), players get precise shots
-    const aim = (range: number, cone: number) => w.aimAt(p, range, aimed ? Math.min(cone, AIMED_CONE) : p.isBot ? 110 : cone);
-    if (k === 'blaster' || k === 'rocket') {
+    // a player's aim is exact (no snapping onto anyone); bots keep a wide snap because they cannot fine-aim
+    const aim = (range: number, cone: number) => (aimed && !p.isBot ? null : w.aimAt(p, range, p.isBot ? 110 : cone));
+    if (k === 'blaster') {
+      this.laser(p, aimed);
+    } else if (k === 'rocket') {
       const g = W[k];
       aim(g.range * 0.8, AIM_CONE);
       const sp = g.speed;
@@ -266,7 +416,7 @@ export class Brawl {
       }
       this.throws.push({ id: this.nextId++, owner: p.id, fx: p.x, fz: p.z, tx, tz, t: 0, total: W.freeze.flight });
     } else if (k === 'hook') {
-      const t = w.findTarget(p, W.hook.range, aimed ? 24 : W.hook.coneDeg * 2);
+      const t = w.findTarget(p, W.hook.range, aimed && !p.isBot ? 12 : W.hook.coneDeg * 2);
       // line of sight: the cable stops at the first wall, rock or mushroom in the way
       const blockedAt = t ? this.cableBlock(p.x, p.z, t.x, t.z) : null;
       if (t && !blockedAt) {
@@ -302,6 +452,29 @@ export class Brawl {
       p.ammo = 0;
     }
     return true;
+  }
+
+  /** Bubble Laser: an instant beam from the gun to exactly the point under the crosshair (bots aim at a chest, with wobble). */
+  private laser(p: Player, aimed?: { d: number; y?: number; rewind?: number }) {
+    const w = this.w;
+    const c = W.blaster;
+    const oy = p.y + GUN_HEIGHT;
+    const exact = !!aimed && !p.isBot;
+    const target = exact ? null : w.aimAt(p, c.range, p.isBot ? 110 : AIM_CONE);
+    let facing = p.facing;
+    let rise = 0; // vertical metres per horizontal metre
+    if (exact && aimed.y !== undefined) rise = (aimed.y - oy) / Math.max(0.6, aimed.d);
+    if (target) rise = (target.y + 1.0 - oy) / Math.max(0.6, len(target.x - p.x, target.z - p.z));
+    if (p.isBot) {
+      const [weak, strong] = W.botSpreadDeg;
+      facing += (w.rng.next() * 2 - 1) * (weak + (strong - weak) * w.skill) * (Math.PI / 180);
+    }
+    const n = Math.hypot(1, rise);
+    const cast = () => castRay(w, p.x, oy, p.z, dirX(facing) / n, rise / n, dirZ(facing) / n, c.range, p);
+    // a friend's shot is judged against where they saw their target
+    const hit = aimed?.rewind ? w.rewound(p.id, aimed.rewind, cast) : cast();
+    w.events.push({ t: 'laser', p: p.id, tx: hit.x, ty: hit.y, tz: hit.z, hit: hit.player?.id ?? -1 });
+    if (hit.player) this.damage(hit.player, p, 'blaster', c.damage, dirX(facing), dirZ(facing), c.knock);
   }
 
   /** First point along a→b where an obstacle (rock, tree, rail) blocks a hook cable, or null if the line is clear. */
@@ -340,6 +513,7 @@ export class Brawl {
    * (false: shielded, invulnerable, or it was a bubble pop).
    */
   damage(o: Player, by: Player | null, kind: HitKind, n: number, nx: number, nz: number, knock: number): boolean {
+    if (o.gone) return false;
     const w = this.w;
     if (o.state === 'bubble') {
       if (by && by.id !== o.id) this.pop(o, by);
@@ -347,16 +521,27 @@ export class Brawl {
     }
     if (o.state === 'falling' || o.state === 'launched' || o.invuln > 0) return false;
     if (w.shielded(o, nx, nz)) return false;
+    // damage boosts of the attacker, toughness of a Titan
+    if (by && by.id !== o.id) {
+      if (by.rageT > 0) n *= W.pickups.rageDamage;
+      if (by.superT > 0 && by.hero === 'ranger') n *= W.super.overdrive.damage;
+      if (by.superT > 0 && by.hero === 'pinch') n *= W.super.rush.damage;
+    }
+    if (o.superT > 0 && o.hero === 'grizzle') n *= W.super.titan.resist;
     o.hp = Math.max(0, o.hp - n * W.hitHp);
     if (by && by.id !== o.id) {
+      if (kind !== 'quake') this.addCharge(by, n * W.super.perHit); // a Super never refills itself
       o.lastHitBy = by.id;
       o.lastHitT = W.bubble.creditWindow;
       by.stats.hitsLanded++;
     }
     w.knock(o, nx, nz, knock);
-    o.state = 'stagger';
-    o.stateT = TUNING.hit.staggerSeconds;
-    o.cast = null;
+    // the rapid laser only flinches: a stagger on every beam would lock the victim in place
+    if (kind !== 'blaster' && !(o.superT > 0 && o.hero === 'grizzle')) {
+      o.state = 'stagger';
+      o.stateT = TUNING.hit.staggerSeconds;
+      o.cast = null;
+    }
     w.events.push({ t: 'hit', victim: o.id, by: by?.id ?? -1, kind, drop: 0, x: o.x, z: o.z });
     w.events.push({ t: 'damage', victim: o.id, by: by?.id ?? -1, n, hp: o.hp });
     if (o.hp <= 0) this.ko(o);
@@ -374,7 +559,12 @@ export class Brawl {
     if (by) {
       by.bankedRound += W.bubble.koPoints * this.pointMult();
       by.kos++;
+      this.addCharge(by, W.super.perKo);
+      this.streak(by);
     }
+    this.endSuper(o);
+    o.streak = 0;
+    o.rageT = 0;
     o.state = 'bubble';
     o.bubbleT = W.bubble.seconds;
     o.stateT = 0;
@@ -402,6 +592,7 @@ export class Brawl {
   private pop(o: Player, by: Player) {
     const w = this.w;
     by.bankedRound += W.bubble.popPoints * this.pointMult();
+    this.addCharge(by, W.super.perPop);
     w.events.push({ t: 'pop', victim: o.id, by: by.id, x: o.x, z: o.z });
     this.free(o);
   }

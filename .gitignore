@@ -8,3 +8,13 @@ service-account*.json
 client/public/assets/
 test-results/
 assets/models/_raw/
+dist-crazygames/
+android/*.keystore
+android/*.aab
+android/*.apk
+android/build/
+*.keystore
+*.jks
+# draft store pictures: npm run build && node tools/store-art.mjs
+store/
+release/

@@ -2,6 +2,8 @@
 declare const process: { argv: string[]; exit(code: number): never };
 // Run: node tools/weapons-test.ts   (also part of `npm test`)
 import { World, type MapId } from '../shared/sim/index.ts';
+import { targetable } from '../shared/sim/world.ts';
+import { DEFAULT_LOOK, adCoinsLeft, buyOrWear, cleanLook, countAd, redeem } from '../client/src/cosmetics.ts';
 import { TUNING } from '../shared/config/tuning.ts';
 import type { Player, WeaponKind } from '../shared/sim/types.ts';
 
@@ -43,7 +45,7 @@ const park = (w: World, ...except: Player[]) => {
 const give = (p: Player, k: WeaponKind, ammo = 5) => { p.weapon = k; p.ammo = ammo; p.fireCd = 0; };
 const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
 
-// ------------------------------------------------------------------ Bubble Blaster
+// ------------------------------------------------------------------ Bubble Laser
 {
   const w = arena();
   const [a, b] = w.players;
@@ -51,18 +53,172 @@ const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
   place(a, BX, BZ, Math.PI / 2); // facing +x
   place(b, BX + 8, BZ);
   give(a, 'blaster');
-  check('blaster fires', w.brawl.fire(a));
-  check('blaster cooldown blocks an instant second shot', !w.brawl.fire(a), `cd ${W.blaster.cooldown}s`);
-  run(w, 0.6);
-  check('blaster bubble hits for 1 hit of damage', hits(b.hp) === W.blaster.damage, `hp ${b.hp}`);
-  check('blaster knocks the target back', b.x > -1 + 0.01 || Math.hypot(b.kx, b.kz) > 0 || b.x > -1, `x ${b.x.toFixed(2)}`);
-  check('blaster ammo goes down', a.ammo === 4);
-  run(w, 3);
-  check('hit player recovers', b.state === 'normal');
-  place(a, BX, BZ, Math.PI / 2); place(b, BX, BZ + 7, 0);
+  w.events.length = 0;
+  check('laser fires', w.brawl.fire(a));
+  const beam = w.events.find((e) => e.t === 'laser') as { hit: number; tx: number } | undefined;
+  check('laser hits instantly', beam?.hit === b.id, `hit ${beam?.hit}`);
+  check('laser damage = tuning', Math.abs(W.hp - b.hp - W.blaster.damage * W.hitHp) < 1e-6, `hp ${b.hp.toFixed(1)}`);
+  check('laser does not stagger (no stun-lock)', b.state === 'normal', b.state);
+  check('laser cooldown blocks an instant second shot', !w.brawl.fire(a), `cd ${W.blaster.cooldown}s`);
+  check('laser ammo goes down', a.ammo === 4);
+  place(a, BX, BZ, Math.PI / 2); place(b, BX + 8, BZ + 4, 0);
   give(a, 'blaster', 1);
-  w.brawl.fire(a);
-  check('last bubble empties the weapon', a.weapon === null);
+  w.events.length = 0;
+  w.brawl.fire(a, { d: 8 });
+  const miss = w.events.find((e) => e.t === 'laser') as { hit: number } | undefined;
+  check('laser misses a rival that is not under the aim', miss?.hit === -1 && b.hp === W.hp, `hit ${miss?.hit}`);
+  check('last beam empties the weapon', a.weapon === null);
+  place(a, BX, BZ, Math.PI / 2); place(b, BX + 6, BZ);
+  w.obstacles.push({ kind: 'test', x: BX + 3, z: BZ, r: 0.6, rot: 0 });
+  give(a, 'blaster');
+  w.brawl.fire(a, { d: 6 });
+  check('laser is stopped by a prop', b.hp === W.hp, `hp ${b.hp}`);
+  w.obstacles.pop();
+  // exact aim, in three dimensions: only what is under the crosshair is hit
+  const shotAt = (y: number, side = 0) => {
+    place(a, BX, BZ, 0); place(b, BX + 8, BZ);
+    give(a, 'blaster');
+    const tz = BZ + side;
+    a.facing = Math.atan2(8, tz - BZ);
+    w.events.length = 0;
+    w.brawl.fire(a, { d: Math.hypot(8, tz - BZ), y });
+    return (w.events.find((e) => e.t === 'laser') as { hit: number }).hit === b.id;
+  };
+  check('aim at the chest hits', shotAt(1.05));
+  check('aim at the head hits', shotAt(1.75));
+  check('aim above the head misses', !shotAt(2.4));
+  check('aim 1 m to the side misses (no snapping)', !shotAt(1.05, 1.0));
+  check('aim at the edge of the body hits', shotAt(1.05, 0.45));
+  w.obstacles.push({ kind: 'dcrate', x: BX + 3, z: BZ, r: 0.6, rot: 0 });
+  check('a shot passes over a low crate', shotAt(1.2));
+  w.obstacles.pop();
+  let n = 0;
+  place(b, BX + 6, BZ);
+  while (b.state !== 'bubble' && n < 40) { a.fireCd = 0; give(a, 'blaster'); w.brawl.fire(a, { d: 6 }); place(a, BX, BZ, Math.PI / 2); b.x = BX + 6; b.z = BZ; b.kx = b.kz = 0; n++; }
+  check('about eight laser hits knock a rival out', n === Math.ceil(1 / (W.blaster.damage * W.hitHp / W.hp)), `${n} hits`);
+  // free aim: with a weapon in hand the hero faces the aim while running another way
+  const w2 = arena();
+  const [c] = w2.players;
+  park(w2, c);
+  place(c, BX, BZ, 0);
+  give(c, 'blaster');
+  w2.tick(DT, w2.players.map((q) => (q === c ? { ...noInput, mx: 0, mz: 1, aim: Math.PI / 2 } : noInput)));
+  check('armed hero faces the aim while moving', Math.abs(c.facing - Math.PI / 2) < 1e-6, c.facing.toFixed(2));
+}
+
+// ------------------------------------------------------------------ one long match, Supers, pickups, streaks
+{
+  const w = arena();
+  check('one 3-minute round', TUNING.match.rounds === 1 && TUNING.match.roundSeconds === 180);
+  const got = new Set<string>();
+  for (let i = 0; i < 400; i++) got.add((w.brawl as unknown as { roll(p: Player): string }).roll(w.players[0]));
+  if (!['rockets', 'blasters', 'frost'].includes(w.mod)) check('every weapon can come out of a box', got.size === 6, [...got].join(','));
+  const twists: number[] = [];
+  let ended = -1;
+  for (let i = 0; i < 200 / DT && ended < 0; i++) {
+    w.tick(DT, w.players.map(() => noInput));
+    for (const e of w.events) {
+      if (e.t === 'twist') twists.push(Math.round(w.roundTime));
+      if (e.t === 'matchEnd') ended = Math.round(w.roundTime);
+    }
+  }
+  check('twists change during the match, ending in double points', twists.length >= 3 && twists.at(-1) === TUNING.match.roundSeconds - TUNING.finale.seconds && w.mod === 'double', twists.join(','));
+  check('the match ends after 3 minutes', ended === 180, `${ended} s`);
+}
+{
+  const supers = ['ranger', 'bones', 'pinch', 'grizzle'] as const;
+  for (const hero of supers) {
+    const w = arena();
+    const [a, b] = w.players;
+    park(w, a, b);
+    place(a, BX, BZ, Math.PI / 2); place(b, BX + 3, BZ);
+    a.hero = hero;
+    a.charge = 0.5;
+    const use = () => w.tick(DT, w.players.map((q) => (q === a ? { ...noInput, ult: true } : noInput)));
+    use();
+    check(`${hero}: a half meter does nothing`, a.superT === 0 && b.hp === W.hp);
+    a.charge = 1; a.hp = 40; b.x = hero === 'grizzle' ? BX + 1.2 : BX + 3; b.z = BZ;
+    use();
+    w.tick(DT, w.players.map(() => noInput));
+    const ok = hero === 'ranger' ? a.superT > 0 && a.weapon === 'blaster' && a.ammo > 500 : hero === 'bones' ? b.hp < W.hp : hero === 'pinch' ? a.superT > 0 && a.hp > 40 : a.superT > 0 && a.hp === W.hp && b.hp < W.hp;
+    check(`${hero}: Super works`, ok && a.charge < 0.05, `superT ${a.superT.toFixed(1)} hp ${a.hp.toFixed(0)} rival ${b.hp.toFixed(0)}`);
+    park(w, a);
+    run(w, 9);
+    check(`${hero}: Super ends`, a.superT === 0 && (hero !== 'ranger' || a.weapon === null || a.ammo < 200));
+  }
+  const w = arena();
+  const [a, b] = w.players;
+  park(w, a, b);
+  place(a, BX, BZ); place(b, BX + 8, BZ);
+  w.brawl.damage(b, a, 'rocket', 1, 1, 0, 0);
+  check('hitting rivals charges the Super', a.charge >= W.super.perHit * W.super.quake.chargeRate - 0.001, a.charge.toFixed(2));
+  for (const kind of ['heal', 'speed', 'shield', 'rage', 'energy'] as const) {
+    place(a, BX, BZ); a.hp = 30; a.charge = 0; a.rageT = a.speedT = a.shieldT = 0;
+    w.powerups = [{ id: 999, kind, x: BX, z: BZ, age: 1 }];
+    w.tick(DT, w.players.map(() => noInput));
+    const ok = kind === 'heal' ? a.hp > 70 : kind === 'speed' ? a.speedT > 0 : kind === 'shield' ? a.shieldT > 0 : kind === 'rage' ? a.rageT > 0 : a.charge >= 0.39;
+    check(`pickup ${kind} works`, ok && !w.powerups.some((u) => u.id === 999));
+  }
+  let streaks = 0;
+  a.streak = 0;
+  for (let i = 0; i < 3; i++) {
+    place(b, BX + 8, BZ); b.hp = 1; b.state = 'normal';
+    w.events.length = 0;
+    w.brawl.damage(b, a, 'rocket', 2, 1, 0, 0);
+    streaks += w.events.filter((e) => e.t === 'streak').length;
+  }
+  check('three KOs in a row pay a streak reward', streaks === 1 && a.streak === 3);
+}
+
+// ------------------------------------------------------------------ a friend leaves the room
+{
+  const w = arena();
+  const [a, b, c] = w.players;
+  park(w, a, b, c);
+  place(a, BX, BZ, Math.PI / 2); place(b, BX + 3, BZ); place(c, BX, BZ + 6);
+  b.bankedTotal = 99;
+  w.remove(b.id);
+  check('a leaver is out of the fight', b.gone && !targetable(b) && Math.hypot(b.x - a.x, b.z - a.z) > 500);
+  const before = b.hp;
+  w.brawl.damage(b, a, 'rocket', 1, 1, 0, 0);
+  a.charge = 1;
+  run(w, 3);
+  check('a leaver is left alone', b.hp === before, `${before} -> ${b.hp}`);
+  check('a leaver ranks last whatever their score', w.ranking().at(-1) === b.id);
+  w.roundTime = TUNING.match.roundSeconds;
+  let ended = false;
+  for (let i = 0; i < 10 / DT && !ended; i++) {
+    w.tick(DT, w.players.map(() => noInput));
+    ended = w.events.some((e) => e.t === 'matchEnd');
+  }
+  check('the match still ends normally', ended && b.gone);
+}
+
+// ------------------------------------------------------------------ friends rooms: shots judged as the shooter saw them
+for (const rewind of [0, 0.25]) {
+  const w = arena();
+  w.recordPositions = true;
+  const [a, b] = w.players;
+  park(w, a, b);
+  place(a, BX, BZ, Math.PI / 2); place(b, BX + 4, BZ);
+  a.weapon = 'blaster'; a.ammo = 5; a.isBot = false;
+  run(w, 0.5); // the host remembers where b stood
+  b.z = BZ + 2.2; // …then b has moved aside by the time the shot arrives
+  const aim = { aim: Math.PI / 2, aimD: 4, aimY: b.y + 1.05 };
+  w.tick(DT, w.players.map((q) => (q === a ? { ...noInput, ...aim, grab: true, rewind } : noInput)));
+  check(rewind ? 'a delayed friend hits what they saw' : 'without delay that shot misses', rewind ? b.hp < W.hp : b.hp === W.hp, `rival ${b.hp.toFixed(0)}`);
+  check(`rewinding never moves anyone (${rewind} s)`, Math.abs(b.x - (BX + 4)) < 0.3 && Math.abs(b.z - (BZ + 2.2)) < 0.3, `${b.x.toFixed(2)}, ${b.z.toFixed(2)}`);
+}
+
+// ------------------------------------------------------------------ shop and purchases
+{
+  const wallet = { coins: 200, owned: [] as string[], look: { ...DEFAULT_LOOK }, redeemed: [] as string[], adDay: '', adCount: 0 };
+  check('an item too dear is refused', !buyOrWear(wallet, 'laser_gold') && wallet.coins === 200 && wallet.look.laser === 'laser_classic');
+  check('buying takes the coins once and wears it', buyOrWear(wallet, 'laser_lime') && wallet.coins === 50 && wallet.look.laser === 'laser_lime' && buyOrWear(wallet, 'laser_classic') && buyOrWear(wallet, 'laser_lime') && wallet.coins === 50);
+  check('a paid pack is handed out exactly once', redeem(wallet, 500, 'tok1') && !redeem(wallet, 500, 'tok1') && wallet.coins === 550);
+  check('looks from other players are cleaned', cleanLook({ laser: 'ko_gold', trail: 'nonsense', ko: 'ko_gold' }).laser === 'laser_classic' && cleanLook({ ko: 'ko_gold' }).ko === 'ko_gold' && cleanLook(null).trail === 'trail_none');
+  for (let i = 0; i < 5; i++) countAd(wallet, '2026-11-25');
+  check('videos for coins are limited per day', adCoinsLeft(wallet, '2026-11-25', 5) === 0 && adCoinsLeft(wallet, '2026-11-26', 5) === 5);
 }
 
 // ------------------------------------------------------------------ Rocket Launcher
@@ -84,7 +240,6 @@ const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
   check('rocket explosion radius = tuning', !!boom && Math.abs(boom.r - W.rocket.blast) < 1e-6, `${boom?.r}`);
   check('rocket direct hit does 2 damage (2 hits)', hits(b.hp) === W.rocket.damage || b.state === 'bubble', `hp ${b.hp}`);
   check('rocket splash reaches a nearby player', c.hp < W.hp || c.state === 'bubble', `hp ${c.hp}`);
-  check('rocket is slower than the blaster', W.rocket.speed < W.blaster.speed, `${W.rocket.speed} vs ${W.blaster.speed}`);
 }
 {
   // explosion radius, measured directly (the launcher aims itself at rivals, so we detonate at a chosen spot)

@@ -1,3 +1,4 @@
+import { release } from './dispose.ts';
 import * as THREE from 'three';
 import { addOutlines } from './style.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -60,7 +61,10 @@ export class Showcase {
   }
 
   set(slots: Slot[]) {
-    for (const v of this.views) this.scene.remove(v.root);
+    for (const v of this.views) {
+      v.mixer.stopAllAction();
+      release(v.root);
+    }
     this.views = [];
     const n = slots.length;
     slots.forEach((s, i) => {

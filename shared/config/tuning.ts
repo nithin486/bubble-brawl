@@ -9,11 +9,13 @@ export const TUNING = {
   },
 
   match: {
-    rounds: 5,
-    roundSeconds: 75,
+    rounds: 1,
+    /** Weapon Brawl: the round twist changes this often (seconds). */
+    twistEvery: 45,
+    roundSeconds: 180,
     /** Long enough to read the round twist card. */
-    countdownSeconds: 4,
-    roundEndSeconds: 4.5,
+    countdownSeconds: 3,
+    roundEndSeconds: 1.2,
     playersPerMatch: 6,
   },
 
@@ -111,7 +113,8 @@ export const TUNING = {
   },
 
   finale: {
-    seconds: 15,
+    /** The last stretch: double points while the edges crumble. */
+    seconds: 30,
     shrinkToRadius: 8,
     /** Tiles shake this long before they fall. */
     telegraph: 2,
@@ -134,6 +137,8 @@ export const TUNING = {
     fleeRange: 4,
     /** First match only: easier bots so the new player wins round 1. */
     firstMatch: {
+      /** How long into the match they stay easy. */
+      seconds: 145,
       reaction: 0.6,
       bankThreshold: 6,
       speed: 0.85,
@@ -219,8 +224,14 @@ export const TUNING = {
     groundSlam: { cooldown: 10, coneDeg: 70, range: 3.5, stun: 1, knockback: 1.5, castDelay: 0.45 },
   },
 
+  /** Shop coins are scarce on purpose: an ordinary match pays about 10, a win about 25. */
   rewards: {
-    firstRoundWinCoins: 100,
+    firstRoundWinCoins: 30,
+    perMatch: 5,
+    /** One more coin for every this many points. */
+    pointsPerCoin: 5,
+    win: 15,
+    podium: 5,
   },
 
   /** Weapons mode: mystery boxes, 6 weapons, health and Bubble KO. */
@@ -232,8 +243,11 @@ export const TUNING = {
     punchDamage: 1,
     boxes: { count: 6, respawn: 5, pickupRadius: 1.1 },
     /** Box odds (relative). */
-    odds: { blaster: 3, rocket: 2, banana: 2, freeze: 1.5, hook: 2, hammer: 2 },
-    blaster: { ammo: 8, cooldown: 0.22, speed: 20, range: 14, damage: 1, knock: 0.7 },
+    odds: { blaster: 3, rocket: 2, banana: 2, freeze: 2, hook: 2, hammer: 2 },
+    /** The Bubble Laser: an instant beam. Hold fire to keep shooting; about eight hits knock a rival out. */
+    blaster: { ammo: 26, cooldown: 0.16, range: 18, damage: 0.4, knock: 0.22 },
+    /** Bot beam wobble in degrees: [weakest, strongest] bots. */
+    botSpreadDeg: [11, 3.5],
     rocket: { ammo: 2, cooldown: 0.6, speed: 15, range: 16, damage: 2, knock: 4, blast: 1.3 },
     banana: { ammo: 3, cooldown: 0.4, trigger: 0.85, slip: 1.3, damage: 1, life: 25, arm: 0.6 },
     freeze: { ammo: 1, cooldown: 0.5, throw: 7, flight: 0.7, radius: 2.8, freeze: 1.8, damage: 1 },
@@ -254,6 +268,23 @@ export const TUNING = {
       creditWindow: 6,
     },
     respawnInvulnerable: 1.5,
+    /** Power bubbles that appear on the map: grab them mid-fight. */
+    pickups: {
+      first: 8, every: 9, max: 3,
+      weights: { heal: 3, speed: 2, shield: 2, rage: 2, energy: 2 },
+      heal: 50, rageSeconds: 8, rageDamage: 1.6, energy: 0.4, speedSeconds: 6, shieldSeconds: 10,
+    },
+    /** The Super meter (0..1) and the four hero Supers. */
+    super: {
+      /** Charge per "hit" of damage dealt, per KO, per bubble popped, and per second just playing. */
+      perHit: 0.08, perKo: 0.18, perPop: 0.1, perSecond: 0.007,
+      overdrive: { seconds: 7, speed: 1.2, damage: 1.4, cooldownMult: 0.7 },
+      quake: { radius: 8, damage: 1.6, knock: 5.5, shield: 2, chargeRate: 0.75 },
+      rush: { seconds: 7, speed: 1.55, heal: 60, dashCooldown: 0.5, damage: 1.35 },
+      titan: { seconds: 8, resist: 0.4, touchRadius: 2.1, touchDamage: 1, touchEvery: 0.6, knock: 3.5 },
+    },
+    /** Every this many KOs without being knocked out: a reward. */
+    streak: { every: 3, heal: 50, speedSeconds: 5, charge: 0.3 },
     /** After a freeze or banana slip ends you can't be stunned again for this long (no stun-locking). */
     stunImmunity: 1.2,
   },

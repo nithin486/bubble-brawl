@@ -1,0 +1,36 @@
+/* Bubblaze design system: navy glass, white bevels, gold call-to-action.
+   Every screen uses these tokens; component rules live in hud.css and home.css. */
+:root {
+  /* colour */
+  --ink: #17205a;
+  --navy: #16204f;
+  --gold-solid: #ffd23f;
+  --gold: #ffd23f;
+  --cta: linear-gradient(180deg, #fff59a, #ffcc2e 50%, #ff9f1a);
+  --glass: linear-gradient(180deg, #2a3f86e8, #16204fee);
+  --blue-hi: linear-gradient(180deg, #5cb6ff, #1f6fe6 60%, #1a57c4);
+  --red-hi: linear-gradient(180deg, #ff7d8a, #e8334d 60%, #c21f3b);
+  --ok: #7dff6a;
+  --bad: #ff5a6e;
+  /* shape */
+  --r-md: 16px;
+  --r-lg: 22px;
+  --edge: 22px; /* screen gutter */
+}
+
+/* shared surfaces */
+.glass { background: var(--glass); box-shadow: inset 0 0 0 2px #ffffff36, inset 0 2px 0 #ffffff50, 0 8px 20px #0a102c70; }
+
+/* every control: a visible keyboard focus ring and a pressed state */
+button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--gold-solid); outline-offset: 3px; }
+button:disabled { cursor: default; filter: saturate(.35) brightness(.8); }
+.round-btn:active, .mp:active { transform: translateY(2px) scale(.96); }
+.arrow:active { transform: translateY(3px) scale(.96); }
+
+svg.ico { display: inline-block; width: 1.1em; height: 1.1em; vertical-align: -0.18em; flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .motes, .play::after { display: none; }
+  .play { animation: none !important; }
+}

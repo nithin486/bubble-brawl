@@ -1,0 +1,170 @@
+[
+ {
+  "map": "desert",
+  "device": "desktop",
+  "loadMs": 13510,
+  "gpu": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "quality": "low",
+  "fps": 5.8,
+  "frameMs": {
+   "p50": 141,
+   "p95": 393.6,
+   "p99": 1414
+  },
+  "calls": {
+   "avg": 232,
+   "max": 329
+  },
+  "tris": {
+   "avg": 361198,
+   "max": 478986
+  },
+  "geometries": 152,
+  "textures": 113,
+  "heapMB": 75.7,
+  "buffer": [
+   1366,
+   768
+  ]
+ },
+ {
+  "map": "desert",
+  "device": "phone",
+  "loadMs": 6603,
+  "gpu": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "quality": "low",
+  "fps": 37.2,
+  "frameMs": {
+   "p50": 21,
+   "p95": 33.3,
+   "p99": 113.6
+  },
+  "calls": {
+   "avg": 183,
+   "max": 253
+  },
+  "tris": {
+   "avg": 307660,
+   "max": 416700
+  },
+  "geometries": 186,
+  "textures": 110,
+  "heapMB": 50.9,
+  "buffer": [
+   844,
+   390
+  ]
+ },
+ {
+  "map": "candy",
+  "device": "desktop",
+  "loadMs": 5938,
+  "gpu": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "quality": "low",
+  "fps": 10.8,
+  "frameMs": {
+   "p50": 39.2,
+   "p95": 202.5,
+   "p99": 814.6
+  },
+  "calls": {
+   "avg": 279,
+   "max": 399
+  },
+  "tris": {
+   "avg": 362346,
+   "max": 541134
+  },
+  "geometries": 169,
+  "textures": 82,
+  "heapMB": 62.6,
+  "buffer": [
+   1366,
+   768
+  ]
+ },
+ {
+  "map": "candy",
+  "device": "phone",
+  "loadMs": 5716,
+  "gpu": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "quality": "low",
+  "fps": 36.5,
+  "frameMs": {
+   "p50": 21.1,
+   "p95": 31.3,
+   "p99": 117.2
+  },
+  "calls": {
+   "avg": 159,
+   "max": 270
+  },
+  "tris": {
+   "avg": 265972,
+   "max": 405774
+  },
+  "geometries": 166,
+  "textures": 85,
+  "heapMB": 54.9,
+  "buffer": [
+   844,
+   390
+  ]
+ },
+ {
+  "map": "bubblegum",
+  "device": "desktop",
+  "loadMs": 12955,
+  "gpu": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "quality": "low",
+  "fps": 8.1,
+  "frameMs": {
+   "p50": 41,
+   "p95": 233.8,
+   "p99": 525
+  },
+  "calls": {
+   "avg": 248,
+   "max": 397
+  },
+  "tris": {
+   "avg": 512847,
+   "max": 725678
+  },
+  "geometries": 157,
+  "textures": 77,
+  "heapMB": 83,
+  "buffer": [
+   1366,
+   768
+  ]
+ },
+ {
+  "map": "bubblegum",
+  "device": "phone",
+  "loadMs": 7237,
+  "gpu": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "quality": "low",
+  "fps": 35.5,
+  "frameMs": {
+   "p50": 21.8,
+   "p95": 39.2,
+   "p99": 117.2
+  },
+  "calls": {
+   "avg": 233,
+   "max": 307
+  },
+  "tris": {
+   "avg": 428019,
+   "max": 621502
+  },
+  "geometries": 218,
+  "textures": 80,
+  "heapMB": 89,
+  "buffer": [
+   844,
+   390
+  ]
+ }
+]

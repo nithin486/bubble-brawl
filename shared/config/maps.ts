@@ -191,7 +191,7 @@ function candy(): MapDef {
     ramps.push({ x, z, rot: ascend(dx, dz), w: S, len: 7.2, h: H });
     P('ramp', x, z, 0, ascend(dx, dz));
   }
-  P('fountain', 0, 0, 0.9);
+  P('fountain', 0, 0, 1.25);
   for (const [x, z] of quad(5, 5)) P('deckpillar', x, z, 0.65);
 
   // ---- four corner castles: 2×2 blocks, one ramp from each side
@@ -217,8 +217,8 @@ function candy(): MapDef {
   for (const [x, z] of quad(16.8, 11)) long(o, 'choco', x, z, 0, 2.9 * CANDY_K, 0.25);
   for (const [x, z] of quad(26, 3)) P('pillar', x, z, 0.62);
   for (const [x, z] of quad(3, 26)) P('pillar', x, z, 0.62);
-  for (const [x, z] of quad(33, 12)) P('swirl', x, z, 0.5, x * 0.2);
-  for (const [x, z] of quad(12, 33)) P('swirl', x, z, 0.5, z * 0.2);
+  for (const [x, z] of quad(33, 12)) P('swirl', x, z, 0.82, x * 0.2);
+  for (const [x, z] of quad(12, 33)) P('swirl', x, z, 0.82, z * 0.2);
 
   return {
     id: 'candy',
@@ -379,10 +379,10 @@ export const DESERT = {
   crate: { s: 0.85, r: 0.85 },
   barrel: { s: 1.25, r: 0.5 },
   stove: { s: 1.6, r: 0.5 },
-  barrier: { s: 0.95, r: 0.42 },
+  barrier: { s: 0.95, r: 0.52 },
   car: { s: 1.25, r: 0.95 },
-  quiverA: { s: 1.3, r: 0.38 },
-  quiverB: { s: 1.7, r: 0.3 },
+  quiverA: { s: 1.3, r: 0.8 },
+  quiverB: { s: 1.7, r: 0.62 },
   dead: { s: 1.05, r: 0.25 },
 } as const;
 
@@ -400,8 +400,8 @@ function desert(): MapDef {
   for (const sz of [1, -1]) P('dstove', 0, sz * 5.2, D.stove.r, sz * 1.2);
   for (const [x, z] of quad(1.9, 4.4)) P('dcrate', x, z, D.crate.r, (x * z) * 0.12);
   // ---- concrete barrier chicanes at the yard's corners (waist-high cover with gaps to run through)
-  for (const [x, z] of quad(9.5, 6.2)) long(o, 'dbarrier', x, z, Math.PI / 2, 2.2, D.barrier.r);
-  for (const [x, z] of quad(6.2, 9.5)) long(o, 'dbarrier', x, z, 0, 2.2, D.barrier.r);
+  for (const [x, z] of quad(9.5, 6.2)) long(o, 'dbarrier', x, z, Math.PI / 2, 2.8, D.barrier.r);
+  for (const [x, z] of quad(6.2, 9.5)) long(o, 'dbarrier', x, z, 0, 2.8, D.barrier.r);
   // ---- rock cover
   for (const [x, z] of quad(13.5, 3.6)) P('dboulder', x, z, D.boulder.r, x * 0.31 + z);
   for (const [x, z] of quad(3.6, 13.5)) P('dboulder', x, z, D.boulder.r, x * 0.27 - z);
@@ -436,7 +436,7 @@ function desert(): MapDef {
     keepRadius: 15,
     coinScale: 2.4,
     bankSpots: [[1, 1], [-1, -1], [1, -1], [-1, 1], [3, 0], [-3, 0], [0, 3], [0, -3]].map(([i, j]) => ({ x: i * S, z: j * S })),
-    starts: ring(6, 12, 0),
+    starts: ring(6, 14.5, 0),
     pads: [],
     jackpot: { x: 0, z: 0, name: 'Supply Drop' },
     obstacles: o,
@@ -496,12 +496,12 @@ function bubblegum(): MapDef {
     P('bgramp', x, z, 0, ascend(dx, dz));
   }
   // fountain: the pool is solid; the lollipop posts and crystals around it get small hidden circles
-  P('bgfountain', 0, 0, 2.7);
+  P('bgfountain', 0, 0, 3.2);
   for (let k = 0; k < 8; k++) {
     const a = (k * Math.PI) / 4 + Math.PI / 8;
     P('bgfountain', Math.sin(a) * 3.35, Math.cos(a) * 3.35, 0.27, 0, true);
   }
-  for (const [x, z] of quad(2.75, 2.75)) P('bgfountain', x, z, 0.5, 0, true);
+  for (const [x, z] of quad(2.75, 2.75)) P('bgfountain', x, z, 1.05, 0, true);
 
   // ---- central island ground: gumball machines on the diagonals, mushrooms, crystals, gate pillars at the bridges
   // (every gap between two things is at least 1.4 m: heroes are 0.9 m wide and bots must never wedge)

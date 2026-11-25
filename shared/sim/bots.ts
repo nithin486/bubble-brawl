@@ -84,7 +84,8 @@ export class BotBrain {
 
   /** Easy mode is active in round 1 of the player's first match. */
   private easy(w: World) {
-    return w.firstMatch && w.round === 1 && this.id !== this.humanId;
+    // the opening of a newcomer's first match: bots go easy, then wake up
+    return w.firstMatch && w.roundTime < B.firstMatch.seconds && this.id !== this.humanId;
   }
 
   newRound() {
@@ -98,10 +99,13 @@ export class BotBrain {
     if (w.phase !== 'playing' || me.state === 'falling' || me.state === 'launched') return NO_INPUT;
     // trapped in a KO bubble: mash to break out
     if (me.state === 'bubble') return { ...NO_INPUT, grab: this.rng.next() < (this.easy(w) ? 0.05 : 0.15) };
+    // Super ready and a rival within reach: use it (weaker bots hesitate)
+    if (me.charge >= 1 && w.mode === 'weapons' && !this.easy(w) && this.rng.next() < dt * (0.25 + w.skill) && w.players.some((o) => o !== me && targetable(o) && Math.hypot(o.x - me.x, o.z - me.z) < (me.hero === 'bones' ? 6 : 12)))
+      return { ...NO_INPUT, ult: true };
     this.thinkT -= dt;
     if (this.thinkT <= 0) {
       this.thinkT += 1 / B.thinkHz;
-      const reaction = this.easy(w) ? B.firstMatch.reaction : this.reaction;
+      const reaction = this.easy(w) ? B.firstMatch.reaction : this.reaction * (1.45 - 0.75 * w.skill);
       this.queue.push({ ...this.think(w, me), due: this.clock + reaction });
     }
     // reflex: see an attack winding up at me → maybe dash out (one roll per attack)
@@ -149,7 +153,7 @@ export class BotBrain {
     let dx = wp.x - me.x;
     let dz = wp.z - me.z;
     const d = len(dx, dz);
-    const speed = this.easy(w) ? B.firstMatch.speed : this.speed;
+    const speed = this.easy(w) ? B.firstMatch.speed : this.speed * (0.9 + 0.14 * w.skill);
     let mx = 0;
     let mz = 0;
     if (d > 0.25) {
@@ -428,6 +432,9 @@ export class BotBrain {
       return { mode: 'steal', tx: bubble.x, tz: bubble.z, dash: d > 3 && me.dashCd <= 0 && this.rng.next() < 0.3, grab: shoot ? d < 9 : d < 2.2, skill: false };
     }
     const rivals = w.players.filter((o) => o !== me && targetable(o) && o.state !== 'bubble' && canHit(o));
+    // a power bubble close by is worth a detour (health when hurt, anything else if nobody is on top of me)
+    const goody = w.powerups.filter((u) => dist(u) < 9 && (u.kind !== 'heal' || me.hp < 70) && w.arena.safe(u.x, u.z)).sort((a, b) => dist(a) - dist(b))[0];
+    if (goody && !easy && (me.hp < 50 || !rivals.some((o) => dist(o) < 4))) return { ...idle, mode: 'collect', tx: goody.x, tz: goody.z, grab: !!me.weapon && rivals.some((o) => dist(o) < 8) };
     // no weapon: nearest box (or punch whoever is right here)
     if (!me.weapon) {
       const close = rivals.find((o) => dist(o) < 1.8);
@@ -461,7 +468,7 @@ export class BotBrain {
     tz += ux * side;
     // banana: drop it when someone is chasing right behind
     const chaser = k === 'banana' && rivals.some((o) => dist(o) < 4 && (me.x - o.x) * Math.sin(me.facing) + (me.z - o.z) * Math.cos(me.facing) > 0);
-    const fire = (inRange || chaser) && me.fireCd <= 0 && this.rng.next() < (easy ? 0.25 : 0.7);
+    const fire = (inRange || chaser) && me.fireCd <= 0 && this.rng.next() < (easy ? 0.2 : 0.28 + 0.55 * w.skill);
     return { mode: 'steal', tx, tz, dash: d > 9 && me.dashCd <= 0 && this.rng.next() < 0.2, grab: fire, skill: this.wantSkill(w, me, rivals) };
   }
 

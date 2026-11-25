@@ -39,7 +39,7 @@ function shared(key: string, make: () => THREE.BufferGeometry) {
 }
 const disposeMesh = (mesh: THREE.Mesh) => {
   if (!mesh.geometry.userData.shared) mesh.geometry.dispose();
-  (mesh.material as THREE.Material).dispose();
+  // (the material is left to the garbage collector: disposing it would delete its shader and stall the next effect)
 };
 
 export class Fx {

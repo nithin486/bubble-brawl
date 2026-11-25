@@ -1,13 +1,16 @@
+import { release } from './render/dispose.ts';
+import { castRay, propHeight, GUN_HEIGHT } from '../../shared/sim/ray.ts';
 import * as THREE from 'three';
-import { World } from '../../shared/sim/world.ts';
+import { World, targetable } from '../../shared/sim/world.ts';
 import { BotBrain } from '../../shared/sim/bots.ts';
 import { Rng } from '../../shared/sim/math.ts';
-import { NO_INPUT, type Input, type SimEvent } from '../../shared/sim/types.ts';
+import { NO_INPUT, type Input, type Player, type SimEvent } from '../../shared/sim/types.ts';
 import { TUNING } from '../../shared/config/tuning.ts';
 import { HEROES, HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 import { Stage, isTouch, type Quality } from './render/stage.ts';
 import { loadModel } from './render/models.ts';
 import { WeaponsView, WEAPON_INFO } from './render/weapons-view.ts';
+import { weaponShot } from './render/portraits.ts';
 import { loadPack, type Assets } from './render/assets.ts';
 import { ArenaView } from './render/arena-view.ts';
 import { MAPS, MAP_ROTATION, MAP_PACK, type MapId } from '../../shared/config/maps.ts';
@@ -16,16 +19,22 @@ import { CoinsView } from './render/coins.ts';
 import { BankView } from './render/bank.ts';
 import { Fx, makeGlowTexture } from './render/fx.ts';
 import { CameraRig, CAM_PRESETS, type CamPreset, type PlayerCam } from './camera.ts';
-import { InputManager } from './input.ts';
+import { InputManager, haptics } from './input.ts';
+import { platform, type AdHooks, type Product } from './platform/index.ts';
+import { RELEASE } from './platform/release.ts';
+import { ITEMS, adCoinsLeft, buyOrWear, countAd, item, redeem, cleanLook, type Look } from './cosmetics.ts';
+import { Shop, type ShopState } from './ui/shop.ts';
 import { Hud, PLAYER_COLORS } from './ui/hud.ts';
 import { Sfx } from './audio.ts';
 import { track } from './analytics.ts';
-import { saveProfile, levelOf, type Profile } from './save.ts';
+import { saveProfile, type Profile } from './save.ts';
+import { DEFAULT_MAP, advanceMissions, botSkill, levelOf, mapLevel, missionText, nextForm, nextUnlock, UNLOCK_TRACK, weaponLevel, weaponPool, type Stat } from './progress.ts';
 import { Home } from './ui/home.ts';
 import { Showcase } from './render/showcase.ts';
 import { PowerView, POWER_INFO } from './render/powerups.ts';
 import { Markers } from './render/markers.ts';
 import { Room, type StartMsg, MAX_HUMANS } from './net/room.ts';
+import { GuestNet } from './net/guest.ts';
 import { FriendsPanel } from './ui/friends.ts';
 import { SnapshotEncoder, applySnapshot, type Snapshot } from '../../shared/sim/snapshot.ts';
 import type { Personality } from '../../shared/sim/bots.ts';
@@ -69,13 +78,10 @@ const BOT_NAMES = ['Chintu', 'Golu', 'Mango', 'Rocket', 'Bunty', 'Zara', 'Pixel'
 let LOCAL = 0;
 // debug: ?autoplay lets a bot drive the local hero; ?speed=N fast-forwards the sim
 const PARAMS = new URLSearchParams(location.search);
-const AUTOPLAY = PARAMS.has('autoplay');
-const SPEED = Number(PARAMS.get('speed')) || 1;
-const UNLOCKS: { hero: HeroId; afterMatches: number }[] = [
-  { hero: 'pinch', afterMatches: 1 },
-  { hero: 'grizzle', afterMatches: 2 },
-  { hero: 'ranger', afterMatches: 3 },
-];
+/** Test switches (?play ?autoplay ?debug ?speed) only work on a developer's machine: players can't use them to cheat. */
+const DEV = import.meta.env.DEV || ['localhost', '127.0.0.1'].includes(location.hostname);
+const AUTOPLAY = DEV && PARAMS.has('autoplay');
+const SPEED = (DEV && Number(PARAMS.get('speed'))) || 1;
 
 type TutStep = 'move' | 'coins' | 'bank' | 'done';
 
@@ -87,7 +93,9 @@ export class Game {
   private autoBrain: BotBrain | null = null;
   private heroes: HeroView[] = [];
   private island!: ArenaView;
-  private mapId: MapId = 'candy';
+  private mapId: MapId = DEFAULT_MAP;
+  /** This match's mission counters. */
+  private tally: Partial<Record<Stat, number>> = {};
   private coins: CoinsView;
   private bank!: BankView;
   private fx: Fx;
@@ -118,6 +126,9 @@ export class Game {
   private fpsFrames = 0;
   private fpsT = 0;
   private lowFpsStreak = 0;
+  private goodStreak = 0;
+  /** False while the shaders are being built behind the loading screen. */
+  private ready = false;
   private autoQuality: boolean;
   private v = new THREE.Vector3();
   private lead = new THREE.Vector3();
@@ -125,7 +136,6 @@ export class Game {
   private mode: 'home' | 'match' = 'home';
   private home: Home | null = null;
   private showcase: Showcase;
-  private trial = false;
   private powers: PowerView | null = null;
   /** Weapon tips already shown this session. */
   private weaponTips = new Set<string>();
@@ -168,15 +178,44 @@ export class Game {
     };
     window.addEventListener('pointerdown', () => sfx.unlock(), { once: false, passive: true });
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Escape' || e.code === 'KeyP') this.togglePause();
+      // (Esc may have just paused the game by releasing the mouse: don't let the same press resume it)
+      if ((e.code === 'Escape' || e.code === 'KeyP') && performance.now() - this.lockPausedAt > 300) {
+        this.togglePause();
+        if (!this.paused && this.mode === 'match') this.captureMouse();
+      }
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.mode === 'match' && this.world?.phase === 'playing') this.setPaused(true);
     });
     this.rig = new CameraRig(stage.camera);
+    this.rig.blocked = (x, y, z) => {
+      const w = this.world;
+      if (!w) return false;
+      if (w.terrain.heightAt(x, z) > y - 0.3) return true;
+      for (const o of w.map.obstacles) {
+        if (o.r < 0.6) continue;
+        const dx = x - o.x;
+        const dz = z - o.z;
+        if (dx * dx + dz * dz < (o.r + 0.2) ** 2 && y < w.terrain.heightAt(o.x, o.z) + propHeight(o.kind) && y < 3.4) return true;
+      }
+      return false;
+    };
+    // losing the captured mouse mid-fight (Esc) opens the pause menu
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement) this.hadMouse = true;
+      else if (this.hadMouse) {
+        this.hadMouse = false;
+        if (this.mode === 'match' && !this.paused && this.world?.phase === 'playing' && this.input.enabled) {
+          this.lockPausedAt = performance.now();
+          this.setPaused(true);
+        }
+      }
+    });
     this.rig.shakeEnabled = profile.shake;
     this.applyCamera((PARAMS.get('cam') as CamPreset) || profile.camera || 'close');
     this.sfx.muted = !profile.sound;
+    this.applyAimSpeed();
+    this.applyPhonePrefs();
     this.fx = new Fx(stage.scene, this.glowTex);
     this.fx.ground = (x, z) => this.world?.terrain.heightAt(x, z) ?? 0; // ground effects ride raised plazas and ramps
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
@@ -200,7 +239,7 @@ export class Game {
       this.mapId = forced as MapId;
       this.profile.map = forced;
     }
-    if (AUTOPLAY || PARAMS.has('play')) {
+    if (AUTOPLAY || (DEV && PARAMS.has('play'))) {
       this.mode = 'match';
       const begin = () => {
         this.startMatch(profile.hero);
@@ -210,32 +249,56 @@ export class Game {
       };
       void this.ensureMap(this.mapId).then(begin);
     } else this.goHome();
-    // invite link: straight into the friend's room
-    const invite = PARAMS.get('room');
-    if (invite && !AUTOPLAY) setTimeout(() => this.openFriends(invite.toUpperCase().slice(0, 5)), 300);
+    // opened from an invite: straight into the friend's room
+    const invite = platform.launchRoom();
+    if (!AUTOPLAY && this.mode === 'home') {
+      if (invite) setTimeout(() => this.openFriends(invite), 300);
+      else if (platform.wantsRoom()) setTimeout(() => this.openFriends('', true), 300);
+    }
+    platform.onJoinRoom((code) => {
+      if (this.room?.code === code) return;
+      this.leaveRoom();
+      this.friends?.close();
+      this.friends = null;
+      this.hud?.closePanel();
+      this.goHome();
+      this.openFriends(code);
+    });
+    platform.onMuted(() => (this.sfx.blocked = this.adOpen || platform.muted()));
+    this.sfx.blocked = platform.muted();
+    void this.settlePurchases();
     requestAnimationFrame(this.frame);
-    if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
+    if ((DEV && PARAMS.has('debug')) || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
   }
 
-  private warmed = false;
   /**
-   * Compile every shader the match will need up front (held weapons, mystery box, effects): otherwise the first
-   * pickup / first shot compiles a new GPU program mid-fight and the game freezes for a moment.
+   * Compile every shader a session needs while the loading screen is still up: the world, the heroes (also faded),
+   * held weapons, beams, ice and effects. compileAsync keeps the page responsive while the driver works.
    */
-  private warmShaders() {
-    if (this.warmed) return;
-    this.warmed = true;
-    const tmp = new THREE.Group();
-    tmp.position.set(0, -400, 0);
-    for (const [name, obj] of this.assets.env) if (name.startsWith('weap_') || name === 'mystery_cube' || name === 'chest_gold') tmp.add(obj.clone());
-    this.stage.scene.add(tmp);
-    try {
-      this.stage.renderer.compile(this.stage.scene, this.stage.camera);
-    } catch {
-      /* not fatal */
+  async prepare() {
+    const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    for (let i = 0; i < 600 && !this.world; i++) await wait(50); // the first map's art may still be on its way
+    if (this.world) {
+      const extra = new THREE.Group();
+      extra.position.set(0, -400, 0);
+      for (const [name, obj] of this.assets.env) if (name.startsWith('weap_') || name === 'mystery_cube' || name === 'chest_gold') extra.add(obj.clone());
+      this.weapons?.warm();
+      const faded = this.heroes[0]?.warm();
+      if (faded) extra.add(faded);
+      const o = new THREE.Vector3(0, 1, 0);
+      this.fx.ring(0, 0, '#ffffff', 1, 0.1, 0.5);
+      this.fx.cone(0, 0, 0, 2, 60, '#ffffff', 0.1, 0.4);
+      this.fx.emit(0, -50, 0, { n: 1, color: '#ffffff', speed: 0, up: 0, life: 0.05, size: 0.1 });
+      this.weapons?.laser(o, o.clone().setZ(1), false);
+      this.stage.scene.add(extra);
+      const compile = Promise.all([this.stage.renderer.compileAsync(this.stage.scene, this.stage.camera), this.stage.renderer.compileAsync(this.showcase.scene, this.showcase.camera)]);
+      await Promise.race([compile.catch(() => {}), wait(45000)]);
+      this.stage.scene.remove(extra);
     }
-    this.stage.scene.remove(tmp);
+    this.ready = true;
+    this.last = performance.now();
   }
+
 
   private camPull = 1;
   private koStreak = 0;
@@ -282,7 +345,7 @@ export class Game {
   private goHome() {
     this.mode = 'home';
     this.paused = false;
-    this.mapId = (MAP_ROTATION as string[]).includes(this.profile.map) ? (this.profile.map as MapId) : MAP_ROTATION[0];
+    this.mapId = (MAP_ROTATION as string[]).includes(this.profile.map) ? (this.profile.map as MapId) : DEFAULT_MAP;
     this.startMatch(this.profile.hero, true);
     const lv = levelOf(this.profile.xp);
     this.home?.destroy();
@@ -291,21 +354,40 @@ export class Game {
       level: lv.level,
       xpFrac: lv.frac,
       hero: this.profile.hero,
-      unlocked: this.profile.unlocked,
-      lockText: (h) => {
-        const u = UNLOCKS.find((x) => x.hero === h);
-        const n = u ? u.afterMatches - this.profile.matches : 0;
-        return `Unlocks after ${n} more match${n === 1 ? '' : 'es'}`;
-      },
+      matches: this.profile.matches,
+      friends: true,
+      xpLeft: lv.left,
+      xpNeed: lv.need,
+      missions: this.profile.missions,
+      next: this.nextReward(lv.level),
       touch: this.touch,
       maps: MAP_ROTATION.map((id) => ({ id, name: MAPS[id].name, blurb: MAPS[id].blurb })),
       map: this.mapId,
+      name: this.profile.name || 'Player',
+      sound: this.profile.sound,
+      portraits: this.portraits,
+      weapons: (Object.keys(WEAPON_INFO) as (keyof typeof WEAPON_INFO)[]).map((k) => ({ ...WEAPON_INFO[k], img: weaponShot(k), level: weaponLevel(k) })),
     });
+    this.home.onSound = () => {
+      this.profile.sound = !this.profile.sound;
+      saveProfile(this.profile);
+      this.sfx.muted = true; // the match behind the menu stays silent
+      if (this.profile.sound) {
+        this.sfx.unlock();
+        this.sfx.muted = false;
+        this.sfx.click();
+        this.sfx.muted = true;
+      }
+      return this.profile.sound;
+    };
     this.home.onMap = (id) => {
       this.sfx.click();
       this.mapId = id as MapId;
-      this.profile.map = id;
-      saveProfile(this.profile);
+      // a locked map can be looked at, but is not remembered
+      if (mapLevel(id) <= levelOf(this.profile.xp).level) {
+        this.profile.map = id;
+        saveProfile(this.profile);
+      }
       track('map_selected', { map: id });
       if (this.mapReady(this.mapId)) {
         this.startMatch(this.profile.hero, true);
@@ -320,12 +402,17 @@ export class Game {
     };
     this.home.onHero = (h, locked) => {
       this.showcase.set([{ hero: h, anim: locked ? 'Idle' : 'Cheer', locked, color: HEROES[h].color, height: 0.45 }]);
+      if (!locked) {
+        this.profile.hero = h;
+        saveProfile(this.profile);
+      }
       this.showcase.screenX = 0;
-      this.showcase.screenY = 0.13;
+      this.showcase.screenY = 0.22;
       this.sfx.click();
     };
-    this.home.onHero(this.home.hero, !this.profile.unlocked.includes(this.home.hero));
+    this.home.onHero(this.home.hero, false);
     this.home.onSettings = () => this.setPaused(true);
+    this.home.onShop = () => this.openShop();
     this.home.onFriends = () => {
       this.sfx.click();
       this.openFriends();
@@ -333,18 +420,16 @@ export class Game {
     this.home.onPlay = (h) => {
       this.sfx.unlock();
       this.sfx.click();
-      const trial = !this.profile.unlocked.includes(h);
-      track('play_click', { hero: h, trial });
-      if (!trial) {
-        this.profile.hero = h;
-        saveProfile(this.profile);
-      }
+      track('play_click', { hero: h });
+      this.profile.hero = h;
+      saveProfile(this.profile);
+      this.fillScreen();
+      this.captureMouse();
       const go = () => {
         this.home?.destroy();
         this.home = null;
         this.showcase.clear();
         this.mode = 'match';
-        this.trial = trial;
         this.startMatch(h);
       };
       if (this.mapReady(this.mapId)) go();
@@ -353,6 +438,18 @@ export class Game {
         void this.ensureMap(this.mapId).then(go);
       }
     };
+  }
+
+  /** The next thing on the level track, ready for the lobby card. */
+  private nextReward(level: number) {
+    const u = nextUnlock(level);
+    return u ? { level: u.level, ...this.rewardCard(u) } : null;
+  }
+
+  private rewardCard(u: NonNullable<ReturnType<typeof nextUnlock>>) {
+    if ('hero' in u) return { name: HEROES[u.hero].name, img: this.portraits.get(u.hero)! };
+    if ('map' in u) return { name: MAPS[u.map].name, img: `thumbs/${u.map}.webp` };
+    return { name: WEAPON_INFO[u.weapon].name, img: weaponShot(u.weapon) };
   }
 
   /** Download a map's art pack if it has one (resolved at once when it is already here). */
@@ -367,10 +464,10 @@ export class Game {
   }
 
   private startMatch(hero: HeroId, attract = false, net?: { start: StartMsg; seat: number }) {
-    if (!net && !this.mapReady(this.mapId)) this.mapId = MAP_ROTATION.find((id) => this.mapReady(id))!; // art still downloading: play on a map that is here (one has no pack)
+    if (!net && !this.mapReady(this.mapId)) this.mapId = MAP_ROTATION.find((id) => this.mapReady(id))!; // art still downloading // art still downloading: play on a map that is here (one has no pack)
     const rng = new Rng((Math.random() * 1e9) | 0);
     const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
-    const botHeroes: HeroId[] = HERO_IDS;
+    const botHeroes: HeroId[] = HERO_IDS; // bots show off every hero, including ones still to unlock
     let setups = [{ name: attract ? names[0] : 'You', hero, isBot: attract }];
     const off = rng.int(0, botHeroes.length - 1);
     // spread bots evenly over the roster so every match shows every hero
@@ -383,6 +480,12 @@ export class Game {
       this.firstMatch = false;
     }
     this.world = new World(setups, { firstMatch: this.firstMatch && !attract && !net, map: this.mapId, seed: net?.start.seed });
+    const level = levelOf(this.profile.xp).level;
+    if (!attract && !net) {
+      this.world.skill = botSkill(level, this.profile.form);
+      this.world.pool = weaponPool(level);
+      this.tally = {};
+    }
     if (this.world.players[LOCAL]) this.world.players[LOCAL].name = 'You';
     if ((this.firstMatch || attract) && !net) this.world.phaseT = 0.6; // no countdown wait in the very first round
     // bots: offline every bot seat; in a room only the host runs them (clients never tick the sim)
@@ -392,38 +495,57 @@ export class Game {
     this.seatPeers = net ? net.start.seats.map((s) => (s.isBot ? '' : s.peer)) : [];
     this.encoder = new SnapshotEncoder();
     this.pending = [];
+    this.matchId = net?.start.seed ?? 0;
+    this.guest.reset();
+    if (net && this.room) {
+      this.room.freshMatch();
+      this.world.recordPositions = this.room.isHost;
+      if (this.room.isHost) this.keepHosting();
+    }
     this.targets = this.world.players.map((p) => ({ x: p.x, z: p.z, y: 0 }));
     this.sfx.muted = attract || !this.profile.sound;
 
+    // looks: yours, your friends', and a few bots showing off what the shop sells
+    this.looks = this.world.players.map((p, i) => {
+      if (net) return i === LOCAL ? this.profile.look : cleanLook(net.start.seats[i]?.look);
+      if (i === LOCAL) return this.profile.look;
+      const one = (slot: 'laser' | 'trail' | 'ko') => rng.pick(ITEMS.filter((x) => x.slot === slot)).id;
+      return rng.next() < 0.35 ? { laser: one('laser'), trail: one('trail'), ko: one('ko') } : cleanLook(null);
+    });
+
     // views
-    for (const h of this.heroes) this.stage.scene.remove(h.root);
+    for (const h of this.heroes) release(h.root);
     this.heroes = this.world.players.map((p) => {
       const hv = new HeroView(this.assets.heroes.get(p.hero)!, p, p.id === LOCAL && !attract, PLAYER_COLORS[p.id], this.glowTex, this.assets.env);
       this.stage.scene.add(hv.root);
       return hv;
     });
-    if (this.island) this.stage.scene.remove(this.island.group);
-    this.island = new ArenaView(this.world, this.assets.env, this.stage.scene, this.glowTex);
-    this.stage.applyTheme(this.island.theme);
-    if (this.bank) {
-      this.stage.scene.remove(this.bank.group);
+    // building a map takes seconds on a slow laptop: the next match on the same one reuses it
+    if (this.island && this.island.mapId === this.world.map.id) this.island.reuse(this.world);
+    else {
+      release(this.island?.group);
+      this.island = new ArenaView(this.world, this.assets.env, this.stage.scene, this.glowTex);
     }
+    this.stage.applyTheme(this.island.theme);
+    this.bank?.dispose();
     this.bank = new BankView(this.world, this.assets.env, this.stage.scene, this.glowTex);
     this.bank.group.visible = this.world.mode === 'coins';
     document.body.classList.toggle('mode-weapons', this.world.mode === 'weapons');
+    document.body.classList.toggle('mode-coins', this.world.mode === 'coins');
     if (!this.weapons) this.weapons = new WeaponsView(this.world, this.stage.scene, this.fx, this.glowTex, this.assets.env);
     else this.weapons.setWorld(this.world);
+    this.weapons.localId = attract ? -1 : LOCAL;
     if (!this.powers) this.powers = new PowerView(this.world, this.stage.scene, this.glowTex);
     else this.powers.setWorld(this.world);
     if (!this.markers) this.markers = new Markers(this.stage.scene, this.assets.env, this.glowTex);
     else this.markers.setWorld();
-    this.warmShaders();
     this.robbedBy.clear();
     this.nemesis = -1;
     this.lastSay.clear();
     this.lastHunt.clear();
     this.slowT = 0;
     this.wellWarnT = 0;
+    this.hud?.closePanel();
     this.hud?.root.remove();
     this.hud = new Hud(this.world, LOCAL, this.portraits, this.touch, this.input);
     this.hud.onPause = () => this.togglePause();
@@ -441,9 +563,10 @@ export class Game {
     this.tutT = 0;
     this.movedDist = 0;
     this.roundStats = { stolen: 0, steals: 0 };
+    this.superTold = false;
     this.matchStart = performance.now();
     this.input.enabled = !attract;
-    if (!attract) track('match_start', { hero, first: this.firstMatch, trial: this.trial });
+    if (!attract) track('match_start', { hero, first: this.firstMatch });
   }
 
   // ---------------------------------------------------------------- loop
@@ -451,71 +574,40 @@ export class Game {
   private frame = (nowMs: number) => {
     requestAnimationFrame(this.frame);
     if (!this.world) return; // the first match is still waiting for its map's art
+    if (!this.ready) {
+      this.last = nowMs;
+      return;
+    }
     let dt = (nowMs - this.last) / 1000;
     this.last = nowMs;
     if (dt > 0.1) dt = 0.1;
     this.time += dt;
     this.monitorFps(dt);
+    platform.gameplay(this.mode === 'match' && !this.paused && !this.adOpen && this.world.phase === 'playing');
     // a shared match never pauses (the menu still opens, the game keeps running)
-    if (this.paused && !this.room) {
+    if ((this.paused && !this.room) || this.adOpen) {
       this.stage.render();
       this.showcase.render(this.stage.renderer);
       return;
     }
 
-    this.updateAim();
-    // fixed-step simulation (hit-stop freezes it briefly — offline only; a shared match never pauses)
-    const step = TUNING.sim.dt;
-    const netClient = !!this.room && !this.room.isHost && this.mode === 'match';
-    if (netClient) {
-      if (this.hitStop > 0) this.hitStop -= dt;
-      this.clientFrame(dt);
-    } else if (this.hitStop > 0 && !this.room) this.hitStop -= dt;
-    else {
-      if (this.hitStop > 0) this.hitStop -= dt;
-      let scale = SPEED;
-      if (this.slowT > 0) {
-        this.slowT -= dt;
-        scale *= this.slowScale;
-      }
-      this.acc += dt * scale;
-      let n = 0;
-      while (this.acc >= step && n < 6 * SPEED) {
-        this.acc -= step;
-        n++;
-        const inputs: Input[] = new Array(this.world.players.length).fill(NO_INPUT);
-        inputs[LOCAL] = this.autoBrain ? this.autoBrain.update(this.world, step) : this.readLocal();
-        for (const b of this.brains) inputs[b.id] = b.update(this.world, step);
-        if (this.room?.isHost && this.mode === 'match')
-          this.seatPeers.forEach((peer, i) => {
-            if (peer && i !== LOCAL) inputs[i] = this.room!.takeInput(peer) ?? NO_INPUT;
-          });
-        const prevRound = this.world.round;
-        this.prevPos = this.world.players.map((q) => ({ x: q.x, y: q.y, z: q.z }));
-        this.world.tick(step, inputs);
-        if (this.room?.isHost && this.mode === 'match') this.pending.push(...this.world.events);
-        if (this.world.round !== prevRound) this.brains.forEach((b) => b.newRound());
-        if (this.world.round !== prevRound) this.autoBrain?.newRound();
-        for (const e of this.world.events) this.onEvent(e);
-        if (this.hitStop > 0 && !this.room) {
-          this.acc = 0;
-          break;
-        }
-      }
-      // host: send the world to friends ~15×/s
-      if (this.room?.isHost && this.mode === 'match') {
-        this.snapT += dt;
-        if (this.snapT >= 1 / 15) {
-          this.snapT = 0;
-          this.room.snapshot(this.encoder.encode(this.world, this.pending));
-          this.pending = [];
-        }
+    // turn the camera before anything reads the crosshair: this frame's shot goes where this frame looks
+    if (this.mode === 'match' && this.input.enabled) {
+      this.rig.addYaw(this.input.takeYaw(dt));
+      this.rig.addPitch(this.input.takePitch());
+      this.aimMagnet(dt);
+      if (this.rig.turns && !this.paused) {
+        const me = this.world.players[LOCAL];
+        const at = this.visPos(LOCAL) ?? me;
+        this.rig.update(0, this.v.set(at.x, at.y, at.z), this.lead);
       }
     }
+    this.updateAim();
+    this.simulate(dt);
 
     // views
     // draw between the last two sim steps: smooth on 90/120 Hz screens and when a frame is late
-    this.lerpA = this.room && !this.room.isHost ? 1 : Math.min(1, this.acc / step);
+    this.lerpA = this.room && !this.room.isHost ? 1 : Math.min(1, this.acc / TUNING.sim.dt);
     // crowd readability: fade bots standing in front of you, ease the camera out, calm the glows
     {
       const me = this.world.players[LOCAL];
@@ -537,6 +629,7 @@ export class Game {
     for (const h of this.heroes) {
       h.view = this.visPos(h.player.id);
       if (h.update(adt, this.time, frozen)) this.fx.dust(h.player.x, h.player.z);
+      if (h.player.gone) h.root.visible = false;
     }
     this.powers?.update(this.time);
     if (this.markers) {
@@ -550,6 +643,10 @@ export class Game {
       const me = this.world.players[LOCAL];
       const on = this.mode === 'match' && this.rig.turns && this.world.mode === 'weapons' && this.world.phase === 'playing' && me.state !== 'bubble' && me.state !== 'falling';
       this.hud.crosshair(on, this.aimLocked, !!me.weapon);
+      this.rig.armed = this.mode === 'match' && this.world.mode === 'weapons' && !!me.weapon && this.world.phase === 'playing';
+      const view = this.heroes[LOCAL];
+      if (view) view.aimPitch = this.aimInfo?.y !== undefined ? Math.atan2(this.aimInfo.y - (me.y + 1.25), this.aimInfo.dist) : 0;
+      this.hud.lockHint(this.mode === 'match' && !this.touch && this.rig.turns && !this.paused && this.input.enabled && !this.input.mouseLocked);
     }
     if (this.mode === 'match') this.chatterHunting();
     // trails: speed boots (yellow streaks), sticky fingers (pink sparkles), magnet (red bits)
@@ -557,7 +654,11 @@ export class Game {
     if (this.trailT <= 0) {
       this.trailT = 0.05;
       for (const p of this.world.players) {
-        if (p.state === 'falling') continue;
+        if (p.state === 'falling' || p.gone) continue;
+        const trail = item(this.looks[p.id]?.trail ?? '')?.colors;
+        if (trail?.length && Math.hypot(p.vx, p.vz) > 2) this.fx.emit(p.x, p.y + 0.35, p.z, { n: 2, color: trail, speed: 0.4, up: 0.6, life: 0.55, size: 0.36, spread: 0.5 });
+        if (p.superT > 0) this.fx.emit(p.x, p.y + 0.9, p.z, { n: 3, color: [HEROES[p.hero].color, '#ffffff'], speed: 1.2, up: 1.6, life: 0.45, size: 0.45, spread: 0.8 });
+        if (p.rageT > 0) this.fx.emit(p.x, p.y + 1.2, p.z, { n: 1, color: ['#ff4a6e', '#ffd23f'], speed: 0.8, up: 1.8, life: 0.45, size: 0.4, spread: 0.7 });
         if (p.speedT > 0 && Math.hypot(p.vx, p.vz) > 2) this.fx.emit(p.x, 0.5, p.z, { n: 2, color: ['#ffd23f', '#fff6b0'], speed: 0.3, up: 0.5, life: 0.4, size: 0.45 });
         if (p.stickyT > 0) this.fx.emit(p.x, 1.1, p.z, { n: 2, color: ['#ff5fd2', '#ffb3ec'], speed: 0.8, up: 1.2, life: 0.5, size: 0.3, spread: 0.7 });
         if (p.magnetT > 0) this.fx.emit(p.x, 0.4, p.z, { n: 1, color: ['#ff5f7a'], speed: 3.5, up: 0.2, life: 0.4, size: 0.25 });
@@ -592,14 +693,12 @@ export class Game {
       focus = this.v.set(0, 0, 0);
       if (this.world.phase === 'matchEnd') this.startMatch(this.profile.hero, true);
     } else {
-      if (this.mode === 'match' && this.input.enabled) {
-        this.rig.addYaw(this.input.takeYaw(dt));
-        this.rig.addPitch(this.input.takePitch());
+      if (this.mode === 'match' && this.input.enabled && this.touch) {
         const me2 = this.world.players[LOCAL];
         this.rig.autoFollow(dt, me2.facing, Math.max(0, this.lastStickFwd));
       }
       this.rig.update(dt, focus, this.lead);
-      this.keepCameraOutOfWalls(dt, focus);
+      if (!this.rig.turns) this.keepCameraOutOfWalls(dt, focus);
     }
     // keep the shadow camera on the action
     this.stage.aimSun(focus.x, focus.z);
@@ -618,6 +717,15 @@ export class Game {
       skillHits: this.markers?.skillHits ?? 0,
     });
     if (this.mode === 'match') {
+      // say it once a match, the first time the Super is charged
+      const meS = this.world.players[LOCAL];
+      if (!this.superTold && this.world.mode === 'weapons' && this.world.phase === 'playing' && meS.charge >= 1) {
+        this.superTold = true;
+        const def = HEROES[meS.hero];
+        this.hud.tip(`SUPER READY: ${def.superName}! ${this.touch ? 'Tap the glowing button' : 'Press F'}`, 4);
+        this.sfx.power();
+        haptics.buzz([20, 60, 20]);
+      }
       this.tutorial(dt);
       this.bankTicks(dt);
     }
@@ -627,21 +735,80 @@ export class Game {
     if (this.showcase.active && this.mode === 'match') this.hud.placePodium(this.showcase.labelPoints());
   };
 
+  /** Advance the match by one drawn (or, for a hidden host, one timed) frame. */
+  private simulate(dt: number) {
+    // fixed-step simulation (hit-stop freezes it briefly — offline only; a shared match never pauses)
+    const step = TUNING.sim.dt;
+    const netClient = !!this.room && !this.room.isHost && this.mode === 'match';
+    if (netClient) {
+      if (this.hitStop > 0) this.hitStop -= dt;
+      this.clientFrame(dt);
+    } else if (this.hitStop > 0 && !this.room) this.hitStop -= dt;
+    else {
+      if (this.hitStop > 0) this.hitStop -= dt;
+      let scale = SPEED;
+      if (this.slowT > 0) {
+        this.slowT -= dt;
+        scale *= this.slowScale;
+      }
+      this.acc += dt * scale;
+      let n = 0;
+      while (this.acc >= step && n < 6 * SPEED) {
+        this.acc -= step;
+        n++;
+        const inputs: Input[] = new Array(this.world.players.length).fill(NO_INPUT);
+        inputs[LOCAL] = this.autoBrain ? this.autoBrain.update(this.world, step) : this.readLocal();
+        for (const b of this.brains) inputs[b.id] = b.update(this.world, step);
+        if (this.room?.isHost && this.mode === 'match')
+          this.seatPeers.forEach((peer, i) => {
+            if (peer && i !== LOCAL) inputs[i] = this.room!.takeInput(peer, this.world.time, this.world.players[i]) ?? NO_INPUT;
+          });
+        const prevRound = this.world.round;
+        this.prevPos = this.world.players.map((q) => ({ x: q.x, y: q.y, z: q.z }));
+        this.world.tick(step, inputs);
+        if (this.room?.isHost && this.mode === 'match') this.pending.push(...this.world.events);
+        if (this.world.round !== prevRound) this.brains.forEach((b) => b.newRound());
+        if (this.world.round !== prevRound) this.autoBrain?.newRound();
+        for (const e of this.world.events) this.onEvent(e);
+        if (this.hitStop > 0 && !this.room) {
+          this.acc = 0;
+          break;
+        }
+      }
+      // host: send the world to friends ~15×/s
+      if (this.room?.isHost && this.mode === 'match') {
+        this.snapT += dt;
+        if (this.snapT >= 1 / 15) {
+          this.snapT = 0;
+          const acks = this.seatPeers.map((peer) => (peer ? this.room!.ack(peer, this.world.time) : ([0, 0] as [number, number])));
+          this.room.snapshot(this.encoder.encode(this.world, this.pending, this.matchId, acks));
+          this.pending = [];
+        }
+      }
+    }
+  }
+
   private monitorFps(dt: number) {
+    if (dt >= 0.1) return; // a hitch (tab switch, loading) says nothing about how fast the game runs
     this.fpsFrames++;
     this.fpsT += dt;
     if (this.fpsT < 2) return;
     const fps = this.fpsFrames / this.fpsT;
     this.fpsFrames = 0;
     this.fpsT = 0;
-    if (new URLSearchParams(location.search).has('fps')) this.hud.fps = `${fps.toFixed(0)} fps · ${this.stage.quality}`;
+    if (PARAMS.has('fps')) this.hud.fps = `${fps.toFixed(0)} fps · ${this.stage.quality} ×${this.stage.scale}`;
     if (!this.autoQuality || this.paused) return;
-    const q = this.stage.quality;
-    const tooSlow = (q === 'high' && fps < 45) || (q === 'medium' && fps < 34);
-    this.lowFpsStreak = tooSlow ? this.lowFpsStreak + 1 : 0;
-    if (this.lowFpsStreak >= 2) {
+    // only the picture size changes while playing; shadows and effects never switch mid-session
+    const steps = [1, 0.85, 0.72, 0.6];
+    const i = Math.max(0, steps.indexOf(this.stage.scale));
+    this.lowFpsStreak = fps < 44 ? this.lowFpsStreak + 1 : 0;
+    this.goodStreak = fps > 57 ? this.goodStreak + 1 : 0;
+    if (this.lowFpsStreak >= 2 && i < steps.length - 1) {
+      this.stage.setScale(steps[i + 1]);
       this.lowFpsStreak = 0;
-      this.stage.setQuality(q === 'high' ? 'medium' : 'low');
+    } else if (this.goodStreak >= 6 && i > 0) {
+      this.stage.setScale(steps[i - 1]);
+      this.goodStreak = 0;
     }
   }
 
@@ -654,54 +821,84 @@ export class Game {
 
   // ---------------------------------------------------------------- friends rooms
 
-  /** Client: predict my own movement, smooth everyone else, send my input ~30×/s. */
+  /** Joining player: show my own actions at once, smooth everyone else, send my input ~30×/s. */
   private clientFrame(dt: number) {
     const w = this.world;
     const inp = this.readLocal();
     // buttons latch until the next send
-    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill };
+    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill, ult: this.netInput.ult || inp.ult, aim: inp.aim, aimD: inp.aimD, aimY: inp.aimY };
+    this.guest.frame(w, LOCAL, inp, dt);
+    this.predictShot(inp, dt);
     this.sendT += dt;
     if (this.sendT >= 1 / 30) {
       this.sendT = 0;
-      this.room?.sendInput(this.netInput);
-      this.netInput = { ...this.netInput, dash: false, grab: false, skill: false };
+      const me = w.players[LOCAL];
+      const i = this.netInput;
+      const aimAt = i.aim === undefined ? undefined : { x: me.x + Math.sin(i.aim) * (i.aimD ?? 8), z: me.z + Math.cos(i.aim) * (i.aimD ?? 8) };
+      this.room?.sendInput(i, this.guest.stamp(), this.guest.viewTime, aimAt);
+      this.netInput = { ...i, dash: false, grab: false, skill: false, ult: false };
     }
-    w.players.forEach((p, i) => {
-      const t = this.targets[i];
-      if (!t) return;
-      if (i === LOCAL && w.phase === 'playing' && p.state === 'normal') {
-        // prediction: move right away, then ease toward what the host says
-        const sp = TUNING.hero.walkSpeed * Math.max(TUNING.hero.carrySlowFloor, 1 - p.carried * TUNING.hero.carrySlowPerCoin);
-        const nx = p.x + inp.mx * sp * dt;
-        const nz = p.z + inp.mz * sp * dt;
-        if (w.arena.solid(nx, nz)) {
-          p.x = nx;
-          p.z = nz;
-        }
-        p.vx = inp.mx * sp;
-        p.vz = inp.mz * sp;
-        if (Math.hypot(inp.mx, inp.mz) > 0.1) p.facing = Math.atan2(inp.mx, inp.mz);
-        const err = Math.hypot(t.x - p.x, t.z - p.z);
-        const k = err > 2.5 ? 1 : Math.min(1, dt * 5);
-        p.x += (t.x - p.x) * k;
-        p.z += (t.z - p.z) * k;
-      } else {
-        const k = Math.min(1, dt * 14);
-        p.x += (t.x - p.x) * k;
-        p.z += (t.z - p.z) * k;
-      }
-    });
+    // say so when the host goes quiet, and give up if it stays that way
+    const quiet = performance.now() / 1000 - this.guest.heardAt;
+    const playing = w.phase === 'playing' || w.phase === 'countdown';
+    this.hud.net(this.guest.ping, playing && quiet > 1.5);
+    if (playing && quiet > 15) this.roomClosed('Lost the connection to the host');
+  }
+
+  /** The laser leaves your gun the instant you press: the host still decides what it hit. */
+  private predictShot(inp: Input, dt: number) {
+    this.shotWait = Math.max(0, this.shotWait - dt);
+    const w = this.world;
+    const me = w.players[LOCAL];
+    if (!inp.grab || this.shotWait > 0 || w.phase !== 'playing' || me.state !== 'normal' || me.weapon !== 'blaster' || me.ammo <= 0 || me.cast || inp.aim === undefined) return;
+    const c = TUNING.weapons.blaster;
+    this.shotWait = c.cooldown * (w.mod === 'rapid' ? TUNING.mods.rapid.cooldownMult : 1) * (me.superT > 0 && me.hero === 'ranger' ? TUNING.weapons.super.overdrive.cooldownMult : 1);
+    const oy = me.y + GUN_HEIGHT;
+    const rise = inp.aimY === undefined ? 0 : (inp.aimY - oy) / Math.max(0.6, inp.aimD ?? 8);
+    const n = Math.hypot(1, rise);
+    const hit = castRay(w, me.x, oy, me.z, Math.sin(inp.aim) / n, rise / n, Math.cos(inp.aim) / n, c.range, me);
+    this.onEvent({ t: 'fire', p: LOCAL, weapon: 'blaster', x: me.x, z: me.z, facing: inp.aim });
+    this.onEvent({ t: 'laser', p: LOCAL, tx: hit.x, ty: hit.y, tz: hit.z, hit: -1 });
   }
 
   private onSnapshot(s: Snapshot) {
-    if (!this.world || this.mode !== 'match') return;
+    if (!this.world || this.mode !== 'match' || s.m !== this.matchId) return;
     const prevRound = this.world.round;
-    applySnapshot(this.world, s, this.targets, LOCAL);
-    if (this.world.round !== prevRound) this.markers?.setWorld();
-    for (const e of s.ev) this.onEvent(e);
+    if (this.guest.arrive(s)) {
+      applySnapshot(this.world, s, this.targets, LOCAL);
+      this.guest.correct(s, this.world, LOCAL);
+      if (this.world.round !== prevRound) this.markers?.setWorld();
+    }
+    for (const e of s.ev) {
+      // my own laser was already drawn when I pressed: only the host's verdict is news
+      if (e.t === 'fire' && e.p === LOCAL && e.weapon === 'blaster') continue;
+      if (e.t === 'laser' && e.p === LOCAL) {
+        if (e.hit >= 0) this.hud.hitMarker(false);
+        continue;
+      }
+      this.onEvent(e);
+    }
   }
 
-  private openFriends(joinCode = '') {
+  /** The host keeps the match running while its tab is hidden (a quick reply on WhatsApp must not freeze friends). */
+  private keepHosting() {
+    if (this.hostClock) return;
+    const src = URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' }));
+    this.hostClock = new Worker(src);
+    this.hostClock.onmessage = () => {
+      if (!document.hidden || !this.room?.isHost || this.mode !== 'match') return;
+      const now = performance.now();
+      let behind = Math.min(0.5, (now - this.last) / 1000);
+      this.last = now;
+      while (behind > 0) {
+        const d = Math.min(0.1, behind);
+        behind -= d;
+        this.simulate(d);
+      }
+    };
+  }
+
+  private openFriends(joinCode = '', createNow = false) {
     this.friends?.close();
     const fp = new FriendsPanel(this.portraits);
     this.friends = fp;
@@ -710,11 +907,12 @@ export class Game {
       this.profile.name = `Player${Math.floor(100 + Math.random() * 900)}`;
       saveProfile(this.profile);
     }
-    const me = () => ({ name: this.profile.name, hero: this.profile.hero });
+    const me = () => ({ name: this.profile.name, hero: this.profile.hero, look: this.profile.look });
     const lobby = () => {
       const r = this.room;
       if (!r || this.mode === 'match') return;
-      fp.lobby(r.code, r.link(), r.members, r.isHost, MAPS[this.mapId].name);
+      platform.roomOpen(r.code, r.members.length < MAX_HUMANS);
+      fp.lobby(r.code, platform.roomLink(r.code, r.link()), r.members, r.isHost, MAPS[this.mapId].name, platform.externalShare);
     };
     const wire = (r: Room) => {
       this.room = r;
@@ -758,21 +956,32 @@ export class Game {
       this.friends = null;
       this.home?.show(true);
     };
+    // back from a match: the room is still there
+    if (this.room) return wire(this.room);
     fp.menu(this.profile.name, joinCode);
     if (joinCode) fp.onJoin(joinCode, this.profile.name);
+    else if (createNow) fp.onCreate(this.profile.name);
   }
 
-  /** Host: fill empty seats with bots and start everyone's match. */
+  /** Host: start the match with the people in the room (no bots). */
   private hostStart() {
     const r = this.room;
     if (!r?.isHost) return;
+    if (r.members.length < 2) {
+      // everyone else has left: back to the lobby to invite someone
+      this.showcase.clear();
+      this.hud.closePanel();
+      this.goHome();
+      this.openFriends();
+      return;
+    }
     const rng = new Rng((Math.random() * 1e9) | 0);
-    const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
-    const seats: StartMsg['seats'] = r.members.slice(0, MAX_HUMANS).map((m) => ({ name: m.name, hero: m.hero, isBot: false, peer: m.peer }));
-    for (let i = seats.length; i < TUNING.match.playersPerMatch; i++) seats.push({ name: names[i], hero: HERO_IDS[i % HERO_IDS.length], isBot: true, peer: '' });
+    const seats: StartMsg['seats'] = r.members.slice(0, MAX_HUMANS).map((m) => ({ name: m.name, hero: m.hero, isBot: false, peer: m.peer, look: m.look }));
     seats[0].hero = this.profile.hero;
+    seats[0].look = this.profile.look;
     const start: StartMsg = { map: this.mapId, seed: rng.int(1, 1e9), seats };
     r.start(start);
+    platform.roomOpen(r.code, false);
     track('room_start', { humans: r.members.length });
     this.beginNet(start, 0);
   }
@@ -786,19 +995,21 @@ export class Game {
     this.hud?.closePanel();
     this.mode = 'match';
     this.paused = false;
-    this.trial = false;
     void this.ensureMap(start.map).then(() => this.startMatch(start.seats[seat].hero, false, { start, seat }));
   }
 
   private peerLeft(peer: string) {
-    if (this.mode !== 'match') return;
+    if (this.mode !== 'match' || !this.room?.isHost) return;
     const seat = this.seatPeers.indexOf(peer);
-    if (seat < 0) return;
+    if (seat < 0 || this.world.phase === 'matchEnd') return;
     this.seatPeers[seat] = '';
     const p = this.world.players[seat];
-    p.isBot = true;
-    this.brains.push(new BotBrain(seat, new Rng(seat * 31 + 7), LOCAL));
-    this.hud.feed(`<b>${p.name}</b> left — a bot took over`);
+    this.world.remove(seat);
+    this.hud.feed(`<b>${p.name}</b> left the match`);
+    if (this.world.players.filter((q) => !q.gone).length < 2) {
+      this.hud.banner('Everyone else left', 'red', true);
+      this.world.roundTime = TUNING.match.roundSeconds;
+    }
   }
 
   private roomClosed(why: string) {
@@ -811,6 +1022,7 @@ export class Game {
   }
 
   private leaveRoom() {
+    if (this.room) platform.roomLeft();
     this.room?.leave();
     this.room = null;
   }
@@ -962,7 +1174,8 @@ export class Game {
         hv(e.victim).bump(big ? 0.4 : 0.25);
         if (big) hv(e.victim).knockSpin(e.kind === 'bomb' ? 2 : 1);
         if (w.players[e.victim].state !== 'stunned') hv(e.victim).oneShot(Math.random() < 0.5 ? 'Hit_A' : 'Hit_B', this.time, 1.6, 0.4);
-        this.hitStop = Math.max(this.hitStop, big ? 0.09 : 0.06);
+        // a tiny freeze sells a heavy blow you dealt or took; never for the rapid laser or other people's fights
+        if (e.kind !== 'blaster' && (e.victim === LOCAL || e.by === LOCAL)) this.hitStop = Math.max(this.hitStop, 0.035);
         if (e.drop > 0) {
           this.fx.coinBurst(e.x, 1.1, e.z, 6 + e.drop * 2);
           this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.drop}`, 'minus');
@@ -979,6 +1192,7 @@ export class Game {
         break;
       }
       case 'boxPick': {
+        if (e.p === LOCAL) this.tally.boxes = (this.tally.boxes ?? 0) + 1;
         const info = WEAPON_INFO[e.weapon];
         this.fx.emit(e.x, 0.9, e.z, { n: 26, color: ['#ffd84a', '#ffffff', info.color], speed: 5, up: 4, life: 0.5, size: 0.45 });
         this.fx.ring(e.x, e.z, info.color, 2.2, 0.35, 0.4);
@@ -994,10 +1208,22 @@ export class Game {
         }
         break;
       }
+      case 'laser': {
+        const H = hv(e.p);
+        const from = H.muzzle(new THREE.Vector3()) ?? new THREE.Vector3(w.players[e.p].x, w.players[e.p].y + 1.05, w.players[e.p].z);
+        const to = new THREE.Vector3(e.tx, e.ty, e.tz);
+        this.weapons?.laser(from, to, e.hit >= 0, item(this.looks[e.p]?.laser ?? '')?.colors);
+        if (e.p === LOCAL) {
+          this.hud.shotKick();
+          if (e.hit >= 0) this.hud.hitMarker(false);
+        }
+        break;
+      }
       case 'fire': {
         const H = hv(e.p);
         const anim = e.weapon === 'banana' ? 'Interact' : e.weapon === 'freeze' ? 'Throw' : e.weapon === 'hammer' ? '2H_Melee_Attack_Spin' : e.weapon === 'hook' ? 'Spellcast_Raise' : '1H_Ranged_Shoot';
-        H.oneShot(anim, this.time, e.weapon === 'blaster' ? 2.2 : 1.6, 0.45);
+        if (e.weapon === 'blaster' || e.weapon === 'rocket') H.shoot(this.time);
+        else H.oneShot(anim, this.time, 1.6, 0.45);
         H.onFire(e.weapon, this.time);
         const near = e.p === LOCAL || Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 14;
         if (near) this.sfx.shoot(e.weapon);
@@ -1005,18 +1231,66 @@ export class Game {
           const fx = e.x + Math.sin(e.facing) * 0.8;
           const fz = e.z + Math.cos(e.facing) * 0.8;
           const my = w.players[e.p].y + 1.05;
-          if (e.weapon === 'blaster') this.fx.emit(fx, my, fz, { n: 7, color: ['#bff8ff', '#ffffff', '#ffb3ec'], speed: 3.2, up: 1.2, life: 0.28, size: 0.32 });
-          else {
+          if (e.weapon === 'rocket') {
             this.fx.emit(fx, my, fz, { n: 14, color: [WEAPON_INFO[e.weapon].color, '#ffffff', '#ffd23f'], speed: 3, up: 1, life: 0.2, size: 0.45 });
             this.fx.emit(e.x - Math.sin(e.facing) * 0.9, my, e.z - Math.cos(e.facing) * 0.9, { n: 10, color: ['#bbbbbb', '#ffffff'], speed: 2.5, up: 0.8, life: 0.5, size: 0.7 }); // backblast smoke
           }
-          if (e.p === LOCAL) this.rig.punch(e.weapon === 'rocket' ? 4 : 1.2);
+          if (e.p === LOCAL && e.weapon === 'rocket') this.rig.punch(4);
         }
         if (e.weapon === 'hammer') this.fx.cone(e.x, e.z, e.facing, TUNING.weapons.hammer.radius, 360, '#ffd23f', TUNING.weapons.hammer.windup + 0.05, 0.4);
         break;
       }
+      case 'super': {
+        const def = HEROES[w.players[e.p].hero];
+        const gy = w.terrain.heightAt(e.x, e.z);
+        if (e.p !== LOCAL) this.fx.pillar(e.x, e.z, def.color, 8, 0.5, 0.6); // never in front of your own view
+        this.fx.ring(e.x, e.z, def.color, 4.5, 0.6, 0.6);
+        this.fx.ring(e.x, e.z, '#ffffff', 2.8, 0.45, 0.4);
+        this.fx.emit(e.x, gy + 1.2, e.z, { n: 60, color: [def.color, '#ffffff', '#ffd23f'], speed: 8, up: 6, life: 0.7, size: 0.55 });
+        hv(e.p).bump(0.5);
+        if (w.players[e.p].hero !== 'bones') hv(e.p).oneShot('Cheer', this.time, 2, 0.5);
+        if (e.p === LOCAL) {
+          this.hud.skillBanner(def.superName + '!', def.color);
+          this.hud.flash(def.color, 0.55);
+          this.sfx.crown();
+          this.rig.shake(0.35);
+          haptics.buzz([30, 40, 60]);
+        } else {
+          this.hud.feed(`${this.who(e.p)} unleashed <b>${def.superName}</b>!`);
+          if (Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 18) this.sfx.warn();
+        }
+        break;
+      }
+      case 'superEnd':
+        this.fx.ring(w.players[e.p].x, w.players[e.p].z, '#ffffff', 2, 0.3);
+        break;
+      case 'streak': {
+        const q = w.players[e.p];
+        if (e.p !== LOCAL) this.fx.pillar(q.x, q.z, '#ffd23f', 7, 0.4, 0.5);
+        else this.fx.ring(q.x, q.z, '#ffd23f', 3, 0.5, 0.5);
+        if (e.p === LOCAL) {
+          setTimeout(() => this.hud.banner(`${e.n} KO STREAK!`, 'gold'), 900);
+          setTimeout(() => this.hud.banner('Health + speed + Super energy', 'teal', true), 1600);
+          this.sfx.crown();
+          haptics.buzz([20, 30, 20]);
+        } else this.hud.feed(`${this.who(e.p)} is on a <b>${e.n} KO streak</b>!`);
+        break;
+      }
+      case 'twist':
+        if (this.mode === 'match' && e.mod !== 'double') { // (the finale banner announces double points)
+          this.hud.twist(e.mod, w.mode);
+          this.sfx.land2();
+        }
+        break;
       case 'boom': {
-        if (e.kind === 'rocket') {
+        if (e.kind === 'quake') {
+          this.fx.ring(e.x, e.z, '#7fe3ff', e.r + 0.5, 0.7, 0.8);
+          this.fx.ring(e.x, e.z, '#ffffff', e.r * 0.65, 0.5, 0.5);
+          this.fx.dome(e.x, e.z, '#7fe3ff', e.r * 0.7, 0.5);
+          this.fx.crack(e.x, e.z, e.r * 1.6);
+          this.fx.dust(e.x, e.z, true);
+          this.fx.emit(e.x, 0.6, e.z, { n: 70, color: ['#7fe3ff', '#ffffff'], speed: 13, up: 4, life: 0.6, size: 0.6 });
+        } else if (e.kind === 'rocket') {
           this.fx.emit(e.x, 1, e.z, { n: 40, color: ['#ff8a3d', '#ffd23f', '#ffffff', '#555555'], speed: 8, up: 4, life: 0.6, size: 0.7 });
           this.fx.dome(e.x, e.z, '#ff8a3d', e.r * 1.3, 0.35);
           this.fx.dust(e.x, e.z, true);
@@ -1068,11 +1342,17 @@ export class Game {
         break;
       }
       case 'damage':
-        this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.n}`, 'minus');
+        this.hud.floater(this.pos(e.victim, 2.6), cam, `-${Math.round(e.n * TUNING.weapons.hitHp)}`, 'minus'); // health points, not "hits"
         if (e.victim === LOCAL && e.hp > 0 && e.hp <= TUNING.weapons.hitHp) this.hud.banner('ALMOST OUT!', 'red', true);
         break;
       case 'ko': {
         const P = w.players[e.victim];
+        if (e.by === LOCAL) this.hud.hitMarker(true);
+        const pop = e.by >= 0 ? item(this.looks[e.by]?.ko ?? '')?.colors : undefined;
+        if (pop?.length) {
+          this.fx.emit(e.x, 1.4, e.z, { n: 60, color: pop, speed: 8, up: 7, life: 0.9, size: 0.5, gravity: 7 });
+          this.fx.ring(e.x, e.z, pop[0], 3.4, 0.55, 0.5);
+        }
         this.fx.emit(e.x, 1.2, e.z, { n: 30, color: ['#ffffff', '#b38cff', '#bff8ff'], speed: 6, up: 3, life: 0.5, size: 0.5 });
         this.fx.ring(e.x, e.z, '#b38cff', 2.6, 0.4, 0.4);
         if (e.by === LOCAL) {
@@ -1103,6 +1383,7 @@ export class Game {
         break;
       }
       case 'pop': {
+        if (e.by === LOCAL) this.tally.pops = (this.tally.pops ?? 0) + 1;
         this.weapons?.popAt(e.x, w.players[e.victim].y, e.z);
         this.sfx.pop();
         if (e.by === LOCAL) {
@@ -1323,8 +1604,8 @@ export class Game {
         this.fx.ring(e.x, e.z, '#7ff3ff', 3.2, 0.6, 0.5);
         break;
       case 'finale':
-        this.hud.banner('FINAL 15 SECONDS!', 'red');
-        setTimeout(() => this.hud.banner('Scores hidden · coins ×2', 'gold', true), 1100);
+        this.hud.banner(`FINAL ${TUNING.finale.seconds} SECONDS!`, 'red');
+        setTimeout(() => this.hud.banner(this.world.mode === 'weapons' ? 'Double points · the edges are crumbling' : 'Scores hidden · coins ×2', 'gold', true), 1100);
         this.sfx.rumble();
         this.rig.shake(0.2);
         break;
@@ -1415,6 +1696,18 @@ export class Game {
       this.fx.coinBurst(p.x, 1.2, p.z, 8);
     }
     this.heroes[e.winner].celebrating = true;
+    if (TUNING.match.rounds === 1) {
+      if (won && this.firstMatch) {
+        this.profile.coins += TUNING.rewards.firstRoundWinCoins;
+        saveProfile(this.profile);
+      }
+      this.hud.prompt(null);
+      this.hud.hintButton(null);
+      this.tut = 'done';
+      this.hud.banner('TIME!', 'gold');
+      track('round_end', { round: e.round, banked: me.bankedRound, stolen: this.roundStats.stolen, steals: this.roundStats.steals, won, lostUnbanked: lost });
+      return;
+    }
     let reward = 0;
     if (won && this.firstMatch && e.round === 1) {
       reward = TUNING.rewards.firstRoundWinCoins;
@@ -1448,23 +1741,30 @@ export class Game {
       this.sfx.win();
     }
     if (this.mode === 'home') return;
+    if (rank === 1) platform.celebrate();
     this.profile.matches++;
-    const coinsWon = 20 + Math.round(me.bankedTotal / 4) + (rank === 1 ? 50 : 0);
-    const xpWon = 40 + me.bankedTotal + (rank === 1 ? 60 : 0);
+    const rounds = TUNING.match.rounds;
+    const R = TUNING.rewards;
+    const coinsWon = R.perMatch + Math.floor(me.bankedTotal / R.pointsPerCoin) + (rank === 1 ? R.win : rank <= 3 ? R.podium : 0);
+    const matchXp = 60 + me.bankedTotal * 4 + me.roundsWon * 20 + (rank === 1 ? 80 : rank <= 3 ? 40 : 0);
     const before = levelOf(this.profile.xp);
+    const t = this.tally;
+    t.kos = me.kos;
+    t.hits = me.stats.hitsLanded;
+    t.matches = 1;
+    t.wins = rank === 1 ? 1 : 0;
+    t.podiums = rank <= 3 ? 1 : 0;
+    const missions = advanceMissions(this.profile.missions, t, before.level, this.profile.matches);
+    const xpWon = matchXp + missions.xp;
+    this.profile.missions = missions.board;
     this.profile.coins += coinsWon;
     this.profile.xp += xpWon;
+    this.profile.form = nextForm(this.profile.form, rank, this.world.players.length);
     const after = levelOf(this.profile.xp);
-    let unlocked: HeroId | null = null;
-    for (const u of UNLOCKS) {
-      if (this.profile.matches >= u.afterMatches && !this.profile.unlocked.includes(u.hero)) {
-        this.profile.unlocked.push(u.hero);
-        unlocked = u.hero;
-      }
-    }
+    const unlocks = UNLOCK_TRACK.filter((u) => u.level > before.level && u.level <= after.level).map((u) => this.rewardCard(u));
     this.profile.lastSeen = new Date().toISOString().slice(0, 10);
     saveProfile(this.profile);
-    track('match_end', { rank, banked: me.bankedTotal, seconds: Math.round((performance.now() - this.matchStart) / 1000) });
+    track('match_end', { rank, rounds, level: after.level, banked: me.bankedTotal, seconds: Math.round((performance.now() - this.matchStart) / 1000) });
     setTimeout(() => {
       // 3D podium: 2nd · 1st · 3rd
       const top = ranking.slice(0, 3).map((id) => this.world.players[id]);
@@ -1481,16 +1781,31 @@ export class Game {
       this.showcase.screenY = -0.12;
       this.hud.showResults(this.world, LOCAL, {
         podium: order.map((p) => ({ name: p.id === LOCAL ? 'You' : p.name, place: ranking.indexOf(p.id) + 1 })),
-        unlocked,
+        unlocks,
+        missions: missions.finished.map((m) => ({ text: missionText(m), xp: m.xp })),
+        next: this.nextReward(after.level),
         coinsWon,
         xpWon,
         level: after.level,
         levelUp: after.level > before.level,
         xpFrac: after.frac,
-        trial: this.trial ? this.world.players[LOCAL].hero : null,
         waitForHost: !!this.room && !this.room.isHost,
-        onRematch: () => {
+        double: platform.canReward()
+          ? async () => {
+              if (!(await this.withAd((h) => platform.rewarded('double_coins', h)))) return false;
+              this.profile.coins += coinsWon;
+              saveProfile(this.profile);
+              track('ad_reward', { kind: 'double', coins: coinsWon });
+              return true;
+            }
+          : null,
+        onRematch: async () => {
+          if (this.adBusy) return;
           this.sfx.click();
+          // a short break between solo matches (never before a newcomer's second match, never mid-friends-session)
+          if (!this.room && this.profile.matches >= 2) await this.withAd((h) => platform.breakAd('rematch', h));
+          this.fillScreen();
+          this.captureMouse();
           track('rematch_click', { hero: this.world.players[LOCAL].hero, room: !!this.room });
           if (this.room?.isHost) {
             // everyone still in the room plays again
@@ -1502,14 +1817,12 @@ export class Game {
           this.firstMatch = false;
           this.showcase.clear();
           this.hud.closePanel();
-          this.startMatch(this.trial ? this.profile.hero : this.world.players[LOCAL].hero);
-          this.trial = false;
+          this.startMatch(this.world.players[LOCAL].hero);
         },
         onHome: () => {
           this.sfx.click();
           this.leaveRoom();
           this.firstMatch = false;
-          this.trial = false;
           this.showcase.clear();
           this.hud.closePanel();
           this.goHome();
@@ -1546,7 +1859,7 @@ export class Game {
       if (this.tut === 'coins' && me.weapon) this.tutAdvance('bank');
       else if (this.tut === 'bank' && (!me.weapon || this.tutT > 6)) {
         this.tutAdvance('done');
-        this.hud.tip('KO rivals for ⭐ · POP their bubbles for another ⭐', 4);
+        this.hud.tip('KO rivals for a point · pop their bubble for another', 4);
       }
     } else if (this.tut === 'coins') {
       if (me.carried >= 5) this.tutAdvance('bank');
@@ -1604,11 +1917,59 @@ export class Game {
     const i = this.input.read();
     const w = this.rig.toWorld(i.mx, i.mz);
     this.lastStickFwd = -i.mz;
-    return { ...i, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist };
+    // the laser is automatic: hold fire, or (touch, optional) just keep the crosshair on a rival
+    const me = this.world.players[LOCAL];
+    const phoneAuto = this.touch && this.profile.autoFire && this.world.phase === 'playing' && this.autoAttack(me);
+    const auto = phoneAuto || (me.weapon === 'blaster' && this.input.firing);
+    return { ...i, grab: i.grab || auto, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist, aimY: this.aimInfo?.y };
   }
   private lastStickFwd = 0;
+  private guest = new GuestNet();
+  private matchId = 0;
+  private shotWait = 0;
+  private hostClock: Worker | null = null;
+  /** What each seat wears. */
+  private looks: Look[] = [];
+  private adOpen = false;
+  private adBusy = false;
+  private shop: Shop | null = null;
+  private superTold = false;
+
+  /** Phones: should the held weapon (or fist) attack by itself right now? */
+  private autoAttack(me: Player) {
+    const T = TUNING.weapons;
+    const near = (r: number) => this.world.players.some((q) => q !== me && targetable(q) && Math.hypot(q.x - me.x, q.z - me.z) < r);
+    if (!me.weapon) return near(1.7);
+    if (me.weapon === 'hammer') return near(T.hammer.radius * 0.85);
+    if (me.weapon === 'banana') return false; // a trap is a choice
+    if (!this.aimLocked) return false;
+    return me.weapon === 'blaster' || me.weapon === 'rocket' ? true : near(11);
+  }
+
+  /** Phones: while attacking, the view drifts onto a rival who is almost under the crosshair. */
+  private aimMagnet(dt: number) {
+    if (!this.touch || !this.profile.aimAssist || !this.rig.turns || performance.now() - this.input.lookT < 140) return;
+    const me = this.world.players[LOCAL];
+    if (this.mode !== 'match' || !this.input.enabled || !me.weapon || me.weapon === 'banana' || me.weapon === 'hammer') return;
+    this.stage.camera.getWorldDirection(this.v);
+    const view = Math.atan2(this.v.x, this.v.z);
+    const cam = this.stage.camera.position;
+    let best = (11 * Math.PI) / 180;
+    let turn = 0;
+    for (const q of this.world.players) {
+      if (q === me || !targetable(q) || Math.hypot(q.x - me.x, q.z - me.z) > 18) continue;
+      let off = Math.atan2(q.x - cam.x, q.z - cam.z) - view;
+      off = Math.atan2(Math.sin(off), Math.cos(off));
+      if (Math.abs(off) < best && this.canSee(me, q)) {
+        best = Math.abs(off);
+        turn = off;
+      }
+    }
+    const step = Math.min(Math.abs(turn), dt * 1.1);
+    if (step > 0.001) this.rig.addYaw(Math.sign(turn) * step);
+  }
   /** Where the local player is pointing this frame (camera centre line in 3rd person, cursor on desktop top-down). */
-  private aimInfo: { heading: number; dist: number } | null = null;
+  private aimInfo: { heading: number; dist: number; y?: number } | null = null;
   private aimLocked = false;
   private aimRay = new THREE.Raycaster();
   private aimNdc = new THREE.Vector2();
@@ -1618,50 +1979,51 @@ export class Game {
     if (this.mode !== 'match' || this.world.mode !== 'weapons' || !this.input.enabled) return;
     const me = this.world.players[LOCAL];
     if (this.rig.turns) {
-      // third person: the mouse turns the camera (scope swings with it) and mouse up / down slides the scope farther / closer
+      // shooter aim: the shot goes to exactly what is under the crosshair (screen centre)
       const cam = this.stage.camera;
       cam.getWorldDirection(this.v);
-      if (Math.hypot(this.v.x, this.v.z) < 1e-4) return;
-      // shooter aim: the crosshair is the screen centre; the shot goes to whatever is under it
-      // (a rival, a wall, a prop or the ground), so you can aim at any spot just by turning the camera
+      const d = this.v;
       const o = cam.position;
-      const dir = this.v; // camera forward (already normalised)
       const W = this.world;
-      let hitT = Infinity;
-      let locked = false;
-      for (const q of W.players) {
-        if (q === me || q.state === 'falling' || q.state === 'launched') continue;
-        // closest approach of the ray to the rival's chest
-        const cx = q.x - o.x;
-        const cy = q.y + 1.0 - o.y;
-        const cz = q.z - o.z;
-        const t = cx * dir.x + cy * dir.y + cz * dir.z;
-        if (t <= 0) continue;
-        const d2 = cx * cx + cy * cy + cz * cz - t * t;
-        const r = q.state === 'bubble' ? 1.3 : 0.85;
-        if (d2 < r * r && t < hitT) {
-          hitT = t;
-          locked = true;
-        }
-      }
-      if (!locked) {
-        // march the ray until it meets the ground / a deck or a big prop
-        for (let t = 1; t < 60; t += 0.5) {
-          const x = o.x + dir.x * t;
-          const y = o.y + dir.y * t;
-          const z = o.z + dir.z * t;
-          if (y <= W.terrain.heightAt(x, z) + 0.05 || (y < 2.6 && W.obstacles.some((b) => (x - b.x) ** 2 + (z - b.z) ** 2 < b.r * b.r))) {
-            hitT = t;
-            break;
+      // start level with the hero, so something between the camera and you never catches the shot
+      const t0 = Math.max(0, (me.x - o.x) * d.x + (me.y + 1.2 - o.y) * d.y + (me.z - o.z) * d.z - 0.3);
+      let hit = castRay(W, o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0, d.x, d.y, d.z, 45, me);
+      this.aimLocked = !!hit.player;
+      let px = hit.x;
+      let py = hit.y;
+      let pz = hit.z;
+      if (hit.player) {
+        // aim for the body's centre line at that height: the same shot from your gun, a hand's width off your eye line
+        const h = Math.hypot(d.x, d.z) || 1;
+        const along = ((hit.player.x - px) * d.x + (hit.player.z - pz) * d.z) / h;
+        px += (d.x / h) * Math.max(0, along);
+        pz += (d.z / h) * Math.max(0, along);
+        py += (d.y / h) * Math.max(0, along);
+      } else if (this.touch && this.profile.aimAssist) {
+        // thumbs only: a rival within a few degrees of the crosshair takes the shot
+        let best = Math.tan((4 * Math.PI) / 180);
+        for (const q of W.players) {
+          if (q === me || q.state === 'falling' || q.state === 'launched') continue;
+          const cx = q.x - o.x;
+          const cy = q.y + 1.05 - o.y;
+          const cz = q.z - o.z;
+          const along = cx * d.x + cy * d.y + cz * d.z;
+          if (along <= t0 || along > 24) continue;
+          const off = Math.sqrt(Math.max(0, cx * cx + cy * cy + cz * cz - along * along)) / along;
+          if (off < best && this.canSee(me, q)) {
+            best = off;
+            px = q.x;
+            py = q.y + 1.05;
+            pz = q.z;
+            this.aimLocked = true;
           }
         }
       }
-      const t = Number.isFinite(hitT) ? hitT : 40;
-      const tx = o.x + dir.x * t - me.x;
-      const tz = o.z + dir.z * t - me.z;
+      const tx = px - me.x;
+      const tz = pz - me.z;
       const dd = Math.hypot(tx, tz);
-      this.aimLocked = locked;
-      this.aimInfo = dd > 1 ? { heading: Math.atan2(tx, tz), dist: dd } : { heading: Math.atan2(dir.x, dir.z), dist: 30 };
+      const heading = dd > 0.8 ? Math.atan2(tx, tz) : Math.atan2(d.x, d.z);
+      this.aimInfo = { heading, dist: Math.max(0.8, dd), y: py };
       return;
     }
     // top-down views: the scope sits under the mouse pointer
@@ -1676,6 +2038,13 @@ export class Game {
     const hz = o.z + d.z * t - me.z;
     if (Math.hypot(hx, hz) < 0.4) return;
     this.aimInfo = { heading: Math.atan2(hx, hz), dist: Math.hypot(hx, hz) };
+  }
+
+  /** Nothing solid between two heroes (aim assist must not drag the aim behind a wall). */
+  private canSee(a: { x: number; z: number }, b: { x: number; z: number }) {
+    const d = Math.hypot(b.x - a.x, b.z - a.z);
+    for (let s = 0.7; s < d - 0.7; s += 0.4) if (!this.world.clear(a.x + ((b.x - a.x) * s) / d, a.z + ((b.z - a.z) * s) / d, 0.05)) return false;
+    return true;
   }
 
   /** Is (x, z) standing between the camera and the point (fx, fz)? (any camera direction) */
@@ -1727,6 +2096,123 @@ export class Game {
     }
   }
 
+  /** Run something that may show an ad: the game stands still and silent, and nothing can be clicked meanwhile. */
+  private async withAd<T>(run: (h: AdHooks) => Promise<T>): Promise<T | undefined> {
+    if (this.adBusy) return undefined;
+    this.adBusy = true;
+    const cover = document.createElement('div');
+    cover.className = 'ad-cover';
+    document.body.append(cover);
+    try {
+      return await run({
+        start: () => {
+          this.adOpen = true;
+          this.sfx.blocked = true;
+          this.input.releaseMouse();
+        },
+        end: () => {
+          this.adOpen = false;
+          this.sfx.blocked = platform.muted();
+        },
+      });
+    } finally {
+      cover.remove();
+      this.adOpen = this.adBusy = false;
+      this.sfx.blocked = platform.muted();
+    }
+  }
+
+  private today() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  private openShop() {
+    if (this.shop) return;
+    this.sfx.unlock();
+    this.sfx.click();
+    track('shop_open', { coins: this.profile.coins });
+    let products: Product[] = [];
+    const state = (): ShopState => ({
+      wallet: this.profile,
+      products,
+      ads: platform.canReward() ? { left: adCoinsLeft(this.profile, this.today(), RELEASE.adCoinsPerDay), coins: RELEASE.adCoins } : null,
+    });
+    const shop = (this.shop = new Shop(state()));
+    this.home?.show(false);
+    const refresh = (note = '') => {
+      saveProfile(this.profile);
+      this.home?.setCoins(this.profile.coins);
+      if (this.shop === shop) shop.update(state(), note);
+    };
+    shop.onItem = (id) => {
+      const had = this.profile.coins;
+      if (!buyOrWear(this.profile, id)) return refresh(`You need ${item(id)!.price - this.profile.coins} more coins`);
+      if (had !== this.profile.coins) {
+        track('shop_buy', { id });
+        this.sfx.power();
+      } else this.sfx.click();
+      refresh();
+    };
+    shop.onAd = async () => {
+      if (adCoinsLeft(this.profile, this.today(), RELEASE.adCoinsPerDay) <= 0) return;
+      if (!(await this.withAd((h) => platform.rewarded('shop_coins', h)))) return refresh('No video available right now');
+      countAd(this.profile, this.today());
+      this.profile.coins += RELEASE.adCoins;
+      track('ad_reward', { kind: 'shop', coins: RELEASE.adCoins });
+      refresh();
+    };
+    shop.onPack = async (id) => {
+      const bought = await platform.buy(id);
+      if (!bought) return refresh('Nothing was charged');
+      const done = await this.handOut(bought.id, bought.token);
+      refresh(done ? '' : 'Payment received. Your coins arrive as soon as it is confirmed.');
+    };
+    shop.onClose = () => {
+      this.sfx.click();
+      shop.close();
+      this.shop = null;
+      this.home?.show(true);
+    };
+    void platform.products().then((p) => {
+      products = p;
+      if (this.shop === shop) shop.update(state());
+    });
+  }
+
+  /** Confirm a paid pack, give its coins (once), save, then tell the store. False: left for the next start. */
+  private async handOut(id: string, token: string) {
+    const pack = RELEASE.coinPacks.find((p) => p.id === id);
+    if (!pack) return false;
+    // already handed out here: only the store still needs telling
+    if (!this.profile.redeemed.includes(token) && !(await platform.confirm(id, token))) return false;
+    if (redeem(this.profile, pack.coins, token)) {
+      saveProfile(this.profile);
+      track('iap', { id });
+      this.sfx.crown();
+    }
+    await platform.consume(token).catch((e) => console.warn('store did not confirm yet', e));
+    return true;
+  }
+
+  private async settlePurchases() {
+    for (const p of await platform.pending()) await this.handOut(p.id, p.token);
+    this.home?.setCoins(this.profile.coins);
+  }
+
+  private applyPhonePrefs() {
+    document.body.dataset.buttons = this.profile.buttons;
+    haptics.on = this.profile.vibrate;
+  }
+
+  /** Phones: fill the screen and hold landscape once the player starts a match (needs their tap). */
+  private fillScreen() {
+    if (!platform.canFullscreen || !this.touch || document.fullscreenElement || navigator.webdriver) return;
+    void document.documentElement
+      .requestFullscreen?.({ navigationUI: 'hide' })
+      .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
+      .catch(() => {});
+  }
+
   private applyCamera(p: CamPreset) {
     if (!CAM_PRESETS[p]) p = 'close';
     this.rig.setPreset(p);
@@ -1736,6 +2222,22 @@ export class Game {
     document.body.classList.toggle('cam-third', this.rig.turns);
     this.stage.fovBase = this.rig.presetFov;
     this.stage.resize();
+  }
+
+  private hadMouse = false;
+  private lockPausedAt = -1000;
+
+  /** Desktop third person: take the mouse for aiming (call from a click). */
+  private captureMouse() {
+    if (this.touch || AUTOPLAY) return;
+    const cam = (PARAMS.get('cam') as CamPreset) || this.profile.camera;
+    if (cam !== 'third') return;
+    this.input.mouseLook = true;
+    this.input.lockMouse();
+  }
+
+  private applyAimSpeed() {
+    this.input.sensitivity = { low: 0.6, normal: 1, high: 1.6 }[this.profile.aimSpeed] ?? 1;
   }
 
   private togglePause() {
@@ -1756,17 +2258,31 @@ export class Game {
           quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
           inMatch: this.mode === 'match',
           camera: CAM_PRESETS[this.rig.preset].label,
-          canUnlockAll: this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
+          aimSpeed: this.profile.aimSpeed,
+          autoFire: this.touch ? this.profile.autoFire : null,
+          aimAssist: this.touch ? this.profile.aimAssist : null,
+          buttons: this.touch ? this.profile.buttons : null,
+          vibrate: this.touch ? this.profile.vibrate : null,
         },
         {
-          resume: () => this.setPaused(false),
+          resume: () => {
+            this.setPaused(false);
+            if (this.mode === 'match') this.captureMouse(); // never in the lobby: its buttons need the mouse
+          },
           home: () => {
             this.sfx.click();
             track('quit_match', { round: this.world.round });
+            if (this.mode === 'match' && !this.room && this.world.phase !== 'matchEnd') {
+              const me = this.world.players[LOCAL];
+              const done = Math.floor(this.world.roundTime / 60); // whole minutes played
+              if (done > 0) {
+                this.profile.xp += done * 20 + (me.bankedTotal + me.bankedRound) * 4;
+                saveProfile(this.profile);
+              }
+            }
             this.paused = false;
             this.hud.closePanel();
             this.firstMatch = false;
-            this.trial = false;
             this.goHome();
           },
           toggle: (k) => {
@@ -1776,14 +2292,37 @@ export class Game {
             saveProfile(this.profile);
             this.setPaused(true);
           },
-          unlockAll: () => {
-            this.sfx.click();
-            this.profile.unlocked = [...HERO_IDS];
+          aimSpeed: () => {
+            const order = ['low', 'normal', 'high'] as const;
+            this.profile.aimSpeed = order[(order.indexOf(this.profile.aimSpeed) + 1) % 3];
+            this.applyAimSpeed();
             saveProfile(this.profile);
-            track('unlock_all_playtest');
-            this.paused = false;
-            this.hud.closePanel();
-            this.goHome();
+            this.setPaused(true);
+          },
+          aimAssist: () => {
+            this.profile.aimAssist = !this.profile.aimAssist;
+            saveProfile(this.profile);
+            this.setPaused(true);
+          },
+          autoFire: () => {
+            this.profile.autoFire = !this.profile.autoFire;
+            saveProfile(this.profile);
+            this.setPaused(true);
+          },
+          credits: () => this.hud.showCredits(() => this.setPaused(true)),
+          buttons: () => {
+            const order = ['small', 'normal', 'large'] as const;
+            this.profile.buttons = order[(order.indexOf(this.profile.buttons) + 1) % 3];
+            this.applyPhonePrefs();
+            saveProfile(this.profile);
+            this.setPaused(true);
+          },
+          vibrate: () => {
+            this.profile.vibrate = !this.profile.vibrate;
+            this.applyPhonePrefs();
+            haptics.buzz(30);
+            saveProfile(this.profile);
+            this.setPaused(true);
           },
           camera: () => {
             const order: PlayerCam[] = ['third', 'close', 'far', 'action'];
@@ -1801,6 +2340,7 @@ export class Game {
             this.autoQuality = false;
             this.profile.quality = next;
             saveProfile(this.profile);
+            this.stage.scale = 1;
             this.stage.setQuality(next);
             this.setPaused(true);
           },
