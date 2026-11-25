@@ -1,3 +1,4 @@
+import { release } from './dispose.ts';
 import * as THREE from 'three';
 import type { World } from '../../../shared/sim/world.ts';
 import type { PowerKind } from '../../../shared/sim/types.ts';
@@ -176,8 +177,8 @@ export class PowerView {
   /** Swap in a new world (rematch) without rebuilding textures. */
   setWorld(world: World) {
     this.world = world;
-    for (const b of this.bubbles.values()) this.scene.remove(b.g);
-    for (const b of this.bombs.values()) this.scene.remove(b.g);
+    for (const b of this.bubbles.values()) release(b.g);
+    for (const b of this.bombs.values()) release(b.g);
     this.bubbles.clear();
     this.bombs.clear();
   }

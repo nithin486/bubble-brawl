@@ -1,3 +1,4 @@
+import { release } from './dispose.ts';
 import * as THREE from 'three';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
@@ -9,6 +10,12 @@ const BACK = -1.4;
 
 /** The Bubble Bank: an iridescent bubble with a gold chest inside, plus the "next spot" beam. */
 export class BankView {
+  /** Free this round's bank before the next match builds its own. */
+  dispose() {
+    release(this.group);
+    release(this.beam);
+  }
+
   group = new THREE.Group();
   private bubble: THREE.Mesh;
   private bubbleMat: THREE.ShaderMaterial;

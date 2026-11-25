@@ -1,3 +1,4 @@
+import { release } from './dispose.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TUNING } from '../../../shared/config/tuning.ts';
@@ -301,16 +302,19 @@ export class WeaponsView {
 
   setWorld(world: World) {
     this.world = world;
-    for (const b of this.boxes.values()) this.group.remove(b.root);
-    for (const m of this.shots.values()) this.group.remove(m);
-    for (const m of this.mines.values()) this.group.remove(m.g);
-    for (const t of this.throws.values()) this.group.remove(t.ball, t.ring);
+    for (const b of this.boxes.values()) release(b.root);
+    for (const m of this.shots.values()) release(m);
+    for (const m of this.mines.values()) release(m.g);
+    for (const t of this.throws.values()) {
+      release(t.ball);
+      release(t.ring);
+    }
     this.boxes.clear();
     this.shots.clear();
     this.mines.clear();
     this.throws.clear();
-    for (const b of this.bubbles) this.group.remove(b);
-    for (const h of this.held) this.group.remove(h);
+    for (const b of this.bubbles) release(b);
+    for (const h of this.held) release(h);
     this.bubbles = world.players.map(() => {
       const m = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), this.bubbleMat);
       m.visible = false;

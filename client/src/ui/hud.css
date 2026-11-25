@@ -1,6 +1,7 @@
 @import '@fontsource/lilita-one/400.css';
 @import '@fontsource/nunito/800.css';
 @import '@fontsource/nunito/900.css';
+@import './theme.css';
 
 :root {
   --violet: #3a1f8f;
@@ -562,3 +563,95 @@ body.cam-third .tag.me .tn{display:none}
 .xhair b { position: absolute; left: 14.5px; top: 14.5px; width: 5px; height: 5px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px #0a102ca0; }
 .xhair.locked { transform: translate(-50%, -50%) scale(.82) rotate(45deg); }
 .xhair.locked i, .xhair.locked b { background: #ff3a5a; }
+
+/* =====================================================================
+   Phase 3: weapon rack, settings, results, respawn (tokens: theme.css)
+   ===================================================================== */
+/* six weapons: a status rack (the boxes deal the weapons, so these are not buttons) */
+.rack { position: absolute; left: 50%; bottom: calc(66px + var(--safe-b)); transform: translateX(-50%); display: flex; gap: 6px; padding: 5px; border-radius: 18px; background: #0e1636a8; box-shadow: inset 0 0 0 1.5px #ffffff30; pointer-events: none; }
+.slot { position: relative; width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; background: #1b2a62b0; box-shadow: inset 0 0 0 1.5px #ffffff26; transition: transform .18s cubic-bezier(.2, 1.5, .4, 1), background .18s; }
+.slot img { width: 94%; height: 94%; object-fit: contain; opacity: .66; filter: grayscale(.45) brightness(1.15); transition: opacity .18s, filter .18s; }
+.slot.held { transform: translateY(-7px) scale(1.18); background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--wc) 75%, #fff), color-mix(in srgb, var(--wc) 45%, #141d48)); box-shadow: inset 0 0 0 2.5px #fff, 0 0 18px color-mix(in srgb, var(--wc) 70%, transparent); }
+.slot.held img { opacity: 1; filter: drop-shadow(0 2px 2px #0a102c90); }
+.slot .cool { position: absolute; inset: 0; border-radius: inherit; background: conic-gradient(#0a102cc4 var(--p, 0%), transparent 0); }
+.slot b { position: absolute; right: -5px; bottom: -5px; min-width: 19px; padding: 0 4px; font: 400 13px/19px var(--display); text-align: center; border-radius: 99px; background: #0e1636; box-shadow: 0 0 0 1.5px #fff; display: none; }
+.slot.held b { display: block; }
+.slot.held.empty b { background: var(--bad); }
+.rack.off .slot { filter: grayscale(1) brightness(.65); }
+.rack .label { position: absolute; left: 50%; top: -23px; transform: translateX(-50%); white-space: nowrap; font: 400 13px var(--display); letter-spacing: .5px; color: var(--wc, #fff); text-shadow: 0 2px 0 #0a102c, 0 0 6px #0a102c; }
+.mode-weapons .wcard { bottom: calc(150px + var(--safe-b)); }
+.mode-weapons .cam-hint { bottom: calc(142px + var(--safe-b)); }
+.mode-coins .rack { display: none; }
+
+/* knocked out / falling */
+.respawn { position: absolute; left: 50%; top: 62%; transform: translate(-50%, -50%); display: none; align-items: center; gap: 12px; padding: 10px 22px 10px 12px; border-radius: 999px; white-space: nowrap; background: var(--glass); box-shadow: inset 0 0 0 2.5px #8fe9ffc0, 0 0 26px #5fe3ff70; animation: pop .3s; }
+.respawn.on { display: flex; }
+.respawn i { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--blue-hi); font: 400 22px var(--display); font-style: normal; }
+.respawn b { display: block; font: 400 21px var(--display); color: #8fe9ff; }
+.respawn span { display: block; font-size: 12px; font-weight: 900; }
+
+/* panel titles: solid gold with an outline (the gradient clip hid them under the .stroke rule) */
+.panel h1, .panel h1.stroke { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--gold-solid); filter: none; -webkit-text-stroke: 7px #0e1636; paint-order: stroke fill; text-shadow: 0 5px 0 #0e1636; }
+.panel h1.lose { color: #bcd4ff; }
+
+/* settings rows: icon, label, switch or cycling value */
+.panel.menu-panel { min-width: min(420px, 92vw); }
+.toggle { gap: 14px; padding: 7px 6px; border-bottom: 1.5px solid #ffffff1c; }
+.toggle .tl { display: flex; align-items: center; gap: 10px; }
+.toggle .tl i { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; background: #0e163690; }
+.toggle .tl i .ico { width: 20px; height: 20px; }
+.toggle button, .toggle button.on { min-width: 132px; color: #fff; background: #0e1636; box-shadow: inset 0 0 0 2px #ffffff50; transition: transform .12s, filter .12s; }
+.toggle button.cycle::after { content: ' ›'; color: var(--gold-solid); font-size: 18px; line-height: 0; }
+.toggle button.switch { position: relative; min-width: 76px; height: 34px; padding: 0 12px 0 34px; text-align: right; background: #3a4572; }
+.toggle button.switch::before { content: ''; position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px #0006; transition: left .18s; }
+.toggle button.switch.on { padding: 0 34px 0 12px; text-align: left; color: var(--ink); background: var(--ok); }
+.toggle button.switch.on::before { left: calc(100% - 30px); }
+.toggle button:active { transform: scale(.95); }
+@media (hover: hover) { .toggle button:hover, .big-btn:hover { filter: brightness(1.12); } }
+.keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 12px; font-size: 12px; font-weight: 900; opacity: .92; }
+.keys kbd { font: 900 11px var(--body); padding: 2px 7px; margin-right: 4px; border-radius: 6px; background: #0e1636; box-shadow: inset 0 0 0 1.5px #ffffff70; }
+.big-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.big-btn .ico { width: .8em; height: .8em; }
+.big-btn:not(.alt) .ico { filter: brightness(0) saturate(100%) invert(11%) sepia(40%) saturate(3000%) hue-rotate(215deg); }
+
+/* round end and final results */
+.panel .verdict { display: block; width: max-content; margin: 0 auto 4px; padding: 3px 16px; border-radius: 99px; font: 400 14px var(--display); letter-spacing: 3px; background: #0e1636; }
+.panel.win .verdict { background: var(--cta); color: var(--ink); }
+.panel.win { box-shadow: inset 0 0 0 2.5px var(--gold-solid), inset 0 3px 0 #ffffff50, 0 0 44px #ffd23f55, 0 18px 50px #05081a90, 0 6px 0 #0a102c; }
+.confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.confetti i { position: absolute; top: -20px; width: 9px; height: 15px; border-radius: 3px; animation: confetti 3.2s linear infinite; }
+@keyframes confetti { to { transform: translate3d(40px, 110vh, 0) rotate(720deg); } }
+
+.rl-ic .ico, .rl-ic img { width: 62px; height: 62px; object-fit: contain; vertical-align: middle; }
+.modchip { display: none; align-items: center; gap: 5px; }
+.modchip .ico { width: 14px; height: 14px; }
+.pill .ico { width: 22px; height: 22px; }
+.tag .tc .ico { width: 18px; height: 18px; }
+
+@media (max-height: 520px) {
+  .rack { bottom: calc(38px + var(--safe-b)); gap: 3px; padding: 3px; border-radius: 12px; }
+  .slot { width: 28px; height: 28px; border-radius: 8px; }
+  .slot b { font-size: 10px; line-height: 14px; min-width: 14px; right: -4px; bottom: -4px; }
+  .slot.held { transform: translateY(-4px) scale(1.18); }
+  .rack .label { display: none; }
+  .mode-weapons .wcard { bottom: calc(84px + var(--safe-b)); }
+  .mode-weapons .cam-hint { bottom: calc(78px + var(--safe-b)); }
+  .respawn { top: 58%; padding: 5px 14px 5px 6px; gap: 8px; }
+  .respawn i { width: 30px; height: 30px; font-size: 15px; }
+  .respawn b { font-size: 15px; }
+  .respawn span { font-size: 10px; }
+  .panel.menu-panel { min-width: min(380px, 80vw); }
+  .toggle { font-size: 14px; padding: 3px 4px; }
+  .toggle .tl i { width: 26px; height: 26px; border-radius: 8px; }
+  .toggle .tl i .ico { width: 16px; height: 16px; }
+  .toggle button, .toggle button.on { font-size: 13px; padding-top: 4px; padding-bottom: 4px; min-width: 112px; }
+  .toggle button.switch { min-width: 66px; height: 28px; padding-top: 0; padding-bottom: 0; padding-left: 28px; }
+  .toggle button.switch.on { padding-left: 10px; padding-right: 28px; }
+  .toggle button.switch::before { width: 20px; height: 20px; }
+  .toggle button.switch.on::before { left: calc(100% - 24px); }
+  .panel .verdict { font-size: 10px; margin-bottom: 0; }
+  .rl-ic .ico, .rl-ic img { width: 42px; height: 42px; }
+}
+/* phone buttons: finger-sized even at the smallest scale */
+@media (pointer: coarse) and (max-height: 520px) { .controls { transform: scale(0.74); } }
+@media (pointer: coarse) and (max-height: 340px) { .controls { transform: scale(0.62); } .rack .slot { width: 22px; height: 22px; } }

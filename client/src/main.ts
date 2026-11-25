@@ -18,7 +18,11 @@ async function boot() {
   const q = new URLSearchParams(location.search).get('q') as Quality | null;
   const quality: Quality = q ?? (profile.quality !== 'auto' ? profile.quality : isTouch() ? 'medium' : 'high');
   const stage = new Stage(document.getElementById('app')!, quality);
-  const progress = (f: number) => (bar.style.width = `${Math.max(5, f * 100)}%`);
+  const pct = document.getElementById('bootpct');
+  const progress = (f: number) => {
+    bar.style.width = `${Math.max(5, f * 100)}%`;
+    if (pct) pct.textContent = `LOADING ${Math.round(f * 100)}%`;
+  };
   const assets = await loadAssets(HERO_IDS, (f) => progress(f * 0.85));
   // the first screen shows the ?map= or saved map: its art pack must be here before the game builds it
   const wanted = new URLSearchParams(location.search).get('map') ?? profile.map;

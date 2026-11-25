@@ -1,3 +1,4 @@
+import { release } from './render/dispose.ts';
 import * as THREE from 'three';
 import { World } from '../../shared/sim/world.ts';
 import { BotBrain } from '../../shared/sim/bots.ts';
@@ -8,6 +9,7 @@ import { HEROES, HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 import { Stage, isTouch, type Quality } from './render/stage.ts';
 import { loadModel } from './render/models.ts';
 import { WeaponsView, WEAPON_INFO } from './render/weapons-view.ts';
+import { weaponShot } from './render/portraits.ts';
 import { loadPack, type Assets } from './render/assets.ts';
 import { ArenaView } from './render/arena-view.ts';
 import { MAPS, MAP_ROTATION, MAP_PACK, type MapId } from '../../shared/config/maps.ts';
@@ -300,7 +302,23 @@ export class Game {
       touch: this.touch,
       maps: MAP_ROTATION.map((id) => ({ id, name: MAPS[id].name, blurb: MAPS[id].blurb })),
       map: this.mapId,
+      name: this.profile.name || 'Player',
+      sound: this.profile.sound,
+      portraits: this.portraits,
+      weapons: (Object.keys(WEAPON_INFO) as (keyof typeof WEAPON_INFO)[]).map((k) => ({ ...WEAPON_INFO[k], img: weaponShot(k) })),
     });
+    this.home.onSound = () => {
+      this.profile.sound = !this.profile.sound;
+      saveProfile(this.profile);
+      this.sfx.muted = true; // the match behind the menu stays silent
+      if (this.profile.sound) {
+        this.sfx.unlock();
+        this.sfx.muted = false;
+        this.sfx.click();
+        this.sfx.muted = true;
+      }
+      return this.profile.sound;
+    };
     this.home.onMap = (id) => {
       this.sfx.click();
       this.mapId = id as MapId;
@@ -321,7 +339,7 @@ export class Game {
     this.home.onHero = (h, locked) => {
       this.showcase.set([{ hero: h, anim: locked ? 'Idle' : 'Cheer', locked, color: HEROES[h].color, height: 0.45 }]);
       this.showcase.screenX = 0;
-      this.showcase.screenY = 0.13;
+      this.showcase.screenY = 0.22;
       this.sfx.click();
     };
     this.home.onHero(this.home.hero, !this.profile.unlocked.includes(this.home.hero));
@@ -396,21 +414,20 @@ export class Game {
     this.sfx.muted = attract || !this.profile.sound;
 
     // views
-    for (const h of this.heroes) this.stage.scene.remove(h.root);
+    for (const h of this.heroes) release(h.root);
     this.heroes = this.world.players.map((p) => {
       const hv = new HeroView(this.assets.heroes.get(p.hero)!, p, p.id === LOCAL && !attract, PLAYER_COLORS[p.id], this.glowTex, this.assets.env);
       this.stage.scene.add(hv.root);
       return hv;
     });
-    if (this.island) this.stage.scene.remove(this.island.group);
+    release(this.island?.group);
     this.island = new ArenaView(this.world, this.assets.env, this.stage.scene, this.glowTex);
     this.stage.applyTheme(this.island.theme);
-    if (this.bank) {
-      this.stage.scene.remove(this.bank.group);
-    }
+    this.bank?.dispose();
     this.bank = new BankView(this.world, this.assets.env, this.stage.scene, this.glowTex);
     this.bank.group.visible = this.world.mode === 'coins';
     document.body.classList.toggle('mode-weapons', this.world.mode === 'weapons');
+    document.body.classList.toggle('mode-coins', this.world.mode === 'coins');
     if (!this.weapons) this.weapons = new WeaponsView(this.world, this.stage.scene, this.fx, this.glowTex, this.assets.env);
     else this.weapons.setWorld(this.world);
     if (!this.powers) this.powers = new PowerView(this.world, this.stage.scene, this.glowTex);
@@ -424,6 +441,7 @@ export class Game {
     this.lastHunt.clear();
     this.slowT = 0;
     this.wellWarnT = 0;
+    this.hud?.closePanel();
     this.hud?.root.remove();
     this.hud = new Hud(this.world, LOCAL, this.portraits, this.touch, this.input);
     this.hud.onPause = () => this.togglePause();
@@ -1324,7 +1342,7 @@ export class Game {
         break;
       case 'finale':
         this.hud.banner('FINAL 15 SECONDS!', 'red');
-        setTimeout(() => this.hud.banner('Scores hidden · coins ×2', 'gold', true), 1100);
+        setTimeout(() => this.hud.banner(this.world.mode === 'weapons' ? 'Scores hidden · the edges are crumbling' : 'Scores hidden · coins ×2', 'gold', true), 1100);
         this.sfx.rumble();
         this.rig.shake(0.2);
         break;
@@ -1546,7 +1564,7 @@ export class Game {
       if (this.tut === 'coins' && me.weapon) this.tutAdvance('bank');
       else if (this.tut === 'bank' && (!me.weapon || this.tutT > 6)) {
         this.tutAdvance('done');
-        this.hud.tip('KO rivals for ⭐ · POP their bubbles for another ⭐', 4);
+        this.hud.tip('KO rivals for a point · pop their bubble for another', 4);
       }
     } else if (this.tut === 'coins') {
       if (me.carried >= 5) this.tutAdvance('bank');

@@ -2,32 +2,26 @@ import './home.css';
 import { HEROES, HERO_IDS, type HeroId } from '../../../shared/config/heroes.ts';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import { ICONS } from './hud.ts';
-
-const SVG = {
-  gear: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.7 7.7 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.7 7.7 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>`,
-  left: `<svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="#4a2fd0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-  right: `<svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" fill="none" stroke="#4a2fd0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-  lock: `<svg viewBox="0 0 24 24" fill="#ffd84a"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zm2 0h6V7a3 3 0 0 0-6 0z"/></svg>`,
-  crown: `<svg viewBox="0 0 64 44"><path d="M4 14l14 12L32 4l14 22 14-12-6 28H10z" fill="#ffd84a" stroke="#3a1fb0" stroke-width="4" stroke-linejoin="round"/><circle cx="32" cy="4" r="4" fill="#ff5fd2"/></svg>`,
-  coin: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ffc81e" stroke="#b86400" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="none" stroke="#fff6b0" stroke-width="2"/></svg>`,
-  steal: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V3.5a1.5 1.5 0 0 1 3 0V10h.5V4.5a1.5 1.5 0 0 1 3 0V11h.5V7.5a1.5 1.5 0 0 1 3 0V14c0 4.4-3.1 8-7.5 8-3 0-4.8-1.3-6.3-3.6L3.8 14.6a1.5 1.5 0 0 1 2.4-1.8L7 13.8z"/></svg>`,
-  bubble: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#5fe3ff" fill-opacity=".5" stroke="#fff" stroke-width="2"/><circle cx="9" cy="9" r="2.5" fill="#fff"/></svg>`,
-  box: `<svg viewBox="0 0 24 24"><path d="M3 9h18v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="#c9701f" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M2 6h20v4H2z" fill="#ffb347" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><text x="12" y="19" text-anchor="middle" font-size="9" font-weight="900" fill="#fff" font-family="sans-serif">?</text></svg>`,
-  gun: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M2 8h14l2-2h4v6h-4l-1 2h-3l-1 5H8l1-5H5L2 12z"/><circle cx="21" cy="9" r="1.4" fill="#2a1580"/></svg>`,
-  trophy: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V17h3v3H8v-3h3v-2.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3zm0 4H6v1a2 2 0 0 0 1 1.7zm10 0v2.7A2 2 0 0 0 18 8V7z"/></svg>`,
-};
+import { UI } from './icons.ts';
 
 export interface HomeState {
   coins: number;
   level: number;
   xpFrac: number;
+  name: string;
   hero: HeroId;
   unlocked: HeroId[];
   lockText: (h: HeroId) => string;
   touch: boolean;
   maps: { id: string; name: string; blurb: string }[];
   map: string;
+  sound: boolean;
+  portraits: Map<HeroId, string>;
+  /** The arsenal found in mystery boxes (information, not a loadout: the game deals weapons at random). */
+  weapons: { name: string; tip: string; color: string; img: string }[];
 }
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export class Home {
   root = document.createElement('div');
@@ -38,9 +32,12 @@ export class Home {
   private abilityEl: HTMLElement;
   private lockEl: HTMLElement;
   private playBtn: HTMLButtonElement;
+  private soundBtn: HTMLButtonElement;
+  private picks: HTMLButtonElement[];
   onHero: ((h: HeroId, locked: boolean) => void) | null = null;
   onPlay: ((h: HeroId) => void) | null = null;
   onSettings: (() => void) | null = null;
+  onSound: (() => boolean) | null = null;
   onMap: ((id: string) => void) | null = null;
   onFriends: (() => void) | null = null;
   private mapIdx = 0;
@@ -50,59 +47,82 @@ export class Home {
     this.idx = Math.max(0, HERO_IDS.indexOf(state.hero));
     const r = this.root;
     r.id = 'home';
+    const picks = HERO_IDS.map(
+      (h) =>
+        `<button class="pick tap${state.unlocked.includes(h) ? '' : ' locked'}" data-hero="${h}" aria-label="${HEROES[h].name}" style="--hc:${HEROES[h].color};background-image:url(${state.portraits.get(h)})">${state.unlocked.includes(h) ? '' : UI.lock}<span>${HEROES[h].name}</span></button>`,
+    ).join('');
+    const arsenal = state.weapons.map((w) => `<li style="--wc:${w.color}" title="${w.name}: ${w.tip}"><img src="${w.img}" alt="${w.name}"></li>`).join('');
     r.innerHTML = `
       <div class="shade"></div>
+      <div class="motes">${'<i></i>'.repeat(9)}</div>
       <div class="logo">
-        <span class="bub" style="width:26px;height:26px;left:-14px;top:52px"></span>
-        <span class="bub" style="width:16px;height:16px;left:250px;top:40px"></span>
-        <span class="bub" style="width:12px;height:12px;left:236px;top:96px"></span>
-        <span class="crown">${SVG.crown}</span>
+        <span class="crown">${UI.crown}</span>
         <span class="w">BUBBLE</span><span class="w b">BRAWL</span>
         <span class="tag">GRAB · SHOOT · POP</span>
       </div>
-      <div class="home-top">
-        <div class="chip"><span class="lv">${state.level}</span><span class="xp"><i style="width:${Math.round(state.xpFrac * 100)}%"></i></span></div>
-        <div class="chip">${SVG.coin.replace('<svg', '<svg width="24" height="24"')}<span>${state.coins}</span></div>
-        <button class="icon-btn" aria-label="Settings">${SVG.gear}</button>
-      </div>
-      <button class="arrow l tap" aria-label="Previous hero">${SVG.left}</button>
-      <button class="arrow r tap" aria-label="Next hero">${SVG.right}</button>
-      <div class="lockbadge">${SVG.lock}<span></span></div>
-      <div class="hero-name"><h2></h2><span class="role"></span></div>
-      <div class="ability"></div>
-      <div class="howto">
+      <header class="home-top">
+        <div class="profile glass">
+          <div class="avatar"></div>
+          <div class="who"><b>${esc(state.name)}</b><span class="xp"><i style="width:${Math.round(state.xpFrac * 100)}%"></i></span></div>
+          <div class="lv" title="Player level">${state.level}</div>
+        </div>
+        <div class="wallet glass" title="Coins">${UI.coin}<b>${state.coins}</b></div>
+        <button class="round-btn snd tap" aria-label="Sound"></button>
+        <button class="round-btn set tap" aria-label="Settings">${UI.gear}</button>
+      </header>
+      <aside class="howto glass">
         <h3>How to play</h3>
-        <div class="step"><div class="n" style="background:linear-gradient(#ffe27a,#ffb400)">${SVG.box}</div><div>Grab mystery boxes<small>Every box gives you a random weapon</small></div></div>
-        <div class="step"><div class="n" style="background:linear-gradient(#ff9fe0,#ff5fd2)">${SVG.gun}</div><div>Shoot your rivals<small>3 hearts each: hit them to knock them out</small></div></div>
-        <div class="step"><div class="n" style="background:linear-gradient(#a5f6ff,#2aa8e0)">${SVG.bubble}</div><div>Pop the bubbles<small>A knocked-out rival floats in a bubble: pop it to score!</small></div></div>
-      </div>
-      <div class="play-col">
-        <div class="mapcard"><button class="mp l" aria-label="Previous map">${SVG.left}</button><div class="mt"><small>MAP</small><b></b><span></span></div><button class="mp r" aria-label="Next map">${SVG.right}</button></div>
-        <div class="mode"><div class="mi">${SVG.trophy}</div><div><b>WEAPON BRAWL</b><span>${TUNING.match.rounds} rounds · vs bots</span></div></div>
+        <ol>
+          <li><i class="a">${UI.gift}</i><div><b>Grab mystery boxes</b><small>Each one holds a random weapon</small></div></li>
+          <li><i class="b">${UI.bolt}</i><div><b>Shoot your rivals</b><small>Drain their health to knock them out</small></div></li>
+          <li><i class="c">${UI.bubble}</i><div><b>Pop the bubbles</b><small>Touch a knocked-out rival to score again</small></div></li>
+        </ol>
+        <div class="arsenal"><span>IN THE BOXES</span><ul>${arsenal}</ul></div>
+      </aside>
+      <button class="arrow l tap" aria-label="Previous hero">${UI.left}</button>
+      <button class="arrow r tap" aria-label="Next hero">${UI.right}</button>
+      <div class="lockbadge">${UI.lock}<span></span></div>
+      <section class="hero-dock">
+        <div class="hero-name"><h2></h2><span class="role"></span></div>
+        <div class="picks">${picks}</div>
+        <div class="ability glass"></div>
+      </section>
+      <nav class="play-col">
+        <div class="mapcard">
+          <div class="thumb"></div>
+          <button class="mp l tap" aria-label="Previous map">${UI.left}</button>
+          <button class="mp r tap" aria-label="Next map">${UI.right}</button>
+          <div class="mt"><small></small><b></b><span></span></div>
+        </div>
+        <div class="mode glass">${UI.trophy}<div><b>Weapon Brawl</b><span>${TUNING.match.rounds} rounds · ${TUNING.match.playersPerMatch} fighters · bots fill empty seats</span></div></div>
         <button class="play tap">PLAY<small></small></button>
-        <button class="friends tap">👥 Play with friends<em>NEW</em></button>
-        <div class="keyhint">${state.touch ? '' : 'Press Enter to play · ← → to change hero'}</div>
-      </div>`;
+        <button class="friends tap">${UI.friends}<span>Play with friends</span></button>
+        <div class="keyhint">${state.touch ? '' : '<kbd>Enter</kbd> play <kbd>←</kbd><kbd>→</kbd> hero'}</div>
+      </nav>`;
     document.body.appendChild(r);
     this.nameEl = r.querySelector('.hero-name h2')!;
     this.roleEl = r.querySelector('.role')!;
     this.abilityEl = r.querySelector('.ability')!;
     this.lockEl = r.querySelector('.lockbadge')!;
     this.playBtn = r.querySelector('.play')!;
+    this.soundBtn = r.querySelector('.snd')!;
+    this.picks = [...r.querySelectorAll<HTMLButtonElement>('.pick')];
     r.querySelector('.arrow.l')!.addEventListener('click', () => this.step(-1));
     r.querySelector('.arrow.r')!.addEventListener('click', () => this.step(1));
-    r.querySelector('.icon-btn')!.addEventListener('click', () => this.onSettings?.());
+    for (const b of this.picks)
+      b.addEventListener('click', () => {
+        this.idx = HERO_IDS.indexOf(b.dataset.hero as HeroId);
+        this.refresh();
+      });
+    r.querySelector('.set')!.addEventListener('click', () => this.onSettings?.());
+    this.setSound(state.sound);
+    this.soundBtn.addEventListener('click', () => this.setSound(this.onSound?.() ?? true));
     r.querySelector('.friends')!.addEventListener('click', () => this.onFriends?.());
     this.mapIdx = Math.max(0, state.maps.findIndex((m) => m.id === state.map));
-    const showMap = () => {
-      const m = state.maps[this.mapIdx];
-      r.querySelector('.mapcard b')!.textContent = m.name;
-      r.querySelector('.mapcard span')!.textContent = m.blurb;
-    };
-    showMap();
+    this.showMap();
     const stepMap = (d: number) => {
       this.mapIdx = (this.mapIdx + d + state.maps.length) % state.maps.length;
-      showMap();
+      this.showMap();
       this.onMap?.(state.maps[this.mapIdx].id);
     };
     r.querySelector('.mp.l')!.addEventListener('click', () => stepMap(-1));
@@ -125,9 +145,25 @@ export class Home {
     this.refresh();
   }
 
+  private showMap() {
+    const m = this.state.maps[this.mapIdx];
+    const card = this.root.querySelector('.mapcard')!;
+    (card.querySelector('.thumb') as HTMLElement).style.backgroundImage = `url(thumbs/${m.id}.webp)`;
+    card.querySelector('small')!.textContent = `MAP ${this.mapIdx + 1} / ${this.state.maps.length}`;
+    card.querySelector('b')!.textContent = m.name;
+    card.querySelector('span')!.textContent = m.blurb;
+  }
+
   /** Map card sub-line: a loading note while a map's art downloads (empty = show the map's description again). */
   setMapNote(note: string) {
     this.root.querySelector('.mapcard span')!.textContent = note || this.state.maps[this.mapIdx].blurb;
+    this.root.querySelector('.mapcard')!.classList.toggle('busy', !!note);
+  }
+
+  setSound(on: boolean) {
+    this.soundBtn.innerHTML = on ? UI.soundOn : UI.soundOff;
+    this.soundBtn.classList.toggle('off', !on);
+    this.soundBtn.setAttribute('aria-pressed', String(on));
   }
 
   get hero() {
@@ -135,8 +171,10 @@ export class Home {
   }
 
   private onKey = (e: KeyboardEvent) => {
-    if (this.root.classList.contains('hide')) return;
+    if (this.root.classList.contains('hide') || document.querySelector('.friends-veil')) return;
     if (e.code === 'Enter' || e.code === 'Space') {
+      // a focused button handles Enter/Space itself
+      if ((e.target as HTMLElement).tagName === 'BUTTON') return;
       e.preventDefault();
       this.onPlay?.(this.hero);
     }
@@ -159,6 +197,8 @@ export class Home {
     this.lockEl.classList.toggle('on', locked);
     this.lockEl.querySelector('span')!.textContent = locked ? this.state.lockText(h.id) : '';
     this.playBtn.innerHTML = locked ? `TRY<small>free trial match as ${h.name}</small>` : `PLAY<small>as ${h.name}</small>`;
+    (this.root.querySelector('.avatar') as HTMLElement).style.backgroundImage = `url(${this.state.portraits.get(h.id)})`;
+    for (const b of this.picks) b.classList.toggle('sel', b.dataset.hero === h.id);
     this.onHero?.(h.id, locked);
   }
 

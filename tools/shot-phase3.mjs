@@ -89,7 +89,7 @@ if (does('maps')) {
 if (does('ui')) {
   for (const [tag, device] of [['', DESK], ['m-', PHONE]]) {
     let { ctx, page } = await open(device, 'candy');
-    await page.click('.icon-btn');
+    await page.click('.set');
     await page.waitForTimeout(900);
     await snap(page, `${tag}ui-settings`);
     await ctx.close();

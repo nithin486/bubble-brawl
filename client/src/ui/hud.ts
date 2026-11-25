@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WEAPON_INFO, weaponIcon } from '../render/weapons-view.ts';
+import { weaponShot } from '../render/portraits.ts';
 import './hud.css';
 import type { World } from '../../../shared/sim/world.ts';
 import type { Player } from '../../../shared/sim/types.ts';
@@ -8,6 +9,7 @@ import { HEROES, type HeroId } from '../../../shared/config/heroes.ts';
 import type { InputManager } from '../input.ts';
 import { powerIconCanvas, POWER_INFO } from '../render/powerups.ts';
 import type { PowerKind } from '../../../shared/sim/types.ts';
+import { UI } from './icons.ts';
 
 export const ICONS = {
   grab: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V3.5a1.5 1.5 0 0 1 3 0V10h.5V4.5a1.5 1.5 0 0 1 3 0V11h.5V7.5a1.5 1.5 0 0 1 3 0V14c0 4.4-3.1 8-7.5 8-3 0-4.8-1.3-6.3-3.6L3.8 14.6a1.5 1.5 0 0 1 2.4-1.8L7 13.8z"/></svg>`,
@@ -53,21 +55,21 @@ export interface HudExtra {
 }
 
 export const MOD_INFO: Record<string, { name: string; text: string; icon: string; color: string }> = {
-  none: { name: 'CLASSIC', text: 'Grab coins, steal, bank them!', icon: '🪙', color: '#ffd84a' },
-  giant: { name: 'GIANT COINS', text: 'Fewer coins, but each is worth 3', icon: '💰', color: '#ffd84a' },
-  thieves: { name: 'THIEF PARTY', text: 'Grabs steal DOUBLE and recharge fast', icon: '🖐️', color: '#ff5fd2' },
-  bombs: { name: 'BOMB RAIN', text: 'Bubble bombs fall from the sky — watch the red circles', icon: '💣', color: '#ff8a3d' },
-  turbo: { name: 'TURBO', text: 'Everyone runs 35% faster', icon: '⚡', color: '#ffd23f' },
-  magnet: { name: 'MAGNET STORM', text: 'Everyone pulls nearby coins', icon: '🧲', color: '#ff5f7a' },
-  goldrush: { name: 'GOLD RUSH', text: 'The jackpot erupts every 9 seconds', icon: '⛲', color: '#7ff3ff' },
-  double: { name: 'FINAL ROUND · DOUBLE POINTS', text: 'Every bank counts ×2 — anyone can still win!', icon: '✨', color: '#ff5fd2' },
+  none: { name: 'CLASSIC', text: 'Grab coins, steal, bank them!', icon: UI.coin, color: '#ffd84a' },
+  giant: { name: 'GIANT COINS', text: 'Fewer coins, but each is worth 3', icon: UI.coin, color: '#ffd84a' },
+  thieves: { name: 'THIEF PARTY', text: 'Grabs steal DOUBLE and recharge fast', icon: UI.gift, color: '#ff5fd2' },
+  bombs: { name: 'BOMB RAIN', text: 'Bubble bombs fall from the sky — watch the red circles', icon: UI.bomb, color: '#ff8a3d' },
+  turbo: { name: 'TURBO', text: 'Everyone runs 35% faster', icon: UI.bolt, color: '#ffd23f' },
+  magnet: { name: 'MAGNET STORM', text: 'Everyone pulls nearby coins', icon: UI.coin, color: '#ff5f7a' },
+  goldrush: { name: 'GOLD RUSH', text: 'The jackpot erupts every 9 seconds', icon: UI.coin, color: '#7ff3ff' },
+  double: { name: 'FINAL ROUND · DOUBLE POINTS', text: 'Every bank counts ×2 — anyone can still win!', icon: UI.star, color: '#ff5fd2' },
   // weapons-mode twists
-  rapid: { name: 'RAPID FIRE', text: 'Every weapon reloads twice as fast', icon: '🔫', color: '#5fe3ff' },
-  ammo: { name: 'DOUBLE AMMO', text: 'Every box gives you twice the ammo', icon: '🎒', color: '#9dff7a' },
-  rockets: { name: 'ROCKET PARTY', text: 'Every mystery box is a Rocket Launcher — boom!', icon: '🚀', color: '#ff7a3d' },
-  blasters: { name: 'BLASTER BASH', text: 'Every mystery box is a Bubble Blaster', icon: '🫧', color: '#5fe3ff' },
-  frost: { name: 'DEEP FREEZE', text: 'Every mystery box is a Freeze Bomb — keep moving!', icon: '❄️', color: '#9fe8ff' },
-  boxfest: { name: 'BOX FEST', text: 'Mystery boxes come back almost instantly', icon: '🎁', color: '#ffd84a' },
+  rapid: { name: 'RAPID FIRE', text: 'Every weapon reloads twice as fast', icon: UI.bolt, color: '#5fe3ff' },
+  ammo: { name: 'DOUBLE AMMO', text: 'Every box gives you twice the ammo', icon: UI.ammo, color: '#9dff7a' },
+  rockets: { name: 'ROCKET PARTY', text: 'Every mystery box is a Rocket Launcher — boom!', icon: UI.rocket, color: '#ff7a3d' },
+  blasters: { name: 'BLASTER BASH', text: 'Every mystery box is a Bubble Blaster', icon: UI.bubble, color: '#5fe3ff' },
+  frost: { name: 'DEEP FREEZE', text: 'Every mystery box is a Freeze Bomb — keep moving!', icon: UI.snow, color: '#9fe8ff' },
+  boxfest: { name: 'BOX FEST', text: 'Mystery boxes come back almost instantly', icon: UI.gift, color: '#ffd84a' },
 };
 
 /** Weapons mode shows its own words for the shared twists. */
@@ -75,7 +77,7 @@ const WEAPON_MODS = ['turbo', 'bombs', 'rapid', 'ammo', 'rockets', 'blasters', '
 export function modInfo(mod: string, mode: string) {
   const base = MOD_INFO[mod] ?? MOD_INFO.none;
   if (mode !== 'weapons') return base;
-  if (mod === 'none') return { ...base, name: 'CLASSIC', text: 'Grab mystery boxes, shoot rivals, pop bubbles!', icon: '🎁' };
+  if (mod === 'none') return { ...base, name: 'CLASSIC', text: 'Grab mystery boxes, shoot rivals, pop bubbles!', icon: UI.gift };
   if (mod === 'double') return { ...base, text: 'Every KO and every pop counts ×2 — anyone can still win!' };
   if (mod === 'bombs') return { ...base, text: 'Bubble bombs fall from the sky — watch the red circles' };
   return base;
@@ -107,6 +109,11 @@ export class Hud {
   private powersEl = el('div', 'powers');
   private powerChips = new Map<PowerKind, HTMLElement>();
   private flashEl = el('div', 'flash');
+  private rack = el('div', 'rack');
+  private slots = new Map<string, HTMLElement>();
+  private rackLabel = el('span', 'label');
+  private respawn = el('div', 'respawn', '<i></i><div><b></b><span></span></div>');
+  private lastRack = '';
   private lastCombo = 0;
   private lastCarry = -1;
   private lastBanked = -1;
@@ -144,6 +151,17 @@ export class Hud {
       this.powersEl.append(c);
     }
     this.root.append(this.promptEl);
+    if (world.mode === 'weapons') {
+      for (const k of Object.keys(WEAPON_INFO) as (keyof typeof WEAPON_INFO)[]) {
+        const slot = el('div', 'slot', `<img alt="${WEAPON_INFO[k].name}" src="${weaponShot(k)}"><div class="cool"></div><b></b>`);
+        slot.style.setProperty('--wc', WEAPON_INFO[k].color);
+        this.slots.set(k, slot);
+        this.rack.append(slot);
+      }
+      this.rack.append(this.rackLabel);
+      this.root.append(this.rack);
+    }
+    this.root.append(this.respawn);
 
     // name tags
     world.players.forEach((p) => {
@@ -273,7 +291,7 @@ export class Hud {
 
     this.root.append(this.fpsEl);
     const rot = el('div', 'rotate', `<div class="phone"></div><div>Rotate your phone</div><div style="font-size:16px;opacity:.8">Bubble Brawl plays in landscape</div>`);
-    document.body.append(rot);
+    if (!document.querySelector('.rotate')) document.body.append(rot);
   }
 
   set fps(v: string) {
@@ -309,14 +327,14 @@ export class Hud {
     const tick = () => {
       if (i < spins) {
         const k = modInfo(keys[i % keys.length], mode);
-        ic.textContent = k.icon;
+        ic.innerHTML = k.icon;
         nm.textContent = k.name;
         nm.style.color = k.color;
         i++;
         this.onTick?.();
         setTimeout(tick, 60 + i * 18);
       } else {
-        ic.textContent = final.icon;
+        ic.innerHTML = final.icon;
         nm.textContent = final.name;
         nm.style.color = final.color;
         tx.textContent = final.text;
@@ -366,7 +384,7 @@ export class Hud {
         const full = TUNING.weapons.hp;
         this.carryPill.innerHTML =
           me.state === 'bubble'
-            ? `<span class="hearts">🫧</span><small>MASH TO ESCAPE!</small>`
+            ? `${UI.bubble}<small>BUBBLED</small>`
             : `<span class="hpbar">${hpFill(me.hp, full)}<b>${Math.ceil(me.hp)}</b></span><small>HEALTH</small>`;
         this.carryPill.classList.toggle('low', me.hp <= TUNING.weapons.hitHp && me.state !== 'bubble');
         if (hpKey < this.lastCarry) this.bumpEl(this.carryPill);
@@ -374,10 +392,27 @@ export class Hud {
       }
       const pts = me.bankedTotal + me.bankedRound;
       if (pts !== this.lastBanked) {
-        this.bankPill.innerHTML = `<span style="font-size:20px">⭐</span>${pts} <small style="font-size:11px;font-family:var(--body);font-weight:900">POINTS</small>`;
+        this.bankPill.innerHTML = `${UI.star}${pts} <small style="font-size:11px;font-family:var(--body);font-weight:900">POINTS</small>`;
         if (pts > this.lastBanked && this.lastBanked >= 0) this.bumpEl(this.bankPill);
         this.lastBanked = pts;
       }
+      // the rack: which of the six you hold, its ammo and reload
+      const held = me.weapon;
+      const rackKey = `${held}:${me.ammo}:${me.state === 'bubble'}`;
+      if (rackKey !== this.lastRack) {
+        this.lastRack = rackKey;
+        for (const [k, slot] of this.slots) {
+          const on = k === held;
+          slot.classList.toggle('held', on);
+          slot.classList.toggle('empty', on && me.ammo <= 0);
+          if (on) slot.querySelector('b')!.textContent = String(me.ammo);
+          else (slot.querySelector('.cool') as HTMLElement).style.setProperty('--p', '0%');
+        }
+        this.rack.classList.toggle('off', me.state === 'bubble');
+        this.rackLabel.textContent = held ? WEAPON_INFO[held].name : '';
+        this.rack.style.setProperty('--wc', held ? WEAPON_INFO[held].color : '#fff');
+      }
+      if (held) this.cooldown(this.slots.get(held)!, me.fireCd, TUNING.weapons[held].cooldown, false, '.cool');
       // action button: weapon + ammo, or a punch
       const key = me.weapon ? `${me.weapon}:${me.ammo}` : 'punch';
       if (this.btnGrab.dataset.w !== key) {
@@ -397,10 +432,25 @@ export class Hud {
       this.lastCarry = me.carried;
     }
     const banked = me.bankedTotal + me.bankedRound;
-    if (banked !== this.lastBanked) {
+    if (world.mode === 'coins' && banked !== this.lastBanked) {
       this.bankPill.innerHTML = `<i class="bub-ico"></i>${banked} <small style="font-size:11px;font-family:var(--body);font-weight:900">BANKED</small>`;
       if (banked > this.lastBanked && this.lastBanked >= 0) this.bumpEl(this.bankPill);
       this.lastBanked = banked;
+    }
+
+    // knocked out or fallen: say what happens next
+    const down = playing && (me.state === 'bubble' || me.state === 'falling');
+    this.respawn.classList.toggle('on', down);
+    if (down) {
+      const secs = String(Math.max(1, Math.ceil(me.stateT)));
+      const num = this.respawn.querySelector('i')!;
+      if (num.textContent !== secs) num.textContent = secs;
+      const title = me.state === 'bubble' ? 'BUBBLED!' : 'FELL OFF!';
+      const b = this.respawn.querySelector('b')!;
+      if (b.textContent !== title) {
+        b.textContent = title;
+        this.respawn.querySelector('span')!.textContent = me.state === 'bubble' ? (this.touch ? 'Tap the buttons fast to escape' : 'Mash the action keys to escape') : 'Back on the map in a moment';
+      }
     }
 
     // combo counter
@@ -446,7 +496,7 @@ export class Hud {
       t.root.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`;
       t.root.style.left = '0';
       t.root.style.top = '0';
-      const crown = p.id === world.crownId ? '👑' : '';
+      const crown = p.id === world.crownId ? UI.crown : '';
       const c =
         world.mode === 'weapons'
           ? p.state === 'bubble'
@@ -488,7 +538,7 @@ export class Hud {
       const p = list[i];
       e.classList.toggle('crown', !!p && p === crownP);
       if (!p || !coinMode) e.style.display = 'none';
-      else this.edgeArrow(e, p.x, 1, p.z, camera, true, `${p === crownP ? '👑' : ''}${p.carried}`);
+      else this.edgeArrow(e, p.x, 1, p.z, camera, true, `${p === crownP ? '♛ ' : ''}${p.carried}`);
     });
 
     // what banking is worth right now (greed tiers)
@@ -504,7 +554,7 @@ export class Hud {
     const mi = modInfo(world.mod, world.mode);
     const modHtml = world.mod !== 'none' && mi ? `${mi.icon} ${mi.name}` : '';
     if (this.modEl.innerHTML !== modHtml) this.modEl.innerHTML = modHtml;
-    this.modEl.style.display = modHtml ? 'block' : 'none';
+    this.modEl.style.display = modHtml ? 'flex' : 'none';
     // buttons light up only when they'd land
     this.btnGrab.classList.toggle('can', !!extra && extra.grabTarget >= 0 && me.grabCd <= 0.05);
     this.btnSkill.classList.toggle('hot', !!extra && extra.skillHits > 0 && me.skillCd <= 0);
@@ -522,9 +572,13 @@ export class Hud {
     void now;
   }
 
-  private cooldown(b: HTMLElement, cd: number, max: number, showNum: boolean) {
-    const p = cd > 0 ? (cd / max) * 100 : 0;
-    (b.querySelector('.cd') as HTMLElement).style.setProperty('--p', `${p}%`);
+  private cooldown(b: HTMLElement, cd: number, max: number, showNum: boolean, ring = '.cd') {
+    const p = cd > 0 ? Math.round(Math.min(1, cd / max) * 100) : 0;
+    const r = b.querySelector(ring) as HTMLElement;
+    if (r.dataset.p !== String(p)) {
+      r.dataset.p = String(p); // touch the DOM only when the ring actually moves
+      r.style.setProperty('--p', `${p}%`);
+    }
     if (showNum) {
       const n = b.querySelector('.num') as HTMLElement;
       const t = cd > 0 ? String(Math.ceil(cd)) : '';
@@ -692,7 +746,10 @@ export class Hud {
     if (!this.attract) this.root.classList.remove('menu');
     this.panel?.remove();
     this.panel = null;
+    if (this.panelKey) window.removeEventListener('keydown', this.panelKey);
+    this.panelKey = null;
   }
+  private panelKey: ((e: KeyboardEvent) => void) | null = null;
 
   private open(inner: HTMLElement) {
     this.closePanel();
@@ -719,7 +776,9 @@ export class Hud {
   showRoundEnd(world: World, localId: number, winner: number, lostMine: number, reward: number) {
     const p = el('div', 'panel');
     const won = winner === localId;
-    p.append(el('h1', 'stroke', won ? 'ROUND WON!' : `${world.players[winner].name} wins round ${world.round}`));
+    p.classList.toggle('win', won);
+    p.append(el('span', 'verdict', `ROUND ${world.round} OF ${TUNING.match.rounds}`));
+    p.append(el('h1', 'stroke', won ? 'ROUND WON!' : `${world.players[winner].name} takes it`));
     if (reward > 0) p.append(el('div', 'reward stroke', `+${reward} <i class="coin-ico"></i> first win bonus!`));
     p.append(this.standings(world.players, localId, (x) => x.bankedRound, () => 'this round'));
     if (lostMine > 0) p.append(el('div', 'lost', `You lost ${lostMine} unbanked coins. Bank before the bell!`));
@@ -749,7 +808,9 @@ export class Hud {
     const ranking = world.ranking();
     const rank = ranking.indexOf(localId) + 1;
     const title = rank === 1 ? 'YOU WIN!' : rank === 2 ? '2nd PLACE!' : rank === 3 ? '3rd PLACE!' : `${rank}th place`;
-    p.append(el('h1', 'stroke' + (rank === 1 ? ' gold' : ''), title));
+    p.classList.add(rank === 1 ? 'win' : 'loss');
+    p.append(el('span', 'verdict', rank === 1 ? 'VICTORY' : rank <= 3 ? 'ON THE PODIUM' : 'DEFEAT'));
+    p.append(el('h1', 'stroke' + (rank > 3 ? ' lose' : ''), title));
     p.append(this.standings(world.players, localId, (x) => x.bankedTotal, (x) => `${x.roundsWon} round${x.roundsWon === 1 ? '' : 's'}`));
 
     const by = (f: (x: Player) => number) => [...world.players].sort((a, b) => f(b) - f(a))[0];
@@ -772,9 +833,9 @@ export class Hud {
     else if (opts.trial) p.append(el('div', 'sub', `That was a free trial of ${HEROES[opts.trial].name}. Keep playing to unlock!`));
 
     const row = el('div', 'btn-row');
-    const home = el('button', 'big-btn alt tap', 'HOME');
+    const home = el('button', 'big-btn alt tap', `${UI.home}HOME`);
     home.addEventListener('click', opts.onHome);
-    const re = el('button', 'big-btn tap', opts.waitForHost ? 'WAITING FOR HOST…' : 'REMATCH');
+    const re = el('button', 'big-btn tap', opts.waitForHost ? 'WAITING FOR HOST…' : `${UI.again}REMATCH`);
     if (opts.waitForHost) (re as HTMLButtonElement).disabled = true;
     else re.addEventListener('click', opts.onRematch);
     row.append(home, re);
@@ -785,6 +846,10 @@ export class Hud {
     const names = el('div', 'podium-names');
     names.innerHTML = opts.podium.map((x) => `<div class="pn p${x.place}"><b class="stroke">${x.place}</b><span>${x.name}</span></div>`).join('');
     v.prepend(names);
+    if (rank === 1) {
+      const colors = ['#ffd23f', '#ff5fd2', '#3fe0ff', '#7dff6a', '#ff9a3d'];
+      v.prepend(el('div', 'confetti', Array.from({ length: 24 }, (_, i) => `<i style="left:${(i * 41) % 100}%;background:${colors[i % 5]};animation-delay:-${((i * 7) % 32) / 10}s"></i>`).join('')));
+    }
     this.root.classList.add('menu');
     re.focus();
     const key = (e: KeyboardEvent) => {
@@ -793,6 +858,7 @@ export class Hud {
         opts.onRematch();
       }
     };
+    this.panelKey = key;
     window.addEventListener('keydown', key);
   }
 
@@ -800,32 +866,34 @@ export class Hud {
     state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; canUnlockAll: boolean; camera: string },
     on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; unlockAll: () => void; camera: () => void },
   ) {
-    const p = el('div', 'panel');
+    const p = el('div', 'panel menu-panel');
     p.append(el('h1', 'stroke', state.inMatch ? 'Paused' : 'Settings'));
-    const t = (label: string, val: string, onClick: () => void, isOn: boolean) => {
-      const r = el('div', 'toggle', `<span>${label}</span>`);
-      const b = el('button', isOn ? 'on' : '', val);
+    const t = (icon: string, label: string, val: string, onClick: () => void, kind: 'switch' | 'cycle' | 'act', isOn = false) => {
+      const r = el('div', 'toggle', `<span class="tl"><i>${icon}</i>${label}</span>`);
+      const b = el('button', `tap ${kind === 'act' ? '' : kind}${isOn ? ' on' : ''}`, val);
+      b.setAttribute('aria-label', `${label}: ${val}`);
       b.addEventListener('click', onClick);
       r.append(b);
       p.append(r);
     };
-    t('Sound', state.sound ? 'ON' : 'OFF', () => on.toggle('sound'), state.sound);
-    t('Screen shake', state.shake ? 'ON' : 'OFF', () => on.toggle('shake'), state.shake);
-    t('Camera view', state.camera, () => on.camera(), true);
-    t('Graphics', state.quality.toUpperCase(), () => on.quality(), true);
+    t(state.sound ? UI.soundOn : UI.soundOff, 'Sound', state.sound ? 'ON' : 'OFF', () => on.toggle('sound'), 'switch', state.sound);
+    t(UI.shake, 'Screen shake', state.shake ? 'ON' : 'OFF', () => on.toggle('shake'), 'switch', state.shake);
+    t(UI.camera, 'Camera view', state.camera, () => on.camera(), 'cycle');
+    t(UI.display, 'Graphics', state.quality.toUpperCase(), () => on.quality(), 'cycle');
     // playtest builds only: skip the unlock flow
-    if (state.canUnlockAll) t('All heroes (playtest)', 'UNLOCK', () => on.unlockAll(), false);
+    if (state.canUnlockAll) t(UI.heroes, 'All heroes (playtest)', 'UNLOCK', () => on.unlockAll(), 'act');
     const row = el('div', 'btn-row');
     if (state.inMatch) {
-      const h = el('button', 'big-btn alt tap', 'QUIT');
+      const h = el('button', 'big-btn alt tap', `${UI.home}QUIT`);
       h.addEventListener('click', on.home);
       row.append(h);
     }
-    const b = el('button', 'big-btn tap', state.inMatch ? 'RESUME' : 'DONE');
+    const b = el('button', 'big-btn tap', state.inMatch ? `${UI.play}RESUME` : 'DONE');
     b.addEventListener('click', on.resume);
     row.append(b);
     p.append(row);
-    if (state.inMatch) p.append(el('div', 'sub', this.touch ? '' : 'Move: WASD · Dash: Space · Grab: J / click · Skill: K / right-click'));
+    if (state.inMatch && !this.touch)
+      p.append(el('div', 'keys', '<span><kbd>W A S D</kbd>Move</span><span><kbd>SPACE</kbd>Dash</span><span><kbd>J</kbd><kbd>CLICK</kbd>Fire / punch</span><span><kbd>K</kbd><kbd>RIGHT CLICK</kbd>Skill</span>'));
     this.open(p);
   }
 }
