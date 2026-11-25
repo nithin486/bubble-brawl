@@ -1377,7 +1377,7 @@ export class Game {
           this.hud.banner(e.by >= 0 ? `${w.players[e.by].name} KO'd you — MASH to escape!` : 'KO! MASH to escape!', 'red');
           this.rig.shake(0.5);
         }
-        if (e.by >= 0) this.hud.feed(`${this.who(e.by)} 🫧 ${this.who(e.victim)}`);
+        if (e.by >= 0) this.hud.feed(`${this.who(e.by)} knocked out ${this.who(e.victim)}`); // (a newer emoji shows as an empty box on older systems)
         if (e.by >= 0 && e.by !== LOCAL) this.say(e.by, 'youRobbed', false);
         void P;
         break;
@@ -1558,7 +1558,7 @@ export class Game {
           this.fx.pillar(e.x, e.z, '#7ff3ff', 12, 1, 1.8);
           this.fx.confetti(e.x, 3, e.z, e.mult >= 2 ? 160 : 70);
         }
-        if (e.n >= TUNING.bankPopAt) this.hud.feed('🫧 The bank bubble overloaded — it\'s moving!');
+        if (e.n >= TUNING.bankPopAt) this.hud.feed('The bank bubble overloaded — it\'s moving!');
         if (e.p === LOCAL) {
           this.sfx.bank(e.n);
           if (e.label) {
