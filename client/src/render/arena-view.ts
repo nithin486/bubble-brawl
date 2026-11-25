@@ -6,9 +6,11 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
 import { Rng } from '../../../shared/sim/math.ts';
-import { THEMES, type Theme, type ThemeCtx, type TilePlan } from './themes.ts';
+import { THEMES, type Theme, type ThemeCtx, type TilePlan, type PropAdd } from './themes.ts';
 
 /** Bake a multi-mesh env piece into one geometry + material (pieces share one atlas). */
+const vertexMats = new Map<number, THREE.MeshStandardMaterial>();
+
 export function bakePiece(piece: THREE.Object3D): { geo: THREE.BufferGeometry; mat: THREE.Material } {
   piece.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(piece.matrixWorld).invert();
@@ -50,7 +52,11 @@ export function bakePiece(piece: THREE.Object3D): { geo: THREE.BufferGeometry; m
       g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
     });
     const base = mats[0] as THREE.MeshStandardMaterial;
-    mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: base.roughness ?? 0.7, metalness: 0 });
+    // one shared material per finish, so different pieces merge into the same draw call
+    const rough = Math.round((base.roughness ?? 0.7) * 10) / 10;
+    let shared = vertexMats.get(rough);
+    if (!shared) vertexMats.set(rough, (shared = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough, metalness: 0 })));
+    mat = shared;
   }
   const geo = geos.length === 1 ? geos[0] : mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)))!;
   return { geo, mat: mat! };
@@ -150,6 +156,7 @@ export class ArenaView {
   private env: Map<string, THREE.Object3D>;
   private glowTex: THREE.Texture;
   private baked = new Map<string, { geo: THREE.BufferGeometry; mat: THREE.Material }>();
+  private sources = new Map<string, THREE.Object3D>();
   private chunkMats = new Map<string, THREE.Matrix4[]>();
 
   constructor(world: World, env: Map<string, THREE.Object3D>, scene: THREE.Scene, glowTex: THREE.Texture) {
@@ -212,6 +219,7 @@ export class ArenaView {
 
     // ---- props, pads, backdrop, ambience
     for (const o of world.map.obstacles) if (!o.hidden) this.buildProp(o);
+    if (th.edge) this.buildEdges(th.edge);
     this.buildPads();
     const ctx = this.ctx();
     th.extras?.(ctx);
@@ -322,8 +330,44 @@ export class ArenaView {
     this.chunkMats.clear();
   }
 
+  /** Kerb along every outer tile edge; each one belongs to its tile, so it falls with it. */
+  private buildEdges(e: { piece: string; scale: number; y: number }) {
+    const shape = this.world.map.shape;
+    if (shape.grid !== 'square') return;
+    const step = shape.tileSize;
+    for (const t of this.world.arena.tiles)
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (this.world.arena.tileAt(t.x + dx * step, t.z + dz * step)) continue;
+        const half = step / 2 - 0.1;
+        this.buildProp({ x: t.x + dx * half, z: t.z + dz * half, r: 0, kind: '__edge', rot: Math.atan2(dx, dz) }, (add) => add(e.piece, e.scale, 0, e.y, 0.1));
+      }
+  }
+
+  /** A piece to clone: multi-material plain-colour pieces become one vertex-coloured mesh (fewer draw calls). */
+  private source(name: string): THREE.Object3D | undefined {
+    let src = this.sources.get(name);
+    if (src) return src;
+    const raw = this.env.get(name);
+    if (!raw) return undefined;
+    const mats = new Set<THREE.Material>();
+    let special = false;
+    raw.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      mats.add(m.material as THREE.Material);
+      const s = m.material as THREE.MeshStandardMaterial;
+      if (s.map || s.transparent || (s.emissive && s.emissive.getHex() !== 0)) special = true;
+    });
+    if (mats.size > 1 && !special) {
+      const b = this.bake(name);
+      src = new THREE.Mesh(b.geo, b.mat);
+    } else src = raw;
+    this.sources.set(name, src);
+    return src;
+  }
+
   private place(name: string, x: number, y: number, z: number, s: number, ry: number) {
-    const src = this.env.get(name);
+    const src = this.source(name);
     if (!src) return null;
     const o = src.clone();
     o.position.set(x, y, z);
@@ -358,10 +402,10 @@ export class ArenaView {
   }
 
   /** Obstacle visuals — sized to match their collision circles in shared/config/maps.ts. */
-  private buildProp(o: { x: number; z: number; r: number; kind: string; rot: number }) {
+  private buildProp(o: { x: number; z: number; r: number; kind: string; rot: number }, build?: (add: PropAdd) => void) {
     const g = new THREE.Group();
     const add = (name: string, s: number, x = 0, z = 0, ry = 0, y = 0) => {
-      const src = this.env.get(name);
+      const src = this.source(name);
       if (!src) return null;
       const c = src.clone();
       c.scale.setScalar(s);
@@ -377,7 +421,8 @@ export class ArenaView {
     const decal: Decal = (kind, size, x = 0, z = 0, rot = 0) => {
       g.add(makeDecal(kind, size, x, z, rot));
     };
-    this.theme.prop(o as never, add, glow, decal);
+    if (build) build(add);
+    else this.theme.prop(o as never, add, glow, decal);
     g.position.set(o.x, 0, o.z);
     g.rotation.y = o.rot;
     g.traverse((m) => {

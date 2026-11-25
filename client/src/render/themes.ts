@@ -63,6 +63,8 @@ export interface Theme {
   backdrop(ctx: ThemeCtx): void;
   /** Extra things on the arena (not obstacles), e.g. the well plaza. */
   extras?(ctx: ThemeCtx): void;
+  /** Kerb piece laid along every outer tile edge (it rides its tile). Its local +Z points outwards. */
+  edge?: { piece: string; scale: number; y: number };
 }
 
 // =================================================================== Candy Town (the one big map)
@@ -638,10 +640,11 @@ const desert: Theme = {
       else if (h < 0.28) kind = 'sand';
       else if (h < 0.42) kind = 'gravel';
       // tone the orange sand down towards the pale one and vary every tile a little, so the ground never reads as a grid of patches
-      const tone = kind === 'sand' ? 0.82 : kind === 'gravel' ? 0.94 : 1;
-      const v = tone * (0.93 + dhash(i + 5, j + 9) * 0.1);
-      // warm terracotta cast, like sun-baked canyon stone
-      const color = new THREE.Color(v * 1.04, v * (kind === 'sand' ? 0.82 : 0.88), v * (kind === 'sand' ? 0.68 : 0.78));
+      const tone = kind === 'sand' ? 0.93 : kind === 'gravel' ? 0.98 : 1;
+      const v = tone * (0.98 + dhash(i + 5, j + 9) * 0.04);
+      // warm honey sandstone cast; the yard stays a touch cooler so the middle of the camp reads at a glance
+      const color =
+        kind === 'yard' ? new THREE.Color(v * 1.1, v * 0.96, v * 0.8) : new THREE.Color(v * 1.1, v * (kind === 'sand' ? 0.9 : 0.94), v * (kind === 'sand' ? 0.7 : 0.76));
       return { piece: `desert_tile_${kind}`, rot: Math.floor(dhash(j, i) * 4) * (Math.PI / 2), scale: [1, 1, 1] as [number, number, number], y: 0, color };
     });
   },
@@ -649,14 +652,17 @@ const desert: Theme = {
     const D = DESERT;
     switch (o.kind) {
       case 'dcliff':
-        // a ridge of stylized sandstone along the collision row (prop's z axis)
+        // a ridge of layered sandstone along the collision row (prop's z axis)
         for (let k = -1; k <= 1; k++) {
           const h = dhash(o.x + k, o.z - k);
-          add('desert_boulder_a', 2.4 + h * 0.3, (h - 0.5) * 0.3, k * 2.9, h * 6.28); // ~3.6–4 m: the size of the collision circles
+          add('desert_rock', 2.4 + h * 0.35, (h - 0.5) * 0.3, k * 2.9, h * 6.28); // ~3.6–4 m: the size of the collision circles
         }
+        add('desert_prickly', 0.8, 1.5, 1.4, 1.2);
+        add('desert_grass', 2.2, -1.7, -1.5);
         break;
       case 'dboulder':
-        add('desert_boulder_a', D.boulder.s);
+        add('desert_rock', D.boulder.s * 1.35);
+        add('desert_grass', 1.7, 1.2, 0.5, 2);
         break;
       case 'dcrate':
         add('desert_crate_a', D.crate.s);
@@ -669,34 +675,37 @@ const desert: Theme = {
         glow('#ff8a3d', 2.6, 0, 1.45, 0); // fire in the barrel
         break;
       case 'dbarrier':
-        add('desert_barrier', D.barrier.s, 0, 0, Math.PI / 2);
+        add('desert_wall', D.barrier.s, 0, 0, Math.PI / 2);
         break;
       case 'dcar':
         add('desert_car', D.car.s);
         break;
       case 'dquiverA':
-        add('desert_quiver_a', D.quiverA.s);
+        add('desert_cactus', 1.15);
+        add('desert_grass', 1.4, 0.35, -0.3);
         break;
       case 'dquiverB':
-        add('desert_quiver_b', D.quiverB.s);
+        add('desert_prickly', 0.82);
         break;
       case 'ddead':
         add('desert_deadtree', D.dead.s);
         break;
       case 'dstone':
-        add('desert_boulder_a', 0.42, 0, 0, o.rot * 3);
+        add('desert_rock', 0.32, 0, -0.05, o.rot * 3);
         break;
       case 'dpebbles':
-        add('desert_boulder_a', 0.28, 0, 0, o.rot * 5);
+        add('desert_grass', 1.3, 0, 0, o.rot * 5);
         break;
       case 'dtyre':
-        add('desert_tyre', 1.8);
+        add('desert_grass', 1.0, 0, 0, o.rot);
+        add('desert_rock', 0.2, 0.45, -0.04, o.rot * 4);
         break;
       case 'dplanks':
-        add('desert_boulder_a', 0.34, 0, 0, o.rot * 7);
+        add('desert_grass', 1.6, 0, 0, o.rot * 7);
         break;
     }
   },
+  edge: { piece: 'desert_rim', scale: 1, y: 0 },
   backdrop(ctx) {
     // other mesas rising out of the haze all around, and the desert floor far below
     const floor = new THREE.Mesh(new THREE.CircleGeometry(700, 48), new THREE.MeshStandardMaterial({ color: '#c79a66', roughness: 1 }));
@@ -705,10 +714,56 @@ const desert: Theme = {
     ctx.add(floor);
     for (let k = 0; k < 16; k++) {
       const a = (k / 16) * Math.PI * 2 + dhash(k, 3) * 0.3;
-      const d = 80 + dhash(k, 5) * 70;
-      const sc = 7 + dhash(k, 7) * 8;
+      const d = 105 + dhash(k, 5) * 70;
+      const sc = 6 + dhash(k, 7) * 7;
       ctx.place('desert_mesa', Math.sin(a) * d, -52 + dhash(k, 9) * 22, Math.cos(a) * d, sc * 0.9, dhash(k, 11) * 6.28);
       if (k % 3 === 0) ctx.place('desert_mesa', Math.sin(a + 0.12) * (d + 20), -50 + dhash(k, 13) * 18, Math.cos(a + 0.12) * (d + 20), sc * 1.3, dhash(k, 15) * 6.28);
+    }
+    // the outpost itself: eight rock shelves just beyond the arena, each with its own buildings facing the camp
+    // [piece, along the shelf (m), towards the camp (m), scale, extra turn]
+    type Item = [string, number, number, number, number?];
+    const shelves: { y: number; d: number; items: Item[] }[] = [
+      { y: 0.4, d: 43, items: [['desert_arch', 0, 3.5, 1.25], ['desert_house', -5, -2.5, 1.05, 0.25], ['desert_cactus', 5.6, 0.5, 1.5], ['desert_pots', 4.2, 4.6, 1.6]] },
+      { y: 2.2, d: 48, items: [['desert_tower', 0, 0, 1.15, 0.2], ['desert_prickly', -4.6, 3.5, 1.4], ['desert_cactus', 5, 2, 1.3]] },
+      { y: -0.6, d: 44, items: [['desert_stall', -2.8, 3.4, 1.3, 0.2], ['desert_house_dome', 3.2, -1, 1.25, -0.3], ['desert_cactus', -5.8, -0.5, 1.6], ['desert_pots', 5.8, 4, 1.4]] },
+      { y: -2.5, d: 47, items: [['desert_house', 0, -0.5, 1.3, -0.1], ['desert_prickly', 5.2, 3.2, 1.5], ['desert_deadtree', -5.5, 2, 1.2]] },
+      { y: 1.0, d: 45, items: [['desert_tower', -3.6, 0, 1.0, -0.15], ['desert_house_dome', 4, 0, 1.1, 0.2], ['desert_pots', 0.5, 4.5, 1.8]] },
+      { y: -1.2, d: 44, items: [['desert_stall', 2.5, 3.2, 1.3, -0.25], ['desert_house', -3, -1.8, 1.1, 0.35], ['desert_cactus', 6, 0, 1.4]] },
+      { y: 0.8, d: 46, items: [['desert_arch', 0, 2.5, 1.1], ['desert_house_dome', 0, -3.4, 1.3], ['desert_cactus', -5.5, 2, 1.7], ['desert_prickly', 5.6, 2.6, 1.3]] },
+      { y: 3.0, d: 50, items: [['desert_tower', 0, 0, 1.25, -0.2], ['desert_house', -5.4, 1.2, 0.9, 0.5], ['desert_deadtree', 5.4, 1.5, 1.3]] },
+    ];
+    const at: { x: number; y: number; z: number }[] = [];
+    shelves.forEach((sh, k) => {
+      const a = (k / shelves.length) * Math.PI * 2;
+      const x = Math.sin(a) * sh.d;
+      const z = Math.cos(a) * sh.d;
+      at.push({ x, y: sh.y, z });
+      const face = a + Math.PI; // local +Z towards the camp
+      ctx.place('desert_ledge', x, sh.y, z, 1.12, dhash(k, 21) * 6.28);
+      for (const [name, side, front, scale, turn] of sh.items) {
+        const px = x + Math.cos(face) * side + Math.sin(face) * front;
+        const pz = z - Math.sin(face) * side + Math.cos(face) * front;
+        ctx.place(name, px, sh.y, pz, scale, face + (turn ?? 0));
+      }
+      for (let g = 0; g < 4; g++) {
+        const ga = dhash(k, g + 31) * 6.28;
+        const gr = 4.5 + dhash(g, k + 41) * 3.4;
+        ctx.place(g % 2 ? 'desert_rock' : 'desert_grass', x + Math.sin(ga) * gr, sh.y - 0.05, z + Math.cos(ga) * gr, g % 2 ? 1.1 : 2.4, ga);
+      }
+    });
+    // rope bridges tie neighbouring shelves together
+    for (const [i, j] of [[0, 1], [2, 3], [4, 5], [6, 7]]) {
+      const p = at[i];
+      const q = at[j];
+      const dx = q.x - p.x;
+      const dz = q.z - p.z;
+      const len = Math.hypot(dx, dz) - 16.5;
+      const o = ctx.place('desert_bridge', (p.x + q.x) / 2, (p.y + q.y) / 2, (p.z + q.z) / 2, 1, Math.atan2(-dz, dx));
+      if (o) {
+        o.scale.set(len / 10, 1.2, 1.2);
+        o.rotation.order = 'YZX';
+        o.rotation.z = Math.atan2(q.y - p.y, len);
+      }
     }
   },
 };
