@@ -130,20 +130,36 @@ export async function loadAssets(heroIds: HeroId[], onProgress: (f: number) => v
     });
     celify(g.scene, true);
     mergeSkinned(g.scene); // ~25 draw calls per hero down to a few
-    // normalise height using the body meshes only (weapons stick out)
-    const box = new THREE.Box3();
-    g.scene.updateMatrixWorld(true);
-    g.scene.traverse((o) => {
-      const m = o as THREE.SkinnedMesh;
-      if (m.isMesh && !/Axe|Knife|Sword|Shield|Staff|Wand|Crossbow|Spellbook|Mug|Throwable/i.test(m.name)) {
-        m.geometry.computeBoundingBox();
-        box.union(m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld));
-      }
-    });
-    const h = box.max.y - box.min.y || 2;
-    heroes.set(id, { scene: g.scene, clips, scale: 1.8 / h });
+    heroes.set(id, { scene: g.scene, clips, scale: HERO_HEIGHT / heroHeight(g.scene) });
   });
   return { heroes, env, packs: new Set<string>() };
+}
+
+/** Every hero stands this tall (the hit shape in shared/sim/ray.ts is built for it). */
+export const HERO_HEIGHT = 1.8;
+
+/**
+ * Standing height as drawn: body only (weapons stick out). A skinned part's raw vertices say nothing about its size
+ * (compression stores them in a unit box and the bones scale them back), so each vertex is posed by the skeleton first.
+ */
+export function heroHeight(root: THREE.Object3D) {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  root.traverse((o) => {
+    const m = o as THREE.SkinnedMesh;
+    if (!m.isMesh || /Axe|Knife|Sword|Shield|Staff|Wand|Crossbow|Spellbook|Mug|Throwable/i.test(m.name)) return;
+    let part: THREE.Box3;
+    if (m.isSkinnedMesh) {
+      m.skeleton.update();
+      m.computeBoundingBox();
+      part = m.boundingBox!;
+    } else {
+      m.geometry.computeBoundingBox();
+      part = m.geometry.boundingBox!;
+    }
+    box.union(part.clone().applyMatrix4(m.matrixWorld));
+  });
+  return box.max.y - box.min.y || 2;
 }
 
 /**

@@ -1,5 +1,5 @@
 // Offline play and instant repeat visits. The build writes a new cache name whenever any file changes.
-const CACHE = 'bb-cb25b269caac';
+const CACHE = 'bb-9dfd671c15da';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
