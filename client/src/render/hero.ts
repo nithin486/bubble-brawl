@@ -72,7 +72,9 @@ const LOOPS = new Set(['1H_Ranged_Aiming', '2H_Ranged_Aiming', '2H_Melee_Idle', 
 
 const qHand = new THREE.Quaternion();
 const qAim = new THREE.Quaternion();
+const qTilt = new THREE.Quaternion();
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
 export class HeroView {
   root = new THREE.Group();
@@ -334,6 +336,9 @@ export class HeroView {
     if (this.upper) this.upper.timeScale = 2.4;
   }
 
+  /** Up / down angle of the gun (radians), from what the crosshair is on. */
+  aimPitch = 0;
+
   /** World position of the held gun's muzzle (null when no gun is shown). */
   muzzle(out: THREE.Vector3) {
     const o = this.heldKind && RANGED.has(this.heldKind) ? this.heldObjs.get(this.heldKind) : null;
@@ -341,8 +346,9 @@ export class HeroView {
     o.updateWorldMatrix(true, false);
     o.getWorldPosition(out);
     const reach = NON_KAYKIT[this.heldKind!]!.len * 0.62;
-    out.x += Math.sin(this.yaw) * reach;
-    out.z += Math.cos(this.yaw) * reach;
+    out.x += Math.sin(this.yaw) * Math.cos(this.aimPitch) * reach;
+    out.y += Math.sin(this.aimPitch) * reach;
+    out.z += Math.cos(this.yaw) * Math.cos(this.aimPitch) * reach;
     return out;
   }
 
@@ -355,7 +361,8 @@ export class HeroView {
     this.handR.updateWorldMatrix(true, false);
     this.handR.getWorldQuaternion(qHand).invert();
     // the gun models are built with the muzzle on +x
-    o.quaternion.copy(qHand).multiply(qAim.setFromAxisAngle(Y_AXIS, this.yaw - Math.PI / 2));
+    qAim.setFromAxisAngle(Y_AXIS, this.yaw - Math.PI / 2).multiply(qTilt.setFromAxisAngle(Z_AXIS, this.aimPitch));
+    o.quaternion.copy(qHand).multiply(qAim);
   }
 
   /** Play a one-shot clip that overrides locomotion for its length. */

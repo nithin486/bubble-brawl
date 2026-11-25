@@ -24,6 +24,17 @@ Committed locally on `claude/youthful-wright-wwuz3r`. **Not pushed** (pushing th
 * Props right in front of the camera fade out.
 * Credits screen, web app manifest and icons.
 
+## Aim rework (after playtest feedback)
+
+* The shot goes to exactly the point under the crosshair, in three dimensions: over low cover, stopped by tall props, ground and decks. Heights are in `shared/sim/ray.ts`.
+* No mouse aim snapping. Touch keeps a small optional aim assist.
+* New over-the-shoulder camera: it looks exactly where you aim, never lags, turns by itself or re-targets your hero near walls.
+* PLAY captures the mouse (raw movement where the browser allows); Esc releases it and pauses; "CLICK TO AIM" shows when it is free.
+* The laser beam is thick, unbroken while fire is held, with a muzzle flash and impact burst. Damage numbers show health points.
+* `tools/aim-test.mjs` measures this in the real game.
+
+Known: switching to a higher graphics setting freezes the game for about 29 s on the Intel HD 620 while shaders compile (the previous release does the same). It is the likely reason the first desktop load is slow.
+
 ## Tests
 
 | Check | Result |

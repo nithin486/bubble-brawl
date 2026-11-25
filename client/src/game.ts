@@ -1,4 +1,5 @@
 import { release } from './render/dispose.ts';
+import { castRay, propHeight } from '../../shared/sim/ray.ts';
 import * as THREE from 'three';
 import { World } from '../../shared/sim/world.ts';
 import { BotBrain } from '../../shared/sim/bots.ts';
@@ -169,12 +170,39 @@ export class Game {
     };
     window.addEventListener('pointerdown', () => sfx.unlock(), { once: false, passive: true });
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Escape' || e.code === 'KeyP') this.togglePause();
+      // (Esc may have just paused the game by releasing the mouse: don't let the same press resume it)
+      if ((e.code === 'Escape' || e.code === 'KeyP') && performance.now() - this.lockPausedAt > 300) {
+        this.togglePause();
+        if (!this.paused && this.mode === 'match') this.captureMouse();
+      }
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.mode === 'match' && this.world?.phase === 'playing') this.setPaused(true);
     });
     this.rig = new CameraRig(stage.camera);
+    this.rig.blocked = (x, y, z) => {
+      const w = this.world;
+      if (!w) return false;
+      if (w.terrain.heightAt(x, z) > y - 0.3) return true;
+      for (const o of w.map.obstacles) {
+        if (o.r < 0.6) continue;
+        const dx = x - o.x;
+        const dz = z - o.z;
+        if (dx * dx + dz * dz < (o.r + 0.2) ** 2 && y < w.terrain.heightAt(o.x, o.z) + propHeight(o.kind) && y < 3.4) return true;
+      }
+      return false;
+    };
+    // losing the captured mouse mid-fight (Esc) opens the pause menu
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement) this.hadMouse = true;
+      else if (this.hadMouse) {
+        this.hadMouse = false;
+        if (this.mode === 'match' && !this.paused && this.world?.phase === 'playing' && this.input.enabled) {
+          this.lockPausedAt = performance.now();
+          this.setPaused(true);
+        }
+      }
+    });
     this.rig.shakeEnabled = profile.shake;
     this.applyCamera((PARAMS.get('cam') as CamPreset) || profile.camera || 'close');
     this.sfx.muted = !profile.sound;
@@ -361,6 +389,7 @@ export class Game {
       track('play_click', { hero: h });
       this.profile.hero = h;
       saveProfile(this.profile);
+      this.captureMouse();
       const go = () => {
         this.home?.destroy();
         this.home = null;
@@ -503,6 +532,16 @@ export class Game {
       return;
     }
 
+    // turn the camera before anything reads the crosshair: this frame's shot goes where this frame looks
+    if (this.mode === 'match' && this.input.enabled) {
+      this.rig.addYaw(this.input.takeYaw(dt));
+      this.rig.addPitch(this.input.takePitch());
+      if (this.rig.turns && !this.paused) {
+        const me = this.world.players[LOCAL];
+        const at = this.visPos(LOCAL) ?? me;
+        this.rig.update(0, this.v.set(at.x, at.y, at.z), this.lead);
+      }
+    }
     this.updateAim();
     // fixed-step simulation (hit-stop freezes it briefly — offline only; a shared match never pauses)
     const step = TUNING.sim.dt;
@@ -591,6 +630,9 @@ export class Game {
       const on = this.mode === 'match' && this.rig.turns && this.world.mode === 'weapons' && this.world.phase === 'playing' && me.state !== 'bubble' && me.state !== 'falling';
       this.hud.crosshair(on, this.aimLocked, !!me.weapon);
       this.rig.armed = this.mode === 'match' && this.world.mode === 'weapons' && !!me.weapon && this.world.phase === 'playing';
+      const view = this.heroes[LOCAL];
+      if (view) view.aimPitch = this.aimInfo?.y !== undefined ? Math.atan2(this.aimInfo.y - (me.y + 1.25), this.aimInfo.dist) : 0;
+      this.hud.lockHint(this.mode === 'match' && !this.touch && this.rig.turns && !this.paused && this.input.enabled && !this.input.mouseLocked);
     }
     if (this.mode === 'match') this.chatterHunting();
     // trails: speed boots (yellow streaks), sticky fingers (pink sparkles), magnet (red bits)
@@ -633,14 +675,12 @@ export class Game {
       focus = this.v.set(0, 0, 0);
       if (this.world.phase === 'matchEnd') this.startMatch(this.profile.hero, true);
     } else {
-      if (this.mode === 'match' && this.input.enabled) {
-        this.rig.addYaw(this.input.takeYaw(dt));
-        this.rig.addPitch(this.input.takePitch());
+      if (this.mode === 'match' && this.input.enabled && this.touch) {
         const me2 = this.world.players[LOCAL];
         this.rig.autoFollow(dt, me2.facing, Math.max(0, this.lastStickFwd));
       }
       this.rig.update(dt, focus, this.lead);
-      this.keepCameraOutOfWalls(dt, focus);
+      if (!this.rig.turns) this.keepCameraOutOfWalls(dt, focus);
     }
     // keep the shadow camera on the action
     this.stage.aimSun(focus.x, focus.z);
@@ -700,7 +740,7 @@ export class Game {
     const w = this.world;
     const inp = this.readLocal();
     // buttons latch until the next send
-    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill, aim: inp.aim, aimD: inp.aimD };
+    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill, aim: inp.aim, aimD: inp.aimD, aimY: inp.aimY };
     this.sendT += dt;
     if (this.sendT >= 1 / 30) {
       this.sendT = 0;
@@ -1038,7 +1078,7 @@ export class Game {
       case 'laser': {
         const H = hv(e.p);
         const from = H.muzzle(new THREE.Vector3()) ?? new THREE.Vector3(w.players[e.p].x, w.players[e.p].y + 1.05, w.players[e.p].z);
-        const to = new THREE.Vector3(e.tx, w.terrain.heightAt(e.tx, e.tz) + 1.05, e.tz);
+        const to = new THREE.Vector3(e.tx, e.ty, e.tz);
         this.weapons?.laser(from, to, e.hit >= 0);
         if (e.p === LOCAL) {
           this.hud.shotKick();
@@ -1120,7 +1160,7 @@ export class Game {
         break;
       }
       case 'damage':
-        this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.n}`, 'minus');
+        this.hud.floater(this.pos(e.victim, 2.6), cam, `-${Math.round(e.n * TUNING.weapons.hitHp)}`, 'minus'); // health points, not "hits"
         if (e.victim === LOCAL && e.hp > 0 && e.hp <= TUNING.weapons.hitHp) this.hud.banner('ALMOST OUT!', 'red', true);
         break;
       case 'ko': {
@@ -1551,6 +1591,7 @@ export class Game {
         waitForHost: !!this.room && !this.room.isHost,
         onRematch: () => {
           this.sfx.click();
+          this.captureMouse();
           track('rematch_click', { hero: this.world.players[LOCAL].hero, room: !!this.room });
           if (this.room?.isHost) {
             // everyone still in the room plays again
@@ -1665,11 +1706,11 @@ export class Game {
     // the laser is automatic: hold fire, or (touch, optional) just keep the crosshair on a rival
     const me = this.world.players[LOCAL];
     const auto = me.weapon === 'blaster' && (this.input.firing || (this.touch && this.profile.autoFire && this.aimLocked));
-    return { ...i, grab: i.grab || auto, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist };
+    return { ...i, grab: i.grab || auto, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist, aimY: this.aimInfo?.y };
   }
   private lastStickFwd = 0;
   /** Where the local player is pointing this frame (camera centre line in 3rd person, cursor on desktop top-down). */
-  private aimInfo: { heading: number; dist: number } | null = null;
+  private aimInfo: { heading: number; dist: number; y?: number } | null = null;
   private aimLocked = false;
   private aimRay = new THREE.Raycaster();
   private aimNdc = new THREE.Vector2();
@@ -1679,56 +1720,51 @@ export class Game {
     if (this.mode !== 'match' || this.world.mode !== 'weapons' || !this.input.enabled) return;
     const me = this.world.players[LOCAL];
     if (this.rig.turns) {
-      // third person: the mouse turns the camera (scope swings with it) and mouse up / down slides the scope farther / closer
+      // shooter aim: the shot goes to exactly what is under the crosshair (screen centre)
       const cam = this.stage.camera;
       cam.getWorldDirection(this.v);
-      if (Math.hypot(this.v.x, this.v.z) < 1e-4) return;
-      // shooter aim: the crosshair is the screen centre; the shot goes to whatever is under it
-      // (a rival, a wall, a prop or the ground), so you can aim at any spot just by turning the camera
+      const d = this.v;
       const o = cam.position;
-      const dir = this.v; // camera forward (already normalised)
       const W = this.world;
-      let hitT = Infinity;
-      let locked = false;
-      let best = Infinity;
-      let target: { x: number; z: number } | null = null;
-      for (const q of W.players) {
-        if (q === me || q.state === 'falling' || q.state === 'launched') continue;
-        // closest approach of the ray to the rival's chest
-        const cx = q.x - o.x;
-        const cy = q.y + 1.0 - o.y;
-        const cz = q.z - o.z;
-        const t = cx * dir.x + cy * dir.y + cz * dir.z;
-        if (t <= 0) continue;
-        const d2 = cx * cx + cy * cy + cz * cz - t * t;
-        // aim assist: a little cone round the crosshair (wider for thumbs than for a mouse)
-        const r = (q.state === 'bubble' ? 1.2 : 0.75) + t * (this.touch ? 0.075 : 0.032);
-        const score = Math.sqrt(Math.max(0, d2)) / r;
-        if (score < 1 && score < best && Math.hypot(q.x - me.x, q.z - me.z) < 22 && this.canSee(me, q)) {
-          best = score;
-          hitT = t;
-          locked = true;
-          target = q;
-        }
-      }
-      if (!locked) {
-        // march the ray until it meets the ground / a deck or a big prop
-        for (let t = 1; t < 60; t += 0.5) {
-          const x = o.x + dir.x * t;
-          const y = o.y + dir.y * t;
-          const z = o.z + dir.z * t;
-          if (y <= W.terrain.heightAt(x, z) + 0.05 || (y < 2.6 && W.obstacles.some((b) => (x - b.x) ** 2 + (z - b.z) ** 2 < b.r * b.r))) {
-            hitT = t;
-            break;
+      // start level with the hero, so something between the camera and you never catches the shot
+      const t0 = Math.max(0, (me.x - o.x) * d.x + (me.y + 1.2 - o.y) * d.y + (me.z - o.z) * d.z - 0.3);
+      let hit = castRay(W, o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0, d.x, d.y, d.z, 45, me);
+      this.aimLocked = !!hit.player;
+      let px = hit.x;
+      let py = hit.y;
+      let pz = hit.z;
+      if (hit.player) {
+        // aim for the body's centre line at that height: the same shot from your gun, a hand's width off your eye line
+        const h = Math.hypot(d.x, d.z) || 1;
+        const along = ((hit.player.x - px) * d.x + (hit.player.z - pz) * d.z) / h;
+        px += (d.x / h) * Math.max(0, along);
+        pz += (d.z / h) * Math.max(0, along);
+        py += (d.y / h) * Math.max(0, along);
+      } else if (this.touch && this.profile.aimAssist) {
+        // thumbs only: a rival within a few degrees of the crosshair takes the shot
+        let best = Math.tan((4 * Math.PI) / 180);
+        for (const q of W.players) {
+          if (q === me || q.state === 'falling' || q.state === 'launched') continue;
+          const cx = q.x - o.x;
+          const cy = q.y + 1.05 - o.y;
+          const cz = q.z - o.z;
+          const along = cx * d.x + cy * d.y + cz * d.z;
+          if (along <= t0 || along > 24) continue;
+          const off = Math.sqrt(Math.max(0, cx * cx + cy * cy + cz * cz - along * along)) / along;
+          if (off < best && this.canSee(me, q)) {
+            best = off;
+            px = q.x;
+            py = q.y + 1.05;
+            pz = q.z;
+            this.aimLocked = true;
           }
         }
       }
-      const t = Number.isFinite(hitT) ? hitT : 40;
-      const tx = target ? target.x - me.x : o.x + dir.x * t - me.x;
-      const tz = target ? target.z - me.z : o.z + dir.z * t - me.z;
+      const tx = px - me.x;
+      const tz = pz - me.z;
       const dd = Math.hypot(tx, tz);
-      this.aimLocked = locked;
-      this.aimInfo = dd > 1 ? { heading: Math.atan2(tx, tz), dist: dd } : { heading: Math.atan2(dir.x, dir.z), dist: 30 };
+      const heading = dd > 0.8 ? Math.atan2(tx, tz) : Math.atan2(d.x, d.z);
+      this.aimInfo = { heading, dist: Math.max(0.8, dd), y: py };
       return;
     }
     // top-down views: the scope sits under the mouse pointer
@@ -1812,6 +1848,18 @@ export class Game {
     this.stage.resize();
   }
 
+  private hadMouse = false;
+  private lockPausedAt = -1000;
+
+  /** Desktop third person: take the mouse for aiming (call from a click). */
+  private captureMouse() {
+    if (this.touch || AUTOPLAY) return;
+    const cam = (PARAMS.get('cam') as CamPreset) || this.profile.camera;
+    if (cam !== 'third') return;
+    this.input.mouseLook = true;
+    this.input.lockMouse();
+  }
+
   private applyAimSpeed() {
     this.input.sensitivity = { low: 0.6, normal: 1, high: 1.6 }[this.profile.aimSpeed] ?? 1;
   }
@@ -1836,9 +1884,13 @@ export class Game {
           camera: CAM_PRESETS[this.rig.preset].label,
           aimSpeed: this.profile.aimSpeed,
           autoFire: this.touch ? this.profile.autoFire : null,
+          aimAssist: this.touch ? this.profile.aimAssist : null,
         },
         {
-          resume: () => this.setPaused(false),
+          resume: () => {
+            this.setPaused(false);
+            if (this.mode === 'match') this.captureMouse(); // never in the lobby: its buttons need the mouse
+          },
           home: () => {
             this.sfx.click();
             track('quit_match', { round: this.world.round });
@@ -1866,6 +1918,11 @@ export class Game {
             const order = ['low', 'normal', 'high'] as const;
             this.profile.aimSpeed = order[(order.indexOf(this.profile.aimSpeed) + 1) % 3];
             this.applyAimSpeed();
+            saveProfile(this.profile);
+            this.setPaused(true);
+          },
+          aimAssist: () => {
+            this.profile.aimAssist = !this.profile.aimAssist;
             saveProfile(this.profile);
             this.setPaused(true);
           },

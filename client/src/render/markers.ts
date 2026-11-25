@@ -4,12 +4,13 @@ import type { World } from '../../../shared/sim/world.ts';
 import type { Player } from '../../../shared/sim/types.ts';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import { HEROES } from '../../../shared/config/heroes.ts';
-import { AIMED_CONE } from '../../../shared/sim/brawl.ts';
 
 /**
  * Readability layer: what your Grab would hit, how far your skill reaches, who wears the crown,
  * and the map events (traffic, grave hands) with clear warnings.
  */
+/** Width of the aim cone drawn in the top-down views (degrees). */
+const AIMED_CONE = 12;
 export class Markers {
   private scene: THREE.Scene;
   private reticle: THREE.Group;

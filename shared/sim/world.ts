@@ -369,7 +369,7 @@ export class World {
         // turn to where the scope points; assist shrinks to a small cone so the shot goes where you aimed
         const aimed = inp.aim !== undefined && Number.isFinite(inp.aim);
         if (aimed) p.facing = inp.aim as number;
-        this.brawl.fire(p, aimed ? { d: Number.isFinite(inp.aimD) ? (inp.aimD as number) : 8 } : undefined);
+        this.brawl.fire(p, aimed ? { d: Number.isFinite(inp.aimD) ? (inp.aimD as number) : 8, y: Number.isFinite(inp.aimY) ? inp.aimY : undefined } : undefined);
       }
       else if (inp.grab && p.grabCd <= 0) {
         // commit to a direction now (aim assist), then lunge — the target can see it coming and dash

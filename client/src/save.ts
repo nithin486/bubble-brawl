@@ -24,13 +24,15 @@ export interface Profile {
   aimSpeed: 'low' | 'normal' | 'high';
   /** Touch screens: fire the laser by itself while the crosshair is on a rival. */
   autoFire: boolean;
+  /** Touch screens: a rival very close to the crosshair takes the shot. */
+  aimAssist: boolean;
 }
 
 const KEY = 'bb_profile_v1';
 
 export function loadProfile(): Profile {
   const today = new Date().toISOString().slice(0, 10);
-  const base: Profile = { matches: 0, coins: 0, xp: 0, map: DEFAULT_MAP, name: '', camera: 'third', missions: startMissions(), form: 0, hero: DEFAULT_HERO, firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto', aimSpeed: 'normal', autoFire: true };
+  const base: Profile = { matches: 0, coins: 0, xp: 0, map: DEFAULT_MAP, name: '', camera: 'third', missions: startMissions(), form: 0, hero: DEFAULT_HERO, firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto', aimSpeed: 'normal', autoFire: true, aimAssist: true };
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {

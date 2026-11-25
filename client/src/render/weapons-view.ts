@@ -335,52 +335,75 @@ export class WeaponsView {
     this.group.visible = world.mode === 'weapons';
   }
 
-  // ---- Bubble Laser beams: a white core in a cyan glow, gone in a blink (pooled, nothing allocated per shot)
-  private beams: { g: THREE.Group; core: THREE.MeshBasicMaterial; halo: THREE.MeshBasicMaterial; t: number }[] = [];
+  // ---- Bubble Laser beams: white core, cyan beam, pink glow, a flash at the gun and a burst where it lands.
+  // Normal blending: an additive beam vanishes against the pale candy ground. Pooled: nothing is allocated per shot.
+  private beams: { g: THREE.Group; mats: THREE.Material[]; parts: THREE.Mesh[]; muzzle: THREE.Sprite; end: THREE.Sprite; t: number }[] = [];
   private beamNext = 0;
-  private static beamGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+  private static beamGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+  /** Longer than the fire interval, so holding fire draws one unbroken beam. */
+  private static LIFE = 0.26;
+
+  private makeBeam() {
+    const layers: [string, number, number][] = [['#ffffff', 0.075, 1], ['#00c8ff', 0.16, 0.92], ['#ff2fc0', 0.29, 0.42]];
+    const g = new THREE.Group();
+    const mats: THREE.Material[] = [];
+    const parts: THREE.Mesh[] = [];
+    layers.forEach(([color, r, opacity], i) => {
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, toneMapped: false, fog: false });
+      mat.userData.base = opacity;
+      const mesh = new THREE.Mesh(WeaponsView.beamGeo, mat);
+      mesh.userData.r = r;
+      mesh.renderOrder = 10 - i;
+      mesh.frustumCulled = false;
+      g.add(mesh);
+      mats.push(mat);
+      parts.push(mesh);
+    });
+    const sprite = (color: string) => new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color, transparent: true, depthWrite: false, toneMapped: false }));
+    const muzzle = sprite('#7ff3ff');
+    const end = sprite('#ff6ad5');
+    muzzle.renderOrder = end.renderOrder = 11;
+    this.group.add(g, muzzle, end);
+    return { g, mats, parts, muzzle, end, t: 0 };
+  }
 
   laser(from: THREE.Vector3, to: THREE.Vector3, hit: boolean) {
     if (this.beams.length < 14) {
-      const mk = (color: string, r: number) => {
-        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-        const mesh = new THREE.Mesh(WeaponsView.beamGeo, mat);
-        mesh.scale.set(r, r, 1);
-        mesh.renderOrder = 8;
-        mesh.frustumCulled = false;
-        return mesh;
-      };
-      const core = mk('#eaffff', 0.045);
-      const halo = mk('#2fd8ff', 0.15);
-      const g = new THREE.Group();
-      g.add(core, halo);
-      this.group.add(g);
-      this.beams.push({ g, core: core.material, halo: halo.material, t: 0 });
+      this.beams.push(this.makeBeam());
       this.beamNext = this.beams.length - 1;
     } else this.beamNext = (this.beamNext + 1) % this.beams.length;
     const b = this.beams[this.beamNext];
     b.g.position.copy(from);
     b.g.lookAt(to);
     b.g.scale.set(1, 1, from.distanceTo(to));
-    b.g.visible = true;
-    b.t = 0.13;
-    // muzzle flash, bubbles shed along the beam, and a pop where it lands
-    this.fx.emit(from.x, from.y, from.z, { n: 3, color: ['#ffffff', '#8ff0ff'], speed: 1.4, up: 0.4, life: 0.14, size: 0.34 });
-    for (let k = 1; k <= 3; k++) {
-      const u = (k - Math.random()) / 3.2;
-      this.fx.emit(from.x + (to.x - from.x) * u, from.y + (to.y - from.y) * u, from.z + (to.z - from.z) * u, { n: 1, color: ['#bff8ff', '#ffc6f0'], speed: 0.5, up: 0.5, life: 0.3, size: 0.22 });
+    b.g.visible = b.muzzle.visible = b.end.visible = true;
+    b.muzzle.position.copy(from);
+    b.end.position.copy(to);
+    b.end.userData.s = hit ? 1.9 : 1.15;
+    b.t = WeaponsView.LIFE;
+    // bubbles shed along the beam and a pop where it lands
+    for (let k = 1; k <= 5; k++) {
+      const u = (k - Math.random()) / 5.2;
+      this.fx.emit(from.x + (to.x - from.x) * u, from.y + (to.y - from.y) * u, from.z + (to.z - from.z) * u, { n: 1, color: ['#8ff0ff', '#ff9fe6', '#ffffff'], speed: 0.8, up: 0.7, life: 0.36, size: 0.26 });
     }
-    this.fx.emit(to.x, to.y, to.z, { n: hit ? 12 : 5, color: hit ? ['#ffffff', '#ff7ac8', '#8ff0ff'] : ['#bff8ff', '#ffffff'], speed: hit ? 4 : 2.4, up: 1.2, life: 0.28, size: hit ? 0.34 : 0.22 });
+    this.fx.emit(to.x, to.y, to.z, { n: hit ? 14 : 7, color: hit ? ['#ffffff', '#ff4fc0', '#37e0ff'] : ['#37e0ff', '#ffffff'], speed: hit ? 4.5 : 2.6, up: 1.3, life: 0.3, size: hit ? 0.38 : 0.26 });
   }
 
   private tickBeams(dt: number) {
     for (const b of this.beams) {
       if (!b.g.visible) continue;
       b.t -= dt;
-      const k = Math.max(0, b.t / 0.13);
-      b.core.opacity = k;
-      b.halo.opacity = k * 0.6;
-      if (b.t <= 0) b.g.visible = false;
+      const k = Math.max(0, b.t / WeaponsView.LIFE);
+      const thin = 0.5 + 0.5 * Math.min(1, k * 2.4); // full width until the last third
+      b.parts.forEach((m, i) => {
+        m.scale.set(m.userData.r * thin, m.userData.r * thin, 1);
+        const mat = b.mats[i] as THREE.MeshBasicMaterial;
+        mat.opacity = mat.userData.base * Math.min(1, k * 3);
+      });
+      b.muzzle.scale.setScalar(0.85 * thin);
+      b.end.scale.setScalar(b.end.userData.s * (1.25 - k * 0.45));
+      b.muzzle.material.opacity = b.end.material.opacity = Math.min(1, k * 1.8);
+      if (b.t <= 0) b.g.visible = b.muzzle.visible = b.end.visible = false;
     }
   }
 

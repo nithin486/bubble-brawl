@@ -682,6 +682,17 @@ export class Hud {
     this.xhair.classList.toggle('armed', armed);
   }
 
+  private lockEl: HTMLElement | null = null;
+  /** Desktop: the mouse is not captured yet, so aiming needs one click. */
+  lockHint(on: boolean) {
+    if (!this.lockEl) {
+      if (!on) return;
+      this.lockEl = el('div', 'lockhint', '<b>CLICK TO AIM</b><span>Move the mouse to aim · hold left button to fire · Esc to pause</span>');
+      this.root.append(this.lockEl);
+    }
+    this.lockEl.classList.toggle('on', on);
+  }
+
   /** The crosshair kicks open on every shot. */
   shotKick() {
     const x = this.xhair;
@@ -922,8 +933,8 @@ export class Hud {
   }
 
   showPause(
-    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; camera: string; aimSpeed: string; autoFire: boolean | null },
-    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; camera: () => void; aimSpeed: () => void; autoFire: () => void; credits: () => void },
+    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; camera: string; aimSpeed: string; autoFire: boolean | null; aimAssist: boolean | null },
+    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; camera: () => void; aimSpeed: () => void; autoFire: () => void; aimAssist: () => void; credits: () => void },
   ) {
     const p = el('div', 'panel menu-panel');
     p.append(el('h1', 'stroke', state.inMatch ? 'Paused' : 'Settings'));
@@ -940,6 +951,7 @@ export class Hud {
     t(UI.camera, 'Camera view', state.camera, () => on.camera(), 'cycle');
     t(UI.display, 'Graphics', state.quality.toUpperCase(), () => on.quality(), 'cycle');
     t(UI.bolt, 'Aim speed', state.aimSpeed.toUpperCase(), () => on.aimSpeed(), 'cycle');
+    if (state.aimAssist !== null) t(UI.star, 'Aim assist', state.aimAssist ? 'ON' : 'OFF', () => on.aimAssist(), 'switch', state.aimAssist);
     if (state.autoFire !== null) t(UI.star, 'Auto-fire laser', state.autoFire ? 'ON' : 'OFF', () => on.autoFire(), 'switch', state.autoFire);
     if (!state.inMatch) t(UI.heroes, 'Credits', 'VIEW', () => on.credits(), 'act');
     const row = el('div', 'btn-row');

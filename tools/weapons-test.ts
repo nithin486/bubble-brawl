@@ -72,6 +72,24 @@ const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
   w.brawl.fire(a, { d: 6 });
   check('laser is stopped by a prop', b.hp === W.hp, `hp ${b.hp}`);
   w.obstacles.pop();
+  // exact aim, in three dimensions: only what is under the crosshair is hit
+  const shotAt = (y: number, side = 0) => {
+    place(a, BX, BZ, 0); place(b, BX + 8, BZ);
+    give(a, 'blaster');
+    const tz = BZ + side;
+    a.facing = Math.atan2(8, tz - BZ);
+    w.events.length = 0;
+    w.brawl.fire(a, { d: Math.hypot(8, tz - BZ), y });
+    return (w.events.find((e) => e.t === 'laser') as { hit: number }).hit === b.id;
+  };
+  check('aim at the chest hits', shotAt(1.05));
+  check('aim at the head hits', shotAt(1.75));
+  check('aim above the head misses', !shotAt(2.4));
+  check('aim 1 m to the side misses (no snapping)', !shotAt(1.05, 1.0));
+  check('aim at the edge of the body hits', shotAt(1.05, 0.45));
+  w.obstacles.push({ kind: 'dcrate', x: BX + 3, z: BZ, r: 0.6, rot: 0 });
+  check('a shot passes over a low crate', shotAt(1.2));
+  w.obstacles.pop();
   let n = 0;
   place(b, BX + 6, BZ);
   while (b.state !== 'bubble' && n < 40) { a.fireCd = 0; give(a, 'blaster'); w.brawl.fire(a, { d: 6 }); place(a, BX, BZ, Math.PI / 2); b.x = BX + 6; b.z = BZ; b.kx = b.kz = 0; n++; }

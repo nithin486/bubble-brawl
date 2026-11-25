@@ -59,7 +59,8 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   check('settings: camera cycles through 4 views', cams.size === 4, [...cams].join(','));
   const qs = new Set();
   for (let i = 0; i < 3; i++) {
-    await row('Graphics').click();
+    // turning shadows on compiles every shader: tens of seconds on a weak GPU
+    await row('Graphics').click({ timeout: 120000 });
     qs.add(await bb(page, () => window.__bb.stage.quality));
   }
   check('settings: graphics cycles low/medium/high', qs.size === 3, [...qs].join(','));
@@ -101,6 +102,7 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   check('credits open and name the authors', /Kay Lousberg/.test(await page.textContent('.credits')));
   await page.locator('.big-btn', { hasText: 'BACK' }).click();
   await page.locator('.menu-panel .big-btn', { hasText: 'DONE' }).click();
+  check('closing settings in the lobby leaves the mouse free', await bb(page, () => !document.pointerLockElement));
 
   // ---------------------------------------------------------- match: keyboard + mouse
   await page.click('.play', { force: true });
@@ -166,8 +168,10 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   check('knocked out shows the respawn card', await until(page, () => document.querySelector('.respawn.on'), null, 3000));
   await shot(page, 'respawn');
 
-  await page.click('.pause-btn');
-  check('pause button pauses', await visible(page, '.menu-panel'));
+  check('PLAY captured the mouse for aiming', await bb(page, () => !!document.pointerLockElement));
+  // Esc in a real browser releases the captured mouse, which opens the pause menu
+  await bb(page, () => document.exitPointerLock());
+  check('losing the mouse (Esc) pauses', await until(page, () => document.querySelector('.menu-panel'), null, 5000));
   const t0 = await bb(page, () => window.__bb.world.roundTime);
   await page.waitForTimeout(800);
   check('the clock stops while paused', (await bb(page, () => window.__bb.world.roundTime)) === t0);

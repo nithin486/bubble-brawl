@@ -709,3 +709,21 @@ body.cam-third .tag.me .tn{display:none}
   .panel.results .sub { font-size: 10px; margin: 3px 0 0; }
   .panel.results .btn-row { position: sticky; bottom: -12px; margin-top: 6px; padding: 6px 0 4px; background: linear-gradient(180deg, transparent, #141d48 35%); }
 }
+
+/* crosshair: a centre dot and four ticks that never move or turn; red when the shot will hit a rival */
+.xhair, .xhair.locked { transform: translate(-50%, -50%); opacity: .9; }
+.xhair.armed { opacity: 1; }
+.xhair.locked i, .xhair.locked b { background: #ff2f55; }
+.lockhint { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); display: none; flex-direction: column; align-items: center; gap: 2px; padding: 10px 22px; border-radius: 18px; background: #0e1636e6; box-shadow: 0 0 0 2.5px var(--gold-solid), 0 8px 24px #0a102c90; white-space: nowrap; animation: pulse .7s infinite alternate; pointer-events: none; }
+.lockhint.on { display: flex; }
+.lockhint b { font: 400 24px var(--display); color: var(--gold-solid); }
+.lockhint span { font-size: 12px; font-weight: 900; }
+#hud:has(.veil) > .lockhint { display: none; }
+
+.xhair.armed { width: 46px; height: 46px; }
+.xhair.armed i { box-shadow: 0 0 0 2px #0a102c; }
+.xhair.armed i:nth-child(1), .xhair.armed i:nth-child(2) { left: 21px; width: 4px; height: 13px; }
+.xhair.armed i:nth-child(3), .xhair.armed i:nth-child(4) { top: 21px; width: 13px; height: 4px; }
+.xhair.armed b { left: 20px; top: 20px; width: 6px; height: 6px; box-shadow: 0 0 0 2px #0a102c; }
+@media (max-height: 520px) { .lockhint { top: 20%; } }
+#hud:has(.lockhint.on) > .prompt { display: none; }

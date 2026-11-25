@@ -2,13 +2,12 @@
 // Lives next to World and uses its movement, knockback, aim assist and events.
 import { TUNING } from '../config/tuning.ts';
 import { dirX, dirZ, facingOf, len } from './math.ts';
+import { castRay, GUN_HEIGHT } from './ray.ts';
 import { WEAPONS, type MysteryBox, type Mine, type Player, type Projectile, type Throw, type WeaponKind } from './types.ts';
 import type { World } from './world.ts';
 
 const W = TUNING.weapons;
 const HERO_R = TUNING.hero.radius;
-/** Assist cone (degrees, total) when you aim with the scope: only a rival almost under it pulls the shot. */
-export const AIMED_CONE = 12;
 /** Assist cone without the scope: shots go where you face, with only a small snap onto a rival (was 150°, felt random). */
 export const AIM_CONE = 50;
 
@@ -231,7 +230,7 @@ export class Brawl {
   // ------------------------------------------------------------------ firing
 
   /** The action button with a weapon in hand. Returns false if it didn't fire (cooldown). */
-  fire(p: Player, aimed?: { d: number }): boolean {
+  fire(p: Player, aimed?: { d: number; y?: number }): boolean {
     const w = this.w;
     const k = p.weapon;
     if (!k || p.fireCd > 0) return false;
@@ -239,7 +238,8 @@ export class Brawl {
     p.fireCd = c.cooldown * (w.mod === 'rapid' ? TUNING.mods.rapid.cooldownMult : 1);
     // aim assist toward the best rival in front (a small cone when the player is aiming with the scope)
     // bots keep a wider snap (they can't fine-aim a stick), players get precise shots
-    const aim = (range: number, cone: number) => w.aimAt(p, range, aimed ? Math.min(cone, AIMED_CONE) : p.isBot ? 110 : cone);
+    // a player's aim is exact (no snapping onto anyone); bots keep a wide snap because they cannot fine-aim
+    const aim = (range: number, cone: number) => (aimed && !p.isBot ? null : w.aimAt(p, range, p.isBot ? 110 : cone));
     if (k === 'blaster') {
       this.laser(p, aimed);
     } else if (k === 'rocket') {
@@ -267,7 +267,7 @@ export class Brawl {
       }
       this.throws.push({ id: this.nextId++, owner: p.id, fx: p.x, fz: p.z, tx, tz, t: 0, total: W.freeze.flight });
     } else if (k === 'hook') {
-      const t = w.findTarget(p, W.hook.range, aimed ? 24 : W.hook.coneDeg * 2);
+      const t = w.findTarget(p, W.hook.range, aimed && !p.isBot ? 12 : W.hook.coneDeg * 2);
       // line of sight: the cable stops at the first wall, rock or mushroom in the way
       const blockedAt = t ? this.cableBlock(p.x, p.z, t.x, t.z) : null;
       if (t && !blockedAt) {
@@ -305,40 +305,25 @@ export class Brawl {
     return true;
   }
 
-  /** Bubble Laser: an instant beam from the muzzle to the first rival, wall or prop in the way. */
-  private laser(p: Player, aimed?: { d: number }) {
+  /** Bubble Laser: an instant beam from the gun to exactly the point under the crosshair (bots aim at a chest, with wobble). */
+  private laser(p: Player, aimed?: { d: number; y?: number }) {
     const w = this.w;
     const c = W.blaster;
-    if (!aimed) w.aimAt(p, c.range * 0.85, p.isBot ? 110 : AIM_CONE);
-    else if (!p.isBot) w.aimAt(p, c.range, AIMED_CONE);
+    const oy = p.y + GUN_HEIGHT;
+    const exact = !!aimed && !p.isBot;
+    const target = exact ? null : w.aimAt(p, c.range, p.isBot ? 110 : AIM_CONE);
     let facing = p.facing;
+    let rise = 0; // vertical metres per horizontal metre
+    if (exact && aimed.y !== undefined) rise = (aimed.y - oy) / Math.max(0.6, aimed.d);
+    if (target) rise = (target.y + 1.0 - oy) / Math.max(0.6, len(target.x - p.x, target.z - p.z));
     if (p.isBot) {
       const [weak, strong] = W.botSpreadDeg;
       facing += (w.rng.next() * 2 - 1) * (weak + (strong - weak) * w.skill) * (Math.PI / 180);
     }
-    const dx = dirX(facing);
-    const dz = dirZ(facing);
-    const from = w.terrain.heightAt(p.x, p.z);
-    let end = 0.6;
-    let victim: Player | null = null;
-    for (let s = 0.6; s <= c.range && !victim; s += 0.2) {
-      const x = p.x + dx * s;
-      const z = p.z + dz * s;
-      end = s;
-      for (const o of w.players) {
-        if (o === p || o.state === 'falling' || o.state === 'launched') continue;
-        const r = o.state === 'bubble' ? W.bubble.popRadius * 0.7 : HERO_R + 0.3;
-        if ((o.x - x) ** 2 + (o.z - z) ** 2 > r * r) continue;
-        victim = o;
-        break;
-      }
-      // cliffs and props stop the beam
-      if (!victim && (w.terrain.heightAt(x, z) > from + 1.2 || !w.clear(x, z, 0.05))) break;
-    }
-    const tx = victim ? victim.x : p.x + dx * end;
-    const tz = victim ? victim.z : p.z + dz * end;
-    w.events.push({ t: 'laser', p: p.id, tx, tz, hit: victim?.id ?? -1 });
-    if (victim) this.damage(victim, p, 'blaster', c.damage, dx, dz, c.knock);
+    const n = Math.hypot(1, rise);
+    const hit = castRay(w, p.x, oy, p.z, dirX(facing) / n, rise / n, dirZ(facing) / n, c.range, p);
+    w.events.push({ t: 'laser', p: p.id, tx: hit.x, ty: hit.y, tz: hit.z, hit: hit.player?.id ?? -1 });
+    if (hit.player) this.damage(hit.player, p, 'blaster', c.damage, dirX(facing), dirZ(facing), c.knock);
   }
 
   /** First point along a→b where an obstacle (rock, tree, rail) blocks a hook cable, or null if the line is clear. */

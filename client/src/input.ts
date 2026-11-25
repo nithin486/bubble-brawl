@@ -26,7 +26,10 @@ export class InputManager {
   /** Cursor position in CSS px, and when it last moved (the scope follows it on desktop). */
   mouse = { x: 0, y: 0, t: -99 };
 
+  private canvas: HTMLElement;
+
   constructor(canvas: HTMLElement) {
+    this.canvas = canvas;
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.keys.add(e.code);
@@ -50,14 +53,16 @@ export class InputManager {
       this.mouse.y = e.clientY;
       this.mouse.t = performance.now();
       if (document.pointerLockElement === canvas) {
-        this.yaw -= e.movementX * 0.0025 * this.sensitivity;
-        this.pitch -= e.movementY * 0.0021 * this.sensitivity; // mouse up = look up
+        // same scale both ways, like a shooter; browsers sometimes report one huge jump right after locking
+        if (Math.abs(e.movementX) > 600 || Math.abs(e.movementY) > 600) return;
+        this.yaw -= e.movementX * 0.0023 * this.sensitivity;
+        this.pitch -= e.movementY * 0.0023 * this.sensitivity; // mouse up = look up
       }
     });
     canvas.addEventListener('mousedown', (e) => {
       if (this.mouseLook && document.pointerLockElement !== canvas && this.enabled) {
         // first click only captures the mouse (no accidental grab)
-        canvas.requestPointerLock?.();
+        this.lockMouse();
         return;
       }
       if (e.button === 0) {
@@ -119,6 +124,28 @@ export class InputManager {
     const p = this.pitch;
     this.pitch = 0;
     return p;
+  }
+
+  /** Capture the mouse for aiming (must be called from a click or key press). Raw movement where the browser allows it. */
+  lockMouse() {
+    const c = this.canvas as HTMLElement & { requestPointerLock?: (o?: { unadjustedMovement?: boolean }) => Promise<void> | void };
+    if (!this.mouseLook || !c.requestPointerLock || document.pointerLockElement === c) return;
+    const plain = () => {
+      try {
+        void (c.requestPointerLock!() as Promise<void> | undefined)?.catch?.(() => {});
+      } catch {
+        /* not allowed right now: the next click tries again */
+      }
+    };
+    try {
+      void (c.requestPointerLock({ unadjustedMovement: true }) as Promise<void> | undefined)?.catch?.(plain);
+    } catch {
+      plain();
+    }
+  }
+
+  get mouseLocked() {
+    return document.pointerLockElement === this.canvas;
   }
 
   releaseMouse() {
