@@ -206,6 +206,9 @@ export class ArenaView {
       underMat = bottom.mat.clone();
       worldGroundUv(underMat as THREE.MeshStandardMaterial, 0.3);
     }
+    // (instanced meshes need their own copy: a material drawn by both kinds makes three.js re-derive its shader every frame)
+    underMat = underMat.clone();
+    if (th.pbr) worldGroundUv(underMat as THREE.MeshStandardMaterial, 0.3);
     this.under = new THREE.InstancedMesh(bottom.geo, underMat, tiles.length);
     this.under.receiveShadow = true;
     tiles.forEach((t, i) => this.setUnder(i, t.x, 0, t.z, 1));
@@ -232,6 +235,13 @@ export class ArenaView {
     if (th.waterfalls) this.buildWaterfalls();
     if (th.bubbles) this.buildBubbles();
     scene.add(this.group);
+    // scenery never moves: skip its matrix updates every frame (falling tiles move instances, not these objects)
+    this.group.updateMatrixWorld(true);
+    for (const c of this.group.children)
+      if ((c as THREE.Mesh).isMesh && !this.spinners.includes(c)) {
+        c.matrixAutoUpdate = false;
+        c.matrixWorldAutoUpdate = false;
+      }
   }
 
   private bake(piece: string) {
@@ -322,12 +332,22 @@ export class ArenaView {
   private flushChunks() {
     for (const [name, list] of this.chunkMats) {
       const b = this.bake(name === '__under' ? this.theme.under.piece : name);
-      const im = new THREE.InstancedMesh(b.geo, b.mat, list.length);
+      const im = new THREE.InstancedMesh(b.geo, b.mat.clone(), list.length);
       list.forEach((m, i) => im.setMatrixAt(i, m));
       im.receiveShadow = name !== '__under';
       this.group.add(im);
     }
     this.chunkMats.clear();
+  }
+
+  /** Next match on the same map: keep everything built; update() puts fallen tiles and props back. */
+  reuse(world: World) {
+    this.world = world;
+    this.falls.clear();
+  }
+
+  get mapId() {
+    return this.world.map.id;
   }
 
   /** Kerb along every outer tile edge; each one belongs to its tile, so it falls with it. */

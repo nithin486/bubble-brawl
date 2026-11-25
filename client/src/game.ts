@@ -121,6 +121,9 @@ export class Game {
   private fpsFrames = 0;
   private fpsT = 0;
   private lowFpsStreak = 0;
+  private goodStreak = 0;
+  /** False while the shaders are being built behind the loading screen. */
+  private ready = false;
   private autoQuality: boolean;
   private v = new THREE.Vector3();
   private lead = new THREE.Vector3();
@@ -247,25 +250,34 @@ export class Game {
     if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
   }
 
-  private warmed = false;
   /**
-   * Compile every shader the match will need up front (held weapons, mystery box, effects): otherwise the first
-   * pickup / first shot compiles a new GPU program mid-fight and the game freezes for a moment.
+   * Compile every shader a session needs while the loading screen is still up: the world, the heroes (also faded),
+   * held weapons, beams, ice and effects. compileAsync keeps the page responsive while the driver works.
    */
-  private warmShaders() {
-    if (this.warmed) return;
-    this.warmed = true;
-    const tmp = new THREE.Group();
-    tmp.position.set(0, -400, 0);
-    for (const [name, obj] of this.assets.env) if (name.startsWith('weap_') || name === 'mystery_cube' || name === 'chest_gold') tmp.add(obj.clone());
-    this.stage.scene.add(tmp);
-    try {
-      this.stage.renderer.compile(this.stage.scene, this.stage.camera);
-    } catch {
-      /* not fatal */
+  async prepare() {
+    const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    for (let i = 0; i < 600 && !this.world; i++) await wait(50); // the first map's art may still be on its way
+    if (this.world) {
+      const extra = new THREE.Group();
+      extra.position.set(0, -400, 0);
+      for (const [name, obj] of this.assets.env) if (name.startsWith('weap_') || name === 'mystery_cube' || name === 'chest_gold') extra.add(obj.clone());
+      this.weapons?.warm();
+      const faded = this.heroes[0]?.warm();
+      if (faded) extra.add(faded);
+      const o = new THREE.Vector3(0, 1, 0);
+      this.fx.ring(0, 0, '#ffffff', 1, 0.1, 0.5);
+      this.fx.cone(0, 0, 0, 2, 60, '#ffffff', 0.1, 0.4);
+      this.fx.emit(0, -50, 0, { n: 1, color: '#ffffff', speed: 0, up: 0, life: 0.05, size: 0.1 });
+      this.weapons?.laser(o, o.clone().setZ(1), false);
+      this.stage.scene.add(extra);
+      const compile = Promise.all([this.stage.renderer.compileAsync(this.stage.scene, this.stage.camera), this.stage.renderer.compileAsync(this.showcase.scene, this.showcase.camera)]);
+      await Promise.race([compile.catch(() => {}), wait(45000)]);
+      this.stage.scene.remove(extra);
     }
-    this.stage.scene.remove(tmp);
+    this.ready = true;
+    this.last = performance.now();
   }
+
 
   private camPull = 1;
   private koStreak = 0;
@@ -470,8 +482,12 @@ export class Game {
       this.stage.scene.add(hv.root);
       return hv;
     });
-    release(this.island?.group);
-    this.island = new ArenaView(this.world, this.assets.env, this.stage.scene, this.glowTex);
+    // building a map takes seconds on a slow laptop: the next match on the same one reuses it
+    if (this.island && this.island.mapId === this.world.map.id) this.island.reuse(this.world);
+    else {
+      release(this.island?.group);
+      this.island = new ArenaView(this.world, this.assets.env, this.stage.scene, this.glowTex);
+    }
     this.stage.applyTheme(this.island.theme);
     this.bank?.dispose();
     this.bank = new BankView(this.world, this.assets.env, this.stage.scene, this.glowTex);
@@ -485,7 +501,6 @@ export class Game {
     else this.powers.setWorld(this.world);
     if (!this.markers) this.markers = new Markers(this.stage.scene, this.assets.env, this.glowTex);
     else this.markers.setWorld();
-    this.warmShaders();
     this.robbedBy.clear();
     this.nemesis = -1;
     this.lastSay.clear();
@@ -520,6 +535,10 @@ export class Game {
   private frame = (nowMs: number) => {
     requestAnimationFrame(this.frame);
     if (!this.world) return; // the first match is still waiting for its map's art
+    if (!this.ready) {
+      this.last = nowMs;
+      return;
+    }
     let dt = (nowMs - this.last) / 1000;
     this.last = nowMs;
     if (dt > 0.1) dt = 0.1;
@@ -709,20 +728,26 @@ export class Game {
   };
 
   private monitorFps(dt: number) {
+    if (dt >= 0.1) return; // a hitch (tab switch, loading) says nothing about how fast the game runs
     this.fpsFrames++;
     this.fpsT += dt;
     if (this.fpsT < 2) return;
     const fps = this.fpsFrames / this.fpsT;
     this.fpsFrames = 0;
     this.fpsT = 0;
-    if (new URLSearchParams(location.search).has('fps')) this.hud.fps = `${fps.toFixed(0)} fps · ${this.stage.quality}`;
+    if (PARAMS.has('fps')) this.hud.fps = `${fps.toFixed(0)} fps · ${this.stage.quality} ×${this.stage.scale}`;
     if (!this.autoQuality || this.paused) return;
-    const q = this.stage.quality;
-    const tooSlow = (q === 'high' && fps < 45) || (q === 'medium' && fps < 34);
-    this.lowFpsStreak = tooSlow ? this.lowFpsStreak + 1 : 0;
-    if (this.lowFpsStreak >= 2) {
+    // only the picture size changes while playing; shadows and effects never switch mid-session
+    const steps = [1, 0.85, 0.72, 0.6];
+    const i = Math.max(0, steps.indexOf(this.stage.scale));
+    this.lowFpsStreak = fps < 44 ? this.lowFpsStreak + 1 : 0;
+    this.goodStreak = fps > 57 ? this.goodStreak + 1 : 0;
+    if (this.lowFpsStreak >= 2 && i < steps.length - 1) {
+      this.stage.setScale(steps[i + 1]);
       this.lowFpsStreak = 0;
-      this.stage.setQuality(q === 'high' ? 'medium' : 'low');
+    } else if (this.goodStreak >= 6 && i > 0) {
+      this.stage.setScale(steps[i - 1]);
+      this.goodStreak = 0;
     }
   }
 
@@ -1042,7 +1067,8 @@ export class Game {
         hv(e.victim).bump(big ? 0.4 : 0.25);
         if (big) hv(e.victim).knockSpin(e.kind === 'bomb' ? 2 : 1);
         if (w.players[e.victim].state !== 'stunned') hv(e.victim).oneShot(Math.random() < 0.5 ? 'Hit_A' : 'Hit_B', this.time, 1.6, 0.4);
-        this.hitStop = Math.max(this.hitStop, big ? 0.09 : 0.06);
+        // a tiny freeze sells a heavy blow you dealt or took; never for the rapid laser or other people's fights
+        if (e.kind !== 'blaster' && (e.victim === LOCAL || e.by === LOCAL)) this.hitStop = Math.max(this.hitStop, 0.035);
         if (e.drop > 0) {
           this.fx.coinBurst(e.x, 1.1, e.z, 6 + e.drop * 2);
           this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.drop}`, 'minus');
@@ -1948,6 +1974,7 @@ export class Game {
             this.autoQuality = false;
             this.profile.quality = next;
             saveProfile(this.profile);
+            this.stage.scale = 1;
             this.stage.setQuality(next);
             this.setPaused(true);
           },

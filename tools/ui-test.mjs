@@ -347,11 +347,11 @@ for (const map of ['bubblegum', 'candy', 'desert']) {
   await touch('touchEnd', []);
   const after = await bb(page, () => ({ x: window.__bb.world.players[0].x, z: window.__bb.world.players[0].z }));
   check('joystick moves the hero', Math.hypot(after.x - before.x, after.z - before.z) > 0.8);
-  await page.tap('.btn.skill');
+  await page.tap('.btn.skill', { force: true }); // it pulses while ready
   check('tap skill', await until(page, () => window.__bb.world.players[0].skillCd > 0, null, 3000));
   await bb(page, () => Object.assign(window.__bb.world.players[0], { weapon: 'blaster', ammo: 5, fireCd: 0, state: 'normal', stateT: 0 }));
   await page.waitForTimeout(800); // let the skill's wind-up finish
-  await page.tap('.btn.grab');
+  await page.tap('.btn.grab', { force: true });
   check('tap fires the weapon', await until(page, () => window.__bb.world.players[0].ammo < 5, null, 3000));
   await bb(page, () => {
     const g = window.__bb;

@@ -1,7 +1,7 @@
 import { loadAssets, loadPack } from './render/assets.ts';
 import { MAP_PACK, MAP_ROTATION, type MapId } from '../../shared/config/maps.ts';
-import { Stage, isTouch, type Quality } from './render/stage.ts';
-import { makePortraits } from './render/portraits.ts';
+import { Stage, isTouch, detectQuality, type Quality } from './render/stage.ts';
+import { loadPortraits } from './render/portraits.ts';
 import { Game } from './game.ts';
 import { Sfx } from './audio.ts';
 import { loadProfile, saveProfile } from './save.ts';
@@ -17,7 +17,7 @@ async function boot() {
 
   const bar = document.getElementById('bootbar') as HTMLElement;
   const q = new URLSearchParams(location.search).get('q') as Quality | null;
-  const quality: Quality = q ?? (profile.quality !== 'auto' ? profile.quality : isTouch() ? 'medium' : 'high');
+  const quality: Quality = q ?? (profile.quality !== 'auto' ? profile.quality : detectQuality(isTouch()));
   const stage = new Stage(document.getElementById('app')!, quality);
   const pct = document.getElementById('bootpct');
   const progress = (f: number) => {
@@ -32,8 +32,11 @@ async function boot() {
   // a failed download is not fatal: the game falls back to a map that needs no pack
   if (pack) await loadPack(assets, pack, (f) => progress(0.85 + f * 0.15)).catch((e) => console.warn(e));
   progress(1);
-  const portraits = makePortraits(stage.renderer, assets);
-  new Game(stage, assets, portraits, profile, new Sfx());
+  const portraits = loadPortraits();
+  const game = new Game(stage, assets, portraits, profile, new Sfx());
+  // build every shader behind the loading screen, without freezing it, so nothing stalls once play starts
+  if (pct) pct.textContent = 'PREPARING GRAPHICS';
+  await game.prepare();
   const boot = document.getElementById('boot')!;
   boot.style.opacity = '0';
   setTimeout(() => boot.remove(), 400);

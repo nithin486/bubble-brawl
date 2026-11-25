@@ -34,10 +34,16 @@ export class Terrain {
   readonly ramps: Ramp[];
   readonly flat: boolean;
 
+  /** Tallest raised surface, and each ramp's heading (computed once). */
+  readonly top: number;
+  private readonly turn: { s: number; c: number; reach: number }[];
+
   constructor(def?: TerrainDef) {
     this.decks = def?.decks ?? [];
     this.ramps = def?.ramps ?? [];
     this.flat = this.decks.length + this.ramps.length === 0;
+    this.top = Math.max(0, ...this.decks.map((d) => d.h), ...this.ramps.map((r) => r.h));
+    this.turn = this.ramps.map((r) => ({ s: Math.sin(r.rot), c: Math.cos(r.rot), reach: (r.w + r.len) / 2 }));
   }
 
   heightAt(x: number, z: number): number {
@@ -52,12 +58,15 @@ export class Terrain {
       const lz = dx * s + dz * c;
       if (Math.abs(lx) <= d.w / 2 && Math.abs(lz) <= d.d / 2 && d.h > h) h = d.h;
     }
-    for (const r of this.ramps) {
+    for (let i = 0; i < this.ramps.length; i++) {
+      const r = this.ramps[i];
       const dx = x - r.x;
       const dz = z - r.z;
+      const t = this.turn[i];
+      if (Math.abs(dx) > t.reach || Math.abs(dz) > t.reach) continue;
       // local frame: u across, v along the ascent
-      const sn = Math.sin(r.rot);
-      const cs = Math.cos(r.rot);
+      const sn = t.s;
+      const cs = t.c;
       const v = dx * sn + dz * cs;
       const u = dx * cs - dz * sn;
       if (Math.abs(u) > r.w / 2 || Math.abs(v) > r.len / 2) continue;

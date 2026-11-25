@@ -76,11 +76,11 @@ export function castRay(w: World, ox: number, oy: number, oz: number, dx: number
     }
   }
   // ground, ramps and decks: walk the ray (the void between islands stops nothing)
-  for (let t = 0.2; t < best; t += 0.2) {
+  for (let t = 0.2; t < best; t += 0.3) {
     const x = ox + dx * t;
     const z = oz + dz * t;
     const y = oy + dy * t;
-    if (y > 4) continue;
+    if (y > w.terrain.top + 0.05) continue; // above every deck: nothing to meet
     if (y <= w.terrain.heightAt(x, z) && w.arena.solid(x, z)) {
       best = t;
       solid = true;

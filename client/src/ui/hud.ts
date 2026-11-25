@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WEAPON_INFO, weaponIcon } from '../render/weapons-view.ts';
+import { WEAPON_INFO } from '../render/weapons-view.ts';
 import { weaponShot } from '../render/portraits.ts';
 import './hud.css';
 import type { World } from '../../../shared/sim/world.ts';
@@ -35,6 +35,21 @@ const el = (tag: string, cls = '', html = '') => {
   if (html) e.innerHTML = html;
   return e;
 };
+/** Write markup only when it changed. (Reading innerHTML back never matches SVG strings and rewrote them every frame.) */
+const written = new WeakMap<Element, string>();
+function setHTML(e: Element, html: string) {
+  if (written.get(e) === html) return false;
+  written.set(e, html);
+  e.innerHTML = html;
+  return true;
+}
+/** Replay a CSS animation class on the next frame, without forcing the page to lay out. */
+function restart(e: Element, cls: string) {
+  e.classList.remove(cls);
+  requestAnimationFrame(() => e.classList.add(cls));
+}
+const powerShots = new Map<PowerKind, string>();
+const powerShot = (k: PowerKind) => powerShots.get(k) ?? (powerShots.set(k, powerIconCanvas(k, 96).toDataURL()), powerShots.get(k)!);
 const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 interface Tag {
@@ -45,6 +60,8 @@ interface Tag {
   name: HTMLElement;
   say: HTMLElement;
   sayUntil: number;
+  /** Last screen position written. */
+  at?: string;
 }
 
 /** Info the game passes each frame that the sim doesn't know (bot intent, nemesis, targeting). */
@@ -147,7 +164,7 @@ export class Hud {
     mine.append(this.carryPill, this.bankPill);
     this.root.append(mine, this.comboEl, this.powersEl, this.flashEl, this.bankValEl);
     for (const k of ['magnet', 'speed', 'shield'] as PowerKind[]) {
-      const c = el('div', 'pchip', `<img src="${powerIconCanvas(k, 96).toDataURL()}"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="#ffffff40" stroke-width="4"/><circle class="t" cx="20" cy="20" r="17" fill="none" stroke="${POWER_INFO[k].color}" stroke-width="4" stroke-dasharray="106.8" transform="rotate(-90 20 20)"/></svg>`);
+      const c = el('div', 'pchip', `<img src="${powerShot(k)}"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="#ffffff40" stroke-width="4"/><circle class="t" cx="20" cy="20" r="17" fill="none" stroke="${POWER_INFO[k].color}" stroke-width="4" stroke-dasharray="106.8" transform="rotate(-90 20 20)"/></svg>`);
       this.powerChips.set(k, c);
       this.powersEl.append(c);
     }
@@ -331,9 +348,7 @@ export class Hud {
     if (!t || t.root.style.opacity === '0') return;
     if (!t.sayUntil && this.tags.filter((x) => x.sayUntil > now).length >= 2) return;
     t.say.textContent = text;
-    t.say.classList.remove('on');
-    void t.say.offsetWidth;
-    t.say.classList.add('on');
+    restart(t.say, 'on');
     t.sayUntil = now + dur;
   }
 
@@ -386,7 +401,7 @@ export class Hud {
     this.timer.classList.toggle('final', world.finale && playing);
     const dots = Array.from({ length: TUNING.match.rounds }, (_, i) => `<i class="${i + 1 < world.round ? 'done' : i + 1 === world.round ? 'now' : ''}"></i>`).join('');
     const rh = `<span>ROUND ${world.round}</span>${dots}`;
-    if (this.roundEl.innerHTML !== rh) this.roundEl.innerHTML = rh;
+    setHTML(this.roundEl, rh);
     this.finaleTag.classList.toggle('on', world.finale && playing);
 
     // scoreboard: total banked this match (+ this round), hidden during the finale
@@ -446,7 +461,7 @@ export class Hud {
         this.btnGrab.classList.toggle('armed', !!info);
         this.btnGrab.style.setProperty('--wc', info?.color ?? '');
         const svg = this.btnGrab.querySelector('svg, .wicon');
-        const icon = info && me.weapon ? Object.assign(document.createElement('img'), { className: 'wicon', src: weaponIcon(me.weapon, 96).toDataURL() }) : null;
+        const icon = info && me.weapon ? Object.assign(document.createElement('img'), { className: 'wicon', src: weaponShot(me.weapon) }) : null;
         if (svg && icon) svg.replaceWith(icon);
         else if (svg && !icon && svg.classList.contains('wicon')) svg.outerHTML = ICONS.grab;
         this.btnGrab.querySelector('.lbl')!.textContent = info ? `x${me.ammo}` : 'PUNCH';
@@ -516,11 +531,15 @@ export class Hud {
       const important = prio(p) >= 200;
       const vis = p.state !== 'falling' && this.v.z < 1 && (!overlaps || p.id === localId);
       if (vis) placed.push(box);
-      t.root.style.opacity = vis ? '1' : '0';
+      const opacity = vis ? '1' : '0';
+      if (t.root.style.opacity !== opacity) t.root.style.opacity = opacity;
       t.root.classList.toggle('compact', vis && overlaps && !important);
-      t.root.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`;
-      t.root.style.left = '0';
-      t.root.style.top = '0';
+      // whole pixels, and only when the tag really moved
+      const at = `translate3d(${Math.round(sx)}px, ${Math.round(sy)}px, 0) translate(-50%, -100%)`;
+      if (vis && t.at !== at) {
+        t.at = at;
+        t.root.style.transform = at;
+      }
       const crown = p.id === world.crownId ? UI.crown : '';
       const c =
         world.mode === 'weapons'
@@ -530,7 +549,7 @@ export class Hud {
           : p.carried > 0
             ? `${crown}<i class="coin-ico"></i>${p.carried}`
             : crown;
-      if (t.count.innerHTML !== c) t.count.innerHTML = c;
+      setHTML(t.count, c);
       // red "!" = this bot is coming for you; skull = your nemesis
       const threat = !!extra?.threats.has(p.id);
       const nem = extra?.nemesis === p.id;
@@ -573,13 +592,12 @@ export class Hud {
       me.carried > 0
         ? `<span>BANK = <b>${bv.total}</b></span>${bv.mult > 1 ? `<em>×${bv.mult}</em>` : ''}${nextTier ? `<small>${nextTier.min - me.carried} more → ×${nextTier.mult}${world.mod === 'double' ? '×2' : ''}</small>` : ''}`
         : '';
-    if (this.bankValEl.innerHTML !== bvHtml) this.bankValEl.innerHTML = bvHtml;
+    setHTML(this.bankValEl, bvHtml);
     this.bankValEl.classList.toggle('hot', bv.mult >= 1.5);
     // current twist
     const mi = modInfo(world.mod, world.mode);
     const modHtml = world.mod !== 'none' && mi ? `${mi.icon} ${mi.name}` : '';
-    if (this.modEl.innerHTML !== modHtml) this.modEl.innerHTML = modHtml;
-    this.modEl.style.display = modHtml ? 'flex' : 'none';
+    if (setHTML(this.modEl, modHtml)) this.modEl.style.display = modHtml ? 'flex' : 'none';
     // buttons light up only when they'd land
     this.btnGrab.classList.toggle('can', !!extra && extra.grabTarget >= 0 && me.grabCd <= 0.05);
     this.btnSkill.classList.toggle('hot', !!extra && extra.skillHits > 0 && me.skillCd <= 0);
@@ -598,7 +616,7 @@ export class Hud {
   }
 
   private cooldown(b: HTMLElement, cd: number, max: number, showNum: boolean, ring = '.cd') {
-    const p = cd > 0 ? Math.round(Math.min(1, cd / max) * 100) : 0;
+    const p = cd > 0 ? Math.ceil(Math.min(1, cd / max) * 12.5) * 8 : 0; // in steps: a smooth conic gradient repaints every frame
     const r = b.querySelector(ring) as HTMLElement;
     if (r.dataset.p !== String(p)) {
       r.dataset.p = String(p); // touch the DOM only when the ring actually moves
@@ -607,8 +625,10 @@ export class Hud {
     if (showNum) {
       const n = b.querySelector('.num') as HTMLElement;
       const t = cd > 0 ? String(Math.ceil(cd)) : '';
-      if (n.textContent !== t) n.textContent = t;
-      (b.querySelector('svg') as SVGElement).style.opacity = cd > 0 ? '0.35' : '1';
+      if (n.textContent !== t) {
+        n.textContent = t;
+        (b.querySelector('svg') as SVGElement).style.opacity = cd > 0 ? '0.35' : '1';
+      }
     }
   }
 
@@ -638,9 +658,7 @@ export class Hud {
   }
 
   private bumpEl(e: HTMLElement) {
-    e.classList.remove('bump');
-    void e.offsetWidth;
-    e.classList.add('bump');
+    restart(e, 'bump');
   }
 
   // ---------------------------------------------------------------- moments
@@ -697,9 +715,7 @@ export class Hud {
   shotKick() {
     const x = this.xhair;
     if (!x) return;
-    x.classList.remove('kick');
-    void x.offsetWidth;
-    x.classList.add('kick');
+    restart(x, 'kick');
   }
 
   private marker: HTMLElement | null = null;
@@ -717,7 +733,7 @@ export class Hud {
   weaponCard(kind: keyof typeof WEAPON_INFO) {
     const info = WEAPON_INFO[kind];
     this.wcard?.remove();
-    const c = el('div', 'wcard', `<img src="${weaponIcon(kind, 128).toDataURL()}"><div><b>${info.name}</b><span>${info.tip}</span></div>`);
+    const c = el('div', 'wcard', `<img src="${weaponShot(kind)}"><div><b>${info.name}</b><span>${info.tip}</span></div>`);
     c.style.setProperty('--wc', info.color);
     this.root.append(c);
     this.wcard = c;
@@ -735,11 +751,7 @@ export class Hud {
   /** Full-screen colour flash for big moments. */
   flash(color: string, strength = 0.55) {
     this.flashEl.style.background = `radial-gradient(circle, transparent 30%, ${color})`;
-    this.flashEl.style.transition = 'none';
-    this.flashEl.style.opacity = String(strength);
-    void this.flashEl.offsetWidth;
-    this.flashEl.style.transition = 'opacity .45s ease-out';
-    this.flashEl.style.opacity = '0';
+    this.flashEl.animate([{ opacity: strength }, { opacity: 0 }], { duration: 450, easing: 'ease-out' });
   }
 
   /** Huge ability name in the hero's colour. */

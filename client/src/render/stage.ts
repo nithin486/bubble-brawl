@@ -34,6 +34,30 @@ const CleanShader = {
 /** GTAO also shades sprites/labels (dark boxes round heroes), so it is opt-in: ?ao */
 const AO_ON = new URLSearchParams(location.search).has('ao');
 
+/** Weak graphics: old integrated Intel, most budget phone chips, software rendering. */
+const WEAK_GPU = /(Intel.*\b(U?HD) Graphics|Mali|PowerVR|Adreno \(TM\) [1-5]\d\d|SwiftShader|llvmpipe|Software|Basic Render)/i;
+const STRONG_GPU = /(NVIDIA|GeForce|RTX|GTX|Radeon (RX|Pro)|Apple M\d)/i;
+
+/** Pick the starting graphics tier. It stays for the session: switching shadows later rebuilds every shader. */
+export function detectQuality(touch: boolean): 'low' | 'medium' | 'high' {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2') ?? document.createElement('canvas').getContext('webgl');
+    const info = gl?.getExtension('WEBGL_debug_renderer_info');
+    const gpu = info && gl ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
+    if (WEAK_GPU.test(gpu) || memory <= 4) return 'low';
+    if (touch) return STRONG_GPU.test(gpu) ? 'medium' : 'low';
+    return STRONG_GPU.test(gpu) ? 'high' : 'medium';
+  } catch {
+    return 'low';
+  }
+}
+
+// three.js draws see-through double-sided surfaces twice and re-derives their shader on every pass of every frame.
+// None of ours (rings, water, glass, decals) needs the second pass.
+Object.defineProperty(THREE.Material.prototype, 'forceSinglePass', { configurable: true, get: () => true, set: () => {} });
+
 export type Quality = 'low' | 'medium' | 'high';
 
 export const isTouch = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -122,10 +146,13 @@ export class Stage {
 
     if (LOOK === 'toy') {
       // soft studio reflections: every surface gets a highlight and a bit of sky bounce (the "toy" sheen)
-      const pm = new THREE.PMREMGenerator(this.renderer);
-      this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-      this.scene.environmentIntensity = 0.38;
-      pm.dispose();
+      if (quality !== 'low') {
+        // reflections cost start-up time and fill-rate: weak GPUs go without (the fill light makes up for it)
+        const pm = new THREE.PMREMGenerator(this.renderer);
+        this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+        this.scene.environmentIntensity = 0.38;
+        pm.dispose();
+      }
       this.sun.shadow.radius = 6;
       this.sun.shadow.blurSamples = 16;
     }
@@ -166,7 +193,7 @@ export class Stage {
     if (LOOK === 'toy') {
       // stronger key + weaker fill = real shadows and form; AgX needs a bit more exposure than ACES
       this.sun.intensity = t.sun.intensity * 1.15;
-      this.hemi.intensity = t.hemi.intensity * 0.72;
+      this.hemi.intensity = t.hemi.intensity * (this.scene.environment ? 0.72 : 0.95);
       // bloom only on real HDR highlights (glows, muzzle flashes), never on pale ground
       this.bloomCfg = { strength: Math.min(this.bloomCfg.strength, 0.22), threshold: Math.max(this.bloomCfg.threshold, 1.1) };
       if (this.bloom) { this.bloom.strength = this.bloomCfg.strength; this.bloom.threshold = this.bloomCfg.threshold; }
@@ -189,10 +216,25 @@ export class Stage {
     this.sun.target.position.set(x, 0, z);
   }
 
+  /** Extra resolution factor the game lowers when frames are slow: it only resizes the picture, nothing recompiles. */
+  scale = 1;
+
+  setScale(s: number) {
+    if (s === this.scale) return;
+    this.scale = s;
+    this.applyResolution();
+    this.resize();
+  }
+
+  private applyResolution() {
+    const dpr = window.devicePixelRatio || 1;
+    const q = this.quality;
+    this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.25 : 1) * this.scale);
+  }
+
   setQuality(q: Quality) {
     this.quality = q;
-    const dpr = window.devicePixelRatio || 1;
-    this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.25 : 1)); // sharper: low res read as 'blurry'
+    this.applyResolution();
     this.sun.castShadow = q !== 'low';
     const sm = q === 'high' ? 4096 : 1024;
     if (this.sun.shadow.mapSize.x !== sm) {

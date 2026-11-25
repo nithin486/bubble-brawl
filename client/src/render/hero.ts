@@ -1,3 +1,4 @@
+import { bakePiece } from './arena-view.ts';
 import * as THREE from 'three';
 import { addOutlines } from './style.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -76,6 +77,8 @@ const qTilt = new THREE.Quaternion();
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
+const HELD_BAKED = new Map<THREE.Object3D, THREE.Mesh>();
+
 export class HeroView {
   root = new THREE.Group();
   model: THREE.Object3D;
@@ -149,13 +152,25 @@ export class HeroView {
           const k = new THREE.SkinnedMesh(sk.geometry, xray);
           k.bind(sk.skeleton, sk.bindMatrix);
           x = k;
-        } else x = new THREE.Mesh(m.geometry, xray);
+        } else x = new THREE.Mesh(m.geometry, xray.clone());
         x.frustumCulled = false;
         x.renderOrder = 20;
         x.userData.outline = true; // not a real part: skipped by outlines / material lists
         m.add(x);
       }
     this.root.add(this.model);
+    this.model.traverse((o) => {
+      if (/^(1H|2H)_|Knife|Axe|Sword/i.test(o.name)) this.ownArms.push(o);
+    });
+    // skinned bounds are the bind pose only, so give each mesh a roomy fixed sphere: heroes off screen are not drawn
+    this.root.updateMatrixWorld(true);
+    this.model.traverse((o) => {
+      const m = o as THREE.SkinnedMesh;
+      if (!m.isSkinnedMesh) return;
+      const scale = m.getWorldScale(new THREE.Vector3()).x || 1;
+      m.boundingSphere = new THREE.Sphere(m.worldToLocal(this.root.localToWorld(new THREE.Vector3(0, 1, 0))), 2.4 / scale);
+      m.frustumCulled = true;
+    });
     this.handR = this.model.getObjectByName('handslotr') ?? this.model.getObjectByName('handslot.r') ?? null; // (the glTF loader strips the dot from node names)
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const [name, clip] of asset.clips) {
@@ -244,6 +259,8 @@ export class HeroView {
     const gone = (now >= this.hideFrom && now < this.hideUntil) || this.player.state === 'falling' || this.player.state === 'bubble';
     const want = gone ? null : kind;
     if (want === this.heldKind) return;
+    // put the hero's own blades away while a weapon is in hand
+    for (const m of this.ownArms) m.visible = !want;
     if (this.heldKind) {
       const o = this.heldObjs.get(this.heldKind);
       if (o) o.visible = false;
@@ -254,7 +271,13 @@ export class HeroView {
     if (!o) {
       const src = this.env?.get(HELD_PIECE[want]);
       if (!src || !this.handR) return;
-      o = src.clone(true);
+      // a held prop has up to 15 materials (15 draw calls each, per hero): bake it into one coloured mesh
+      let baked = HELD_BAKED.get(src);
+      if (!baked) {
+        const b = bakePiece(src);
+        HELD_BAKED.set(src, (baked = new THREE.Mesh(b.geo, b.mat)));
+      }
+      o = baked.clone();
       o.traverse((m) => {
         const mesh = m as THREE.Mesh;
         if (mesh.isMesh) {
@@ -339,6 +362,22 @@ export class HeroView {
   /** Up / down angle of the gun (radians), from what the crosshair is on. */
   aimPitch = 0;
 
+  /** For shader warm-up: a see-through copy of this hero (used when someone blocks your view) and the ice block. */
+  warm() {
+    const g = new THREE.Group();
+    const ghost = skeletonClone(this.model);
+    ghost.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || m.userData.outline) return;
+      const mat = (m.material as THREE.Material).clone();
+      mat.transparent = true;
+      mat.opacity = 0.35;
+      m.material = mat;
+    });
+    g.add(ghost, makeIce());
+    return g;
+  }
+
   /** World position of the held gun's muzzle (null when no gun is shown). */
   muzzle(out: THREE.Vector3) {
     const o = this.heldKind && RANGED.has(this.heldKind) ? this.heldObjs.get(this.heldKind) : null;
@@ -408,6 +447,7 @@ export class HeroView {
   private handR: THREE.Object3D | null = null;
   private heldObjs = new Map<WeaponKind, THREE.Object3D>();
   private heldKind: WeaponKind | null = null;
+  private ownArms: THREE.Object3D[] = [];
   private hideFrom = 0;
   private hideUntil = 0;
   private facePivot = new THREE.Group();

@@ -33,16 +33,39 @@ Committed locally on `claude/youthful-wright-wwuz3r`. **Not pushed** (pushing th
 * The laser beam is thick, unbroken while fire is held, with a muzzle flash and impact burst. Damage numbers show health points.
 * `tools/aim-test.mjs` measures this in the real game.
 
-Known: switching to a higher graphics setting freezes the game for about 29 s on the Intel HD 620 while shaders compile (the previous release does the same). It is the likely reason the first desktop load is slow.
+## Smoothness pass
+
+Causes found by measurement, and the fix:
+
+* The automatic graphics switch rebuilt every shader mid-match. The tier is now picked once from the GPU; while playing only the picture resolution changes.
+* Each new match recompiled shaders (materials were disposed). They are kept.
+* Shaders are compiled behind the loading screen without blocking it; hero and weapon pictures are files, not rendered at start.
+* Heroes and held weapons were 16-37 draw calls each; their parts are merged.
+* See-through surfaces made three.js look their shader up on every frame.
+* The HUD rewrote parts of itself every frame, generated images on weapon pickup and forced page layout on speech bubbles and shots.
+* Every hit froze the game for 60-90 ms.
+* The same map is reused for the next match.
+
+`tools/smooth-test.mjs`, desktop 1366x768, Intel HD 620, another browser tab using about 80% of the graphics chip (both builds measured back to back):
+
+| | previous release | now |
+|---|---|---|
+| Load to lobby | 107 s | 24 s |
+| PLAY to playing | 65 s | 8.6 s |
+| Average fps | 1.5 | 18.6 (second match 20) |
+| Worst freeze | 17.1 s | 0.38 s |
+
+Still short of smooth on this machine in these conditions. Not measured with an idle graphics chip or on a phone.
 
 ## Tests
 
 | Check | Result |
 |---|---|
 | `npm test` | all pass |
-| `tools/ui-test.mjs` | 91 of 91, no browser errors |
-| `tools/net-test.mjs` (friends turned on with `?friends`) | 9 of 9 |
-| `tools/collision-audit.mjs` | pass |
+| `tools/ui-test.mjs` | 84 checks, then a test-only timeout on a pulsing button; the remaining 17 pass when rerun |
+| `tools/net-test.mjs` (friends turned on with `?friends`) | 9 of 9 on the previous release; not rerun |
+| `tools/aim-test.mjs` | 29 of 30 on-target shots (the miss was a displaced test hero); other checks pass |
+| `tools/collision-audit.mjs` | pass on the previous release; layouts unchanged since |
 | Speed, phone-size, low graphics, Intel HD 620 | Bubblegum 45 → 44 fps, Candy 45 → 46 fps (previous release → this one) |
 
 ## Before a public launch

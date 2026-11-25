@@ -367,11 +367,14 @@ export class WeaponsView {
     return { g, mats, parts, muzzle, end, t: 0 };
   }
 
+  /** Create the pooled beams up front so the first shot costs nothing. */
+  warm() {
+    while (this.beams.length < 14) this.beams.push(this.makeBeam());
+  }
+
   laser(from: THREE.Vector3, to: THREE.Vector3, hit: boolean) {
-    if (this.beams.length < 14) {
-      this.beams.push(this.makeBeam());
-      this.beamNext = this.beams.length - 1;
-    } else this.beamNext = (this.beamNext + 1) % this.beams.length;
+    if (this.beams.length < 14) this.warm();
+    this.beamNext = (this.beamNext + 1) % this.beams.length;
     const b = this.beams[this.beamNext];
     b.g.position.copy(from);
     b.g.lookAt(to);
@@ -554,7 +557,6 @@ export class WeaponsView {
       const u = p.t / 1.1;
       if (u >= 1) {
         this.group.remove(p.s);
-        p.s.material.dispose();
         this.pops.splice(i, 1);
         continue;
       }
