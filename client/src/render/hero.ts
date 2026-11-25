@@ -6,14 +6,61 @@ import type { Player, WeaponKind } from '../../../shared/sim/types.ts';
 import { HEROES } from '../../../shared/config/heroes.ts';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import { angleDiff } from '../../../shared/sim/math.ts';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+let iceGeo: THREE.BufferGeometry | null = null;
+let iceMat: THREE.Material | null = null;
+let iceCoreMat: THREE.Material | null = null;
+/** The block of ice a frozen hero stands in: one shell + a ring of crystal spikes, shared by every hero (2 draw calls). */
+function makeIce(): THREE.Group {
+  iceGeo ??= (() => {
+    const parts: THREE.BufferGeometry[] = [];
+    const spikes = 9;
+    for (let i = 0; i < spikes; i++) {
+      const a = (i / spikes) * Math.PI * 2;
+      const up = i % 2 ? 0.5 : -0.1;
+      const c = new THREE.ConeGeometry(0.16, 0.75 + (i % 3) * 0.2, 5);
+      c.translate(0, 0.45, 0);
+      c.rotateZ(-0.9 - up * 0.3);
+      c.rotateY(a);
+      c.translate(Math.sin(a) * 0.35, 0.9 + up * 0.5, Math.cos(a) * 0.35);
+      parts.push(c);
+    }
+    return mergeGeometries(parts)!;
+  })();
+  iceMat ??= new THREE.MeshBasicMaterial({ color: '#dffaff', transparent: true, opacity: 0.8, toneMapped: false });
+  iceCoreMat ??= new THREE.MeshBasicMaterial({ color: '#8fe6ff', transparent: true, opacity: 0.34, depthWrite: false, toneMapped: false });
+  const g = new THREE.Group();
+  const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), iceCoreMat);
+  shell.scale.set(0.78, 1.12, 0.78);
+  shell.position.y = 0.95;
+  shell.renderOrder = 8;
+  shell.userData.outline = true;
+  const spikesMesh = new THREE.Mesh(iceGeo, iceMat);
+  spikesMesh.userData.outline = true;
+  g.add(shell, spikesMesh);
+  return g;
+}
 
 /** Which env piece (tools/extract-props.mjs) each weapon looks like in the hero's hand. */
+/** Held props that are not KayKit (no built-in grip): length in metres, grip point, rotation in the hand. */
+const NON_KAYKIT: Partial<Record<WeaponKind, { len: number; at: [number, number, number]; rot: [number, number, number] }>> = {
+  // Blender-made props (tools/blender/weapons): modelled with the muzzle on +x, y up. `at` = the grip point in model units
+  // (metres in the model), which is moved into the palm; `len` = the longest side in metres once held.
+  banana: { len: 0.5, at: [0, 0.16, 0], rot: [0, Math.PI / 2, 0.3] },
+  hammer: { len: 1.0, at: [0, -0.12, 0], rot: [0, Math.PI / 2, 0] }, // held at the handle, head up
+  hook: { len: 0.62, at: [-0.1, -0.14, 0], rot: [0, Math.PI / 2, 0] },
+  blaster: { len: 0.66, at: [-0.05, -0.14, 0], rot: [0, Math.PI / 2, 0] },
+  rocket: { len: 0.95, at: [-0.1, -0.2, 0], rot: [0, Math.PI / 2, 0] },
+  freeze: { len: 0.36, at: [0, 0.2, 0], rot: [0, 0, 0] },
+};
+
 const HELD_PIECE: Record<WeaponKind, string> = {
-  blaster: 'weap_blaster',
-  rocket: 'weap_launcher',
-  freeze: 'weap_bomb',
-  hook: 'weap_wand',
-  hammer: 'weap_axe',
+  blaster: 'weap_bubblegun',
+  rocket: 'weap_rocketl',
+  freeze: 'weap_icebomb',
+  hook: 'weap_hook',
+  hammer: 'weap_hammer',
   banana: 'weap_banana',
 };
 
@@ -42,6 +89,9 @@ export class HeroView {
   private jumpDur = 0;
   private jumpH = 0;
   private tumble = 0;
+  private iceUntil = 0;
+  private iceBorn = 0;
+  private ice: THREE.Group | null = null;
   readonly player: Player;
   readonly isLocal: boolean;
   celebrating = false;
@@ -187,17 +237,18 @@ export class HeroView {
           mesh.frustumCulled = false;
         }
       });
-      if (want === 'banana') {
-        // not a KayKit prop: centre it, size it to a banana in a hand, tilt it
+      const grip = NON_KAYKIT[want];
+      if (grip) {
+        // not a KayKit prop: size it for a hand, put the grip point in the palm, orient it
         const box = new THREE.Box3().setFromObject(o);
         const size = box.getSize(new THREE.Vector3());
-        const k = 0.55 / (Math.max(size.x, size.y, size.z) || 1) / this.baseScale;
-        const c = box.getCenter(new THREE.Vector3());
+        const k = grip.len / (Math.max(size.x, size.y, size.z) || 1) / this.baseScale;
+        const c = new THREE.Vector3(...grip.at);
         const holder = new THREE.Group();
         o.position.sub(c);
         holder.add(o);
         holder.scale.setScalar(k);
-        holder.rotation.set(0, Math.PI / 2, 0.5);
+        holder.rotation.set(...grip.rot);
         holder.position.set(0, 0.08, 0);
         o = holder;
       }
@@ -246,6 +297,12 @@ export class HeroView {
 
   flash() {
     this.flashT = 0.12;
+  }
+
+  /** Frozen solid for `seconds`: an ice block around him and the animation stops. */
+  freeze(seconds: number, now: number) {
+    this.iceBorn = now;
+    this.iceUntil = now + seconds;
   }
 
   bump(amount: number) {
@@ -329,7 +386,17 @@ export class HeroView {
         this.play(this.actions.has(want) ? want : 'Idle', 0.18);
       }
     }
-    if (!hitStop) this.mixer.update(dt);
+    const iced = now < this.iceUntil;
+    if (iced) {
+      if (!this.ice) {
+        this.ice = makeIce();
+        this.root.add(this.ice);
+      }
+      this.ice.visible = true;
+      const k = Math.min(1, (now - this.iceBorn) * 8); // forms in a blink
+      this.ice.scale.setScalar(0.4 + 0.6 * k);
+    } else if (this.ice) this.ice.visible = false;
+    if (!hitStop && !iced) this.mixer.update(dt);
     this.syncHeld(p.weapon, now);
 
     // squash & stretch

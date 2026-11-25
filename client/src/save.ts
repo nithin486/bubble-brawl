@@ -1,5 +1,5 @@
 // Local profile (no account in Step 1). All storage access is guarded: private mode can throw.
-import type { HeroId } from '../../shared/config/heroes.ts';
+import { HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 
 export interface Profile {
   matches: number;
@@ -21,7 +21,7 @@ const KEY = 'bb_profile_v1';
 
 export function loadProfile(): Profile {
   const today = new Date().toISOString().slice(0, 10);
-  const base: Profile = { matches: 0, coins: 0, xp: 0, map: 'candy', name: '', camera: 'third', unlocked: ['bones'], hero: 'bones', firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto' };
+  const base: Profile = { matches: 0, coins: 0, xp: 0, map: 'candy', name: '', camera: 'third', unlocked: [...HERO_IDS], hero: 'bones', firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto' };
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
@@ -31,6 +31,8 @@ export function loadProfile(): Profile {
         p.map = 'candy';
         p.mapV = 2;
       }
+      // playtest build: every hero is unlocked (new heroes too)
+      p.unlocked = [...HERO_IDS];
       return p;
     }
   } catch {

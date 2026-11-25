@@ -74,6 +74,7 @@ const SPEED = Number(PARAMS.get('speed')) || 1;
 const UNLOCKS: { hero: HeroId; afterMatches: number }[] = [
   { hero: 'pinch', afterMatches: 1 },
   { hero: 'grizzle', afterMatches: 2 },
+  { hero: 'ranger', afterMatches: 3 },
 ];
 
 type TutStep = 'move' | 'coins' | 'bank' | 'done';
@@ -177,8 +178,23 @@ export class Game {
     this.applyCamera((PARAMS.get('cam') as CamPreset) || profile.camera || 'close');
     this.sfx.muted = !profile.sound;
     this.fx = new Fx(stage.scene, this.glowTex);
+    this.fx.ground = (x, z) => this.world?.terrain.heightAt(x, z) ?? 0; // ground effects ride raised plazas and ramps
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
     this.showcase = new Showcase(assets);
+    {
+      // home screen: drag anywhere on the 3D view to turn the hero (all sides, and up to a top view)
+      const cv = this.stage.renderer.domElement;
+      let last: { x: number; y: number } | null = null;
+      cv.addEventListener('pointerdown', (e) => {
+        if (this.mode === 'home') last = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('pointermove', (e) => {
+        if (!last || this.mode !== 'home') return;
+        this.showcase.orbit(e.clientX - last.x, e.clientY - last.y);
+        last = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('pointerup', () => (last = null));
+    }
     const forced = PARAMS.get('map');
     if (forced && forced in MAPS) {
       this.mapId = forced as MapId;
@@ -199,6 +215,65 @@ export class Game {
     if (invite && !AUTOPLAY) setTimeout(() => this.openFriends(invite.toUpperCase().slice(0, 5)), 300);
     requestAnimationFrame(this.frame);
     if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
+  }
+
+  private warmed = false;
+  /**
+   * Compile every shader the match will need up front (held weapons, mystery box, effects): otherwise the first
+   * pickup / first shot compiles a new GPU program mid-fight and the game freezes for a moment.
+   */
+  private warmShaders() {
+    if (this.warmed) return;
+    this.warmed = true;
+    const tmp = new THREE.Group();
+    tmp.position.set(0, -400, 0);
+    for (const [name, obj] of this.assets.env) if (name.startsWith('weap_') || name === 'mystery_cube' || name === 'chest_gold') tmp.add(obj.clone());
+    this.stage.scene.add(tmp);
+    try {
+      this.stage.renderer.compile(this.stage.scene, this.stage.camera);
+    } catch {
+      /* not fatal */
+    }
+    this.stage.scene.remove(tmp);
+  }
+
+  private camPull = 1;
+  private koStreak = 0;
+  private koStreakT = -99;
+  /**
+   * Third-person camera never sits inside a wall, a deck or a big prop: walk the line from the hero to the camera
+   * and pull the camera in front of the first thing that blocks it (fast in, slow back out).
+   */
+  private keepCameraOutOfWalls(dt: number, focus: THREE.Vector3) {
+    const cam = this.stage.camera.position;
+    const w = this.world;
+    const fx = focus.x;
+    const fy = focus.y + 1.3;
+    const fz = focus.z;
+    const dx = cam.x - fx;
+    const dy = cam.y - fy;
+    const dz = cam.z - fz;
+    let hit = 1;
+    const tall = w.map.obstacles.filter((o) => o.r >= 0.8 && Math.abs(o.x - fx) < 14 && Math.abs(o.z - fz) < 14);
+    for (let i = 1; i <= 14 && hit === 1; i++) {
+      const t = 0.12 + (i / 14) * 0.88;
+      const x = fx + dx * t;
+      const y = fy + dy * t;
+      const z = fz + dz * t;
+      if (w.terrain.heightAt(x, z) > y - 0.35) hit = t;
+      else
+        for (const o of tall)
+          if (y < 3.2 && (x - o.x) ** 2 + (z - o.z) ** 2 < (o.r + 0.35) ** 2) {
+            hit = t;
+            break;
+          }
+    }
+    const want = hit < 1 ? Math.max(0.5, hit - 0.1) : 1;
+    this.camPull += (want - this.camPull) * Math.min(1, dt * (want < this.camPull ? 14 : 2.5));
+    if (this.camPull < 0.999) {
+      cam.set(fx + dx * this.camPull, fy + dy * this.camPull + (1 - this.camPull) * 3.2, fz + dz * this.camPull); // rise over the wall
+      this.stage.camera.lookAt(fx, fy, fz);
+    }
   }
 
   // ---------------------------------------------------------------- setup
@@ -342,6 +417,7 @@ export class Game {
     else this.powers.setWorld(this.world);
     if (!this.markers) this.markers = new Markers(this.stage.scene, this.assets.env, this.glowTex);
     else this.markers.setWorld();
+    this.warmShaders();
     this.robbedBy.clear();
     this.nemesis = -1;
     this.lastSay.clear();
@@ -465,9 +541,16 @@ export class Game {
     this.powers?.update(this.time);
     if (this.markers) {
       this.markers.aimHint = this.aimInfo;
+      this.markers.hideScope = this.rig.turns;
       this.markers.cam = this.stage.camera;
+      if (this.weapons) this.weapons.camPos = this.stage.camera.position;
     }
     this.markers?.update(this.world, this.world.players[LOCAL], this.time, this.mode === 'match');
+    {
+      const me = this.world.players[LOCAL];
+      const on = this.mode === 'match' && this.rig.turns && this.world.mode === 'weapons' && this.world.phase === 'playing' && me.state !== 'bubble' && me.state !== 'falling';
+      this.hud.crosshair(on, this.aimLocked, !!me.weapon);
+    }
     if (this.mode === 'match') this.chatterHunting();
     // trails: speed boots (yellow streaks), sticky fingers (pink sparkles), magnet (red bits)
     this.trailT -= dt;
@@ -511,10 +594,12 @@ export class Game {
     } else {
       if (this.mode === 'match' && this.input.enabled) {
         this.rig.addYaw(this.input.takeYaw(dt));
+        this.rig.addPitch(this.input.takePitch());
         const me2 = this.world.players[LOCAL];
         this.rig.autoFollow(dt, me2.facing, Math.max(0, this.lastStickFwd));
       }
       this.rig.update(dt, focus, this.lead);
+      this.keepCameraOutOfWalls(dt, focus);
     }
     // keep the shadow camera on the action
     this.stage.aimSun(focus.x, focus.z);
@@ -901,6 +986,7 @@ export class Game {
         if (e.p === LOCAL) {
           this.sfx.power();
           this.hud.skillBanner(info.name, info.color);
+          this.hud.weaponCard(e.weapon);
           if (this.weaponTips.has(e.weapon) === false) {
             this.weaponTips.add(e.weapon);
             this.hud.tip(`${info.name}: ${info.tip} · press ${this.touch ? 'the big button' : 'J or click'} to use`, 3.5);
@@ -918,7 +1004,12 @@ export class Game {
         if (e.weapon === 'blaster' || e.weapon === 'rocket') {
           const fx = e.x + Math.sin(e.facing) * 0.8;
           const fz = e.z + Math.cos(e.facing) * 0.8;
-          this.fx.emit(fx, 1.05, fz, { n: e.weapon === 'rocket' ? 14 : 5, color: [WEAPON_INFO[e.weapon].color, '#ffffff'], speed: 3, up: 1, life: 0.2, size: 0.4 });
+          const my = w.players[e.p].y + 1.05;
+          if (e.weapon === 'blaster') this.fx.emit(fx, my, fz, { n: 7, color: ['#bff8ff', '#ffffff', '#ffb3ec'], speed: 3.2, up: 1.2, life: 0.28, size: 0.32 });
+          else {
+            this.fx.emit(fx, my, fz, { n: 14, color: [WEAPON_INFO[e.weapon].color, '#ffffff', '#ffd23f'], speed: 3, up: 1, life: 0.2, size: 0.45 });
+            this.fx.emit(e.x - Math.sin(e.facing) * 0.9, my, e.z - Math.cos(e.facing) * 0.9, { n: 10, color: ['#bbbbbb', '#ffffff'], speed: 2.5, up: 0.8, life: 0.5, size: 0.7 }); // backblast smoke
+          }
           if (e.p === LOCAL) this.rig.punch(e.weapon === 'rocket' ? 4 : 1.2);
         }
         if (e.weapon === 'hammer') this.fx.cone(e.x, e.z, e.facing, TUNING.weapons.hammer.radius, 360, '#ffd23f', TUNING.weapons.hammer.windup + 0.05, 0.4);
@@ -938,6 +1029,12 @@ export class Game {
           this.fx.crack(e.x, e.z, e.r * 1.4);
           this.fx.emit(e.x, 0.4, e.z, { n: 30, color: ['#ffd23f', '#ffffff'], speed: 8, up: 2, life: 0.4, size: 0.5 });
           this.fx.pillar(e.x, e.z, '#fff27a', 5, 0.3, 0.5);
+          // thunder: jagged bolts radiate from the impact
+          const gy = w.terrain.heightAt(e.x, e.z);
+          for (let k = 0; k < 7; k++) {
+            const a = (k / 7) * Math.PI * 2 + Math.random() * 0.5;
+            this.fx.lightning(this.v.set(e.x, gy + 0.4, e.z).clone(), new THREE.Vector3(e.x + Math.sin(a) * e.r, gy + 0.3, e.z + Math.cos(a) * e.r), k % 2 ? '#fff6a8' : '#b9a0ff');
+          }
         }
         const d = Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z);
         if (d < 16) {
@@ -947,18 +1044,29 @@ export class Game {
         break;
       }
       case 'hook':
-        this.fx.beam(this.pos(e.p, 1.1), new THREE.Vector3(e.x, 1.1, e.z), '#ff5f7a', 0.35);
-        if (e.target >= 0) this.fx.emit(e.x, 1.1, e.z, { n: 12, color: ['#ff5f7a', '#ffffff'], speed: 4, up: 1, life: 0.3, size: 0.4 });
+        // teal energy cable (the colour of the spool) from the hook to where it caught (or hit a wall / flew out)
+        this.fx.beam(this.pos(e.p, 1.1), new THREE.Vector3(e.x, w.terrain.heightAt(e.x, e.z) + 1.1, e.z), '#4ff3e6', e.target >= 0 ? 0.5 : 0.3);
+        if (e.target >= 0) {
+          this.fx.emit(e.x, w.terrain.heightAt(e.x, e.z) + 1.1, e.z, { n: 14, color: ['#4ff3e6', '#ffffff', '#ff5f7a'], speed: 4, up: 1, life: 0.3, size: 0.4 });
+          this.fx.ring(e.x, e.z, '#4ff3e6', 1.4, 0.3, 0.3);
+        } else this.fx.emit(e.x, w.terrain.heightAt(e.x, e.z) + 1.1, e.z, { n: 6, color: ['#bbbbbb', '#ffffff'], speed: 2, up: 1, life: 0.25, size: 0.3 });
         break;
       case 'slip':
         hv(e.p).knockSpin(2);
-        this.fx.emit(w.players[e.p].x, 0.4, w.players[e.p].z, { n: 14, color: ['#ffe14a', '#ffffff'], speed: 4, up: 3, life: 0.4, size: 0.4 });
+        this.fx.emit(w.players[e.p].x, w.players[e.p].y + 0.4, w.players[e.p].z, { n: 14, color: ['#ffe14a', '#ffffff'], speed: 4, up: 3, life: 0.4, size: 0.4 });
+        this.fx.debris(w.players[e.p].x, w.players[e.p].y + 0.5, w.players[e.p].z, 4, ['#ffe14a', '#fff2a0'], 3, 4, 0.7); // peel bits fly
+        this.fx.ring(w.players[e.p].x, w.players[e.p].z, '#ffe14a', 1.6, 0.3, 0.3);
         if (e.p === LOCAL) this.hud.banner('SLIPPED!', 'gold', true);
         break;
-      case 'frozen':
+      case 'frozen': {
         hv(e.p).flash();
+        hv(e.p).freeze(TUNING.weapons.freeze.freeze, this.time);
+        const fp = w.players[e.p];
+        this.fx.debris(fp.x, fp.y + 1, fp.z, 8, ['#dffaff', '#9fe8ff', '#ffffff'], 4, 4, 0.8);
+        this.fx.emit(fp.x, fp.y + 1, fp.z, { n: 18, color: ['#c9f6ff', '#ffffff'], speed: 3, up: 2, life: 0.5, size: 0.4 });
         if (e.p === LOCAL) this.hud.banner('FROZEN!', 'teal', true);
         break;
+      }
       case 'damage':
         this.hud.floater(this.pos(e.victim, 2.6), cam, `-${e.n}`, 'minus');
         if (e.victim === LOCAL && e.hp > 0 && e.hp <= TUNING.weapons.hitHp) this.hud.banner('ALMOST OUT!', 'red', true);
@@ -969,12 +1077,23 @@ export class Game {
         this.fx.ring(e.x, e.z, '#b38cff', 2.6, 0.4, 0.4);
         if (e.by === LOCAL) {
           this.sfx.win();
-          this.hud.skillBanner(`KO! +${TUNING.weapons.bubble.koPoints}`, '#ffd23f');
+          // KO streaks: chain knockouts within 6 s for a bigger call-out
+          this.koStreak = this.time - this.koStreakT < 6 ? this.koStreak + 1 : 1;
+          this.koStreakT = this.time;
+          const call = ['', 'KO!', 'DOUBLE KO!', 'TRIPLE KO!', 'MEGA KO!'][this.koStreak] ?? 'UNSTOPPABLE!';
+          this.hud.skillBanner(`${call} +${TUNING.weapons.bubble.koPoints}`, this.koStreak > 1 ? '#ff5fd2' : '#ffd23f');
+          if (this.koStreak > 1) {
+            this.hud.banner(call, 'pink');
+            this.hud.flash('#ff5fd255', 0.35);
+            this.rig.punch(4);
+            this.hud.feed(`🔥 <b>You</b> are on a ${this.koStreak}× KO streak!`);
+          }
           this.hud.floater(this.pos(LOCAL, 2.8), cam, `+${TUNING.weapons.bubble.koPoints}`, 'plus');
           this.slowMo(0.35, 0.3);
           this.roundStats.steals++;
         } else if (e.victim === LOCAL) {
           this.sfx.lose();
+          this.koStreak = 0;
           this.hud.banner(e.by >= 0 ? `${w.players[e.by].name} KO'd you — MASH to escape!` : 'KO! MASH to escape!', 'red');
           this.rig.shake(0.5);
         }
@@ -1406,7 +1525,7 @@ export class Game {
     this.tutT = 0;
     const key = (k: string) => `<span class="key">${k}</span>`;
     if (s === 'move') this.hud.prompt(this.touch ? 'Drag on the left to MOVE' : `${key('W')}${key('A')}${key('S')}${key('D')} to move`);
-    else if (this.world.mode === 'weapons' && s === 'coins') this.hud.prompt('Grab a 🎁 mystery box!');
+    else if (this.world.mode === 'weapons' && s === 'coins') this.hud.prompt('Grab a ❓ mystery box!');
     else if (this.world.mode === 'weapons' && s === 'bank') this.hud.prompt(this.touch ? 'Tap the BIG button to attack!' : `Press ${key('J')} or click to attack!`);
     else if (s === 'coins') this.hud.prompt('Grab the coins!');
     else if (s === 'bank') this.hud.prompt('Bank it! Stand in the <i class="bub-ico"></i> bubble');
@@ -1490,6 +1609,7 @@ export class Game {
   private lastStickFwd = 0;
   /** Where the local player is pointing this frame (camera centre line in 3rd person, cursor on desktop top-down). */
   private aimInfo: { heading: number; dist: number } | null = null;
+  private aimLocked = false;
   private aimRay = new THREE.Raycaster();
   private aimNdc = new THREE.Vector2();
 
@@ -1502,7 +1622,46 @@ export class Game {
       const cam = this.stage.camera;
       cam.getWorldDirection(this.v);
       if (Math.hypot(this.v.x, this.v.z) < 1e-4) return;
-      this.aimInfo = { heading: Math.atan2(this.v.x, this.v.z), dist: this.input.aimDist };
+      // shooter aim: the crosshair is the screen centre; the shot goes to whatever is under it
+      // (a rival, a wall, a prop or the ground), so you can aim at any spot just by turning the camera
+      const o = cam.position;
+      const dir = this.v; // camera forward (already normalised)
+      const W = this.world;
+      let hitT = Infinity;
+      let locked = false;
+      for (const q of W.players) {
+        if (q === me || q.state === 'falling' || q.state === 'launched') continue;
+        // closest approach of the ray to the rival's chest
+        const cx = q.x - o.x;
+        const cy = q.y + 1.0 - o.y;
+        const cz = q.z - o.z;
+        const t = cx * dir.x + cy * dir.y + cz * dir.z;
+        if (t <= 0) continue;
+        const d2 = cx * cx + cy * cy + cz * cz - t * t;
+        const r = q.state === 'bubble' ? 1.3 : 0.85;
+        if (d2 < r * r && t < hitT) {
+          hitT = t;
+          locked = true;
+        }
+      }
+      if (!locked) {
+        // march the ray until it meets the ground / a deck or a big prop
+        for (let t = 1; t < 60; t += 0.5) {
+          const x = o.x + dir.x * t;
+          const y = o.y + dir.y * t;
+          const z = o.z + dir.z * t;
+          if (y <= W.terrain.heightAt(x, z) + 0.05 || (y < 2.6 && W.obstacles.some((b) => (x - b.x) ** 2 + (z - b.z) ** 2 < b.r * b.r))) {
+            hitT = t;
+            break;
+          }
+        }
+      }
+      const t = Number.isFinite(hitT) ? hitT : 40;
+      const tx = o.x + dir.x * t - me.x;
+      const tz = o.z + dir.z * t - me.z;
+      const dd = Math.hypot(tx, tz);
+      this.aimLocked = locked;
+      this.aimInfo = dd > 1 ? { heading: Math.atan2(tx, tz), dist: dd } : { heading: Math.atan2(dir.x, dir.z), dist: 30 };
       return;
     }
     // top-down views: the scope sits under the mouse pointer
@@ -1597,7 +1756,7 @@ export class Game {
           quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
           inMatch: this.mode === 'match',
           camera: CAM_PRESETS[this.rig.preset].label,
-          canUnlockAll: (!!import.meta.env.VITE_PACKED || PARAMS.has('dev')) && this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
+          canUnlockAll: this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
         },
         {
           resume: () => this.setPaused(false),

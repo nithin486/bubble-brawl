@@ -68,6 +68,13 @@ async function compress(doc, file) {
 
 // ---------- heroes ----------
 for (const hero of Object.values(HEROES)) {
+  if (hero.external) {
+    // custom hero: packed by its own script (tools/pack-bubble-hero.mjs) into assets/characters/<name>/hero_<id>.glb
+    const packed = path.join(root, 'assets/characters', hero.model, `hero_${hero.id}.glb`);
+    if (fs.existsSync(packed)) fs.copyFileSync(packed, path.join(out, `hero_${hero.id}.glb`));
+    else console.warn(`missing ${packed}: run node tools/pack-bubble-hero.mjs`);
+    continue;
+  }
   const src = path.join(root, 'assets/heroes', `${hero.model}.glb`);
   const dst = path.join(out, `hero_${hero.id}.glb`);
   if (fresh(dst, [src, path.join(root, 'shared/config/heroes.ts')])) continue;
@@ -118,6 +125,13 @@ const ENV = {
       .sort()
       .map((f) => [f.slice(0, -4), path.join(root, 'assets/props', f)]),
     ['weap_banana', path.join(root, 'assets/models/banana.glb')],
+    ['weap_hammer', path.join(root, 'assets/models/weap_hammer.glb')],
+    ['weap_hook', path.join(root, 'assets/models/weap_hook.glb')],
+    ['weap_bubblegun', path.join(root, 'assets/models/weap_bubblegun.glb')],
+    ['weap_rocketl', path.join(root, 'assets/models/weap_rocketl.glb')],
+    ['weap_icebomb', path.join(root, 'assets/models/weap_icebomb.glb')],
+    ['weap_missile', path.join(root, 'assets/models/weap_missile.glb')],
+    ['mystery_cube', path.join(root, 'assets/models/mystery_cube.glb')],
   ],
   dungeon: [
     ['coin', path.join(root, 'assets/env/dungeon/coin.gltf.glb')],
@@ -135,7 +149,12 @@ const envInputs = [...ENV.hex, ...ENV.city, ...ENV.spooky, ...ENV.candy, ...ENV.
   }
 }
 async function mergeEnv(inputs, envDst, label) {
-  if (fresh(envDst, inputs.map((e) => e[1]))) return;
+  // rebuild when any input is newer, OR the set of pieces / their sizes changed (renamed or deleted files keep old mtimes)
+  const sig = inputs.map(([n, f]) => `${n}:${fs.statSync(f).size}`).join('\n');
+  const sigFile = `${envDst}.sig`;
+  const sameSet = fs.existsSync(sigFile) && fs.readFileSync(sigFile, 'utf8') === sig;
+  if (sameSet && fresh(envDst, inputs.map((e) => e[1]))) return;
+  fs.writeFileSync(sigFile, sig);
   {
     const doc = await io.read(inputs[0][1]);
     // Give every piece a single named root node "piece_<name>" in one scene.
@@ -174,12 +193,19 @@ const desertInputs = fs
   .sort()
   .map((f) => [f.slice(0, -4), path.join(root, 'assets/models', f)]);
 if (desertInputs.length) await mergeEnv(desertInputs, path.join(out, 'env_desert.glb'), 'env_desert');
+// Bubblegum Islands: own Blender pieces (assets/models/bg_*.glb), loaded only when that map is chosen
+const bgInputs = fs
+  .readdirSync(path.join(root, 'assets/models'))
+  .filter((f) => f.startsWith('bg_') && f.endsWith('.glb'))
+  .sort()
+  .map((f) => [f.slice(0, -4), path.join(root, 'assets/models', f)]);
+if (bgInputs.length) await mergeEnv(bgInputs, path.join(out, 'env_bubblegum.glb'), 'env_bubblegum');
 // Models fetched by scripts/fetch_model.js are already game-ready: copy them as they are.
 const modelsSrc = path.join(root, 'assets/models');
 if (fs.existsSync(modelsSrc)) {
   const dst = path.join(out, 'models');
   fs.mkdirSync(dst, { recursive: true });
-  const glbs = fs.readdirSync(modelsSrc).filter((f) => f.endsWith('.glb') && !f.startsWith('desert_')); // desert pieces ship inside env_desert.glb
+  const glbs = fs.readdirSync(modelsSrc).filter((f) => f.endsWith('.glb') && !f.startsWith('desert_') && !f.startsWith('bg_')); // map pieces ship inside env_desert.glb / env_bubblegum.glb
   for (const f of glbs) if (!fresh(path.join(dst, f), [path.join(modelsSrc, f)])) fs.copyFileSync(path.join(modelsSrc, f), path.join(dst, f));
   if (glbs.length) console.log(`models ${glbs.length} → assets/models`);
 }

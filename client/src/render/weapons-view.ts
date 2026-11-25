@@ -1,19 +1,19 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
 import type { WeaponKind } from '../../../shared/sim/types.ts';
 import { loadModel, type Model } from './models.ts';
-import { addOutlines } from './style.ts';
 import type { Fx } from './fx.ts';
 
 /** Names, colours and icons for the six weapons (HUD, banners, pickups). */
 export const WEAPON_INFO: Record<WeaponKind, { name: string; icon: string; color: string; tip: string }> = {
-  blaster: { name: 'BUBBLE BLASTER', icon: '🫧', color: '#5fe3ff', tip: 'Rapid shots' },
-  rocket: { name: 'ROCKET GLOVE', icon: '🥊', color: '#ff7a3d', tip: 'Big boom, 2 damage' },
-  banana: { name: 'BANANA TRAP', icon: '🍌', color: '#ffe14a', tip: 'Drops behind you' },
-  freeze: { name: 'FREEZE BOMB', icon: '❄️', color: '#9fe8ff', tip: 'Freezes a crowd' },
-  hook: { name: 'MAGNET HOOK', icon: '🧲', color: '#ff5f7a', tip: 'Yank them to you' },
-  hammer: { name: 'THUNDER AXE', icon: '🪓', color: '#ffd23f', tip: 'Spin and smash around you' },
+  blaster: { name: 'BUBBLE BLASTER', icon: '🫧', color: '#5fe3ff', tip: 'Rapid bubble shots' },
+  rocket: { name: 'ROCKET LAUNCHER', icon: '🚀', color: '#ff7a3d', tip: 'Big boom, 2 damage' },
+  banana: { name: 'BANANA TRAP', icon: '🍌', color: '#ffe14a', tip: 'Drop it behind you: chasers slip' },
+  freeze: { name: 'FREEZE BOMB', icon: '❄️', color: '#9fe8ff', tip: 'Throw it: freezes everyone it hits' },
+  hook: { name: 'GRAPPLE HOOK', icon: '🪝', color: '#ff5f7a', tip: 'Hook a rival and yank them to you' },
+  hammer: { name: 'THUNDER HAMMER', icon: '🔨', color: '#ffd23f', tip: 'Smash the ground around you' },
 };
 
 const W = TUNING.weapons;
@@ -105,29 +105,43 @@ export function weaponIcon(kind: WeaponKind, size = 128, badge = false): HTMLCan
       shape('#7fdcff', () => circle(50, 50, 12), 6);
       break;
     case 'hook':
-      g.lineWidth = 26;
+      // grappling hook: rope coming in from the top, a shank and two curved prongs
+      g.lineCap = 'round';
+      g.lineWidth = 12;
       g.strokeStyle = INK;
       g.beginPath();
-      g.arc(50, 46, 26, Math.PI, 0, true);
+      g.moveTo(50, 8);
+      g.lineTo(50, 60);
       g.stroke();
-      g.lineWidth = 15;
-      g.strokeStyle = '#ff4d6d';
+      g.lineWidth = 6;
+      g.strokeStyle = '#d9a066';
       g.stroke();
-      shape('#e6e6f0', () => g.roundRect(17, 34, 16, 18, 3), 6);
-      shape('#e6e6f0', () => g.roundRect(67, 34, 16, 18, 3), 6);
+      for (const sx of [-1, 1]) {
+        g.beginPath();
+        g.moveTo(50, 62);
+        g.quadraticCurveTo(50 + sx * 34, 70, 50 + sx * 30, 40);
+        g.lineWidth = 16;
+        g.strokeStyle = INK;
+        g.stroke();
+        g.lineWidth = 9;
+        g.strokeStyle = '#e6e6f0';
+        g.stroke();
+      }
+      shape('#ff4d6d', () => circle(50, 64, 10), 6);
       break;
     case 'hammer':
-      shape('#a8642a', () => g.roundRect(40, 14, 12, 78, 5)); // handle
-      shape('#ffd23f', () => {
-        // axe blade
-        g.moveTo(50, 16);
-        g.bezierCurveTo(78, 4, 98, 28, 92, 54);
-        g.bezierCurveTo(80, 46, 66, 46, 50, 50);
+      shape('#a8642a', () => g.roundRect(44, 34, 12, 60, 5)); // handle
+      shape('#ffd23f', () => g.roundRect(16, 12, 68, 30, 9)); // hammer head
+      shape('#fff27a', () => g.roundRect(22, 16, 56, 6, 3), 3);
+      // lightning bolt
+      shape('#5fe3ff', () => {
+        g.moveTo(54, 18);
+        g.lineTo(44, 30);
+        g.lineTo(52, 30);
+        g.lineTo(46, 40);
+        g.lineTo(60, 26);
+        g.lineTo(52, 26);
         g.closePath();
-      });
-      shape('#fff27a', () => {
-        g.moveTo(62, 22);
-        g.lineTo(80, 30);
       }, 3);
       break;
   }
@@ -195,6 +209,45 @@ function questionTexture() {
   return t;
 }
 
+/** Tint a bomb model frosty blue (the Freeze Bomb). */
+export function icy(o: THREE.Object3D) {
+  o.traverse((x) => {
+    const mesh = x as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const m = (mesh.material as THREE.MeshStandardMaterial).clone();
+    m.color.multiply(new THREE.Color('#9fe6ff')).lerp(new THREE.Color('#bff4ff'), 0.35);
+    m.emissive = new THREE.Color('#3fb8ff');
+    m.emissiveIntensity = 0.35;
+    mesh.material = m;
+  });
+}
+
+/** Iridescent soap-bubble film: clear in the middle, rainbow thin-film rim, a hot specular glint. */
+function soapBubbleMaterial() {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+    uniforms: { time: { value: 0 } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying vec3 vW;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
+        vW = position; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying vec3 vN; varying vec3 vV; varying vec3 vW;
+      vec3 film(float t){ return 0.5 + 0.5 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + t)); }
+      void main(){
+        float f = 1.0 - max(dot(vN, vV), 0.0);
+        float rim = pow(f, 2.2);
+        vec3 col = film(f * 1.6 + vW.y * 0.6) * 0.85 + vec3(0.25, 0.55, 0.65);
+        // key light glint (upper left) + small secondary
+        vec3 L = normalize(vec3(-0.5, 0.7, 0.6));
+        float spec = pow(max(dot(reflect(-L, vN), vV), 0.0), 60.0);
+        float spec2 = pow(max(dot(reflect(-normalize(vec3(0.6, -0.3, 0.7)), vN), vV), 0.0), 30.0) * 0.4;
+        float a = 0.12 + rim * 0.85 + spec + spec2;
+        gl_FragColor = vec4(col * (0.75 + rim * 0.9) + vec3(spec * 2.2 + spec2), clamp(a, 0.0, 1.0));
+      }`,
+  });
+}
+
 /** Draws mystery boxes, shots, banana traps, freeze bombs, KO bubbles and what each hero holds. */
 export class WeaponsView {
   group = new THREE.Group();
@@ -202,7 +255,7 @@ export class WeaponsView {
   private fx: Fx;
   private boxes = new Map<number, BoxView>();
   private shots = new Map<number, THREE.Mesh>();
-  private mines = new Map<number, THREE.Object3D>();
+  private mines = new Map<number, { g: THREE.Group; lamp: { mat: THREE.MeshStandardMaterial | null }; armed: boolean; born: number }>();
   private throws = new Map<number, { ball: THREE.Object3D; ring: THREE.Mesh }>();
   private bubbles: THREE.Mesh[] = [];
   private held: THREE.Sprite[] = [];
@@ -213,10 +266,13 @@ export class WeaponsView {
   private beamMat: THREE.ShaderMaterial;
   private bananaReady: Promise<Model> | null = null;
   private qTex = questionTexture();
+  private ringGeo: THREE.BufferGeometry | null = null;
+  /** Camera position (set by the game): boxes right in front of the lens hide so they never block the view. */
+  camPos: THREE.Vector3 | null = null;
   private pops: { s: THREE.Sprite; t: number; x: number; z: number }[] = [];
-  private shotGeo = new THREE.SphereGeometry(1, 14, 10);
+  private shotGeo = new THREE.SphereGeometry(1, 20, 14);
   private shotMats = {
-    blaster: new THREE.MeshBasicMaterial({ color: '#8ff4ff', transparent: true, opacity: 0.85, toneMapped: false }),
+    blaster: soapBubbleMaterial(),
     rocket: new THREE.MeshBasicMaterial({ color: '#ff8a3d', toneMapped: false }),
   };
   private iceMat = new THREE.MeshBasicMaterial({ color: '#c9f6ff', toneMapped: false });
@@ -247,7 +303,7 @@ export class WeaponsView {
     this.world = world;
     for (const b of this.boxes.values()) this.group.remove(b.root);
     for (const m of this.shots.values()) this.group.remove(m);
-    for (const m of this.mines.values()) this.group.remove(m);
+    for (const m of this.mines.values()) this.group.remove(m.g);
     for (const t of this.throws.values()) this.group.remove(t.ball, t.ring);
     this.boxes.clear();
     this.shots.clear();
@@ -313,26 +369,41 @@ export class WeaponsView {
       let v = this.boxes.get(b.id);
       if (!v) {
         const root = new THREE.Group();
-        const glow = this.glowSprite('#ffd84a', 1.7); // small warm halo only: a big one bleaches the chest on a bright map
+        const glow = this.glowSprite('#a98cff', 2.1); // small warm halo only: a big one bleaches the chest on a bright map
         glow.material.blending = THREE.NormalBlending;
         glow.position.y = 0.7;
-        // KayKit golden chest (same art family as the heroes); on the realistic desert map a real military ammo crate
+        // Mystery box (Subway Surfers style): glossy purple-blue cube with gold question marks, floating and spinning
         const model = new THREE.Group();
-        const real = w.map.id === 'desert' && this.env.has('desert_ammo');
-        const src = this.env.get(real ? 'desert_ammo' : 'chest_gold');
+        const src = this.env.get('mystery_cube') ?? this.env.get('chest_gold');
         if (src) {
           const c = src.clone();
-          c.scale.setScalar(real ? 4.4 : 0.85);
-          if (real)
+          const isCube = this.env.has('mystery_cube');
+          c.scale.setScalar(isCube ? 0.95 : 0.85);
+          if (isCube) {
+            c.position.y = -0.05;
             c.traverse((m) => {
               const mesh = m as THREE.Mesh;
               if (!mesh.isMesh) return;
-              const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-              mat.color.setScalar(2.6); // the scanned olive paint is very dark: lift it so the crate reads from afar
+              mesh.castShadow = true;
+              const base = mesh.material as THREE.MeshStandardMaterial;
+              const mat = new THREE.MeshStandardMaterial({ roughness: 0.3, metalness: 0.05, envMapIntensity: 1.2, flatShading: true }); // light mesh (no normals): flat facets
+              // the model's gold body becomes the purple box; its white question marks become glowing gold
+              const isBody = base.color.b < 0.5;
+              if (isBody) {
+                mat.color.set('#5b3bff');
+                mat.emissive.set('#2a12a8');
+                mat.emissiveIntensity = 0.35;
+              } else {
+                mat.color.set('#ffd23f');
+                mat.emissive.set('#ffb000');
+                mat.emissiveIntensity = 0.9;
+                mat.metalness = 0.4;
+                mat.roughness = 0.22;
+              }
               mesh.material = mat;
             });
+          }
           model.add(c);
-          if (!real) addOutlines(c, 0.03 / 0.85);
         }
         const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.4, 5.5, 20, 1, true), this.beamMat);
         beam.position.y = 2.75;
@@ -344,22 +415,20 @@ export class WeaponsView {
         // pickup zone on the floor: dashed gold ring + soft fill (this is where you must stand)
         const ring = new THREE.Group();
         const ringMat = new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-        for (let i = 0; i < 10; i++) {
-          const arc = new THREE.Mesh(new THREE.RingGeometry(0.98, 1.1, 8, 1, (i / 10) * Math.PI * 2, (Math.PI * 2) / 10 - 0.28), ringMat);
-          arc.rotation.x = -Math.PI / 2;
-          ring.add(arc);
+        {
+          // the dashed ring as ONE mesh (10 separate arcs were 10 draw calls per box)
+          this.ringGeo ??= mergeGeometries(
+            Array.from({ length: 10 }, (_, i) => new THREE.RingGeometry(0.98, 1.1, 8, 1, (i / 10) * Math.PI * 2, (Math.PI * 2) / 10 - 0.28).rotateX(-Math.PI / 2)),
+          );
+          ring.add(new THREE.Mesh(this.ringGeo, ringMat));
         }
         ring.position.y = 0.07;
         const fill = new THREE.Mesh(new THREE.CircleGeometry(0.98, 32), new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.16, depthWrite: false, toneMapped: false }));
         fill.rotation.x = -Math.PI / 2;
         fill.position.y = 0.06;
-        // three little stars orbiting the chest
-        const orbit = [0, 1, 2].map(() => {
-          const sp = this.glowSprite('#fff2a8', 0.34);
-          sp.material.opacity = 0.95;
-          return sp;
-        });
-        root.add(glow, model, beam, q, ring, fill, ...orbit);
+        const orbit: THREE.Sprite[] = []; // (orbiting stars dropped: 3 extra draw calls per box)
+        void fill;
+        root.add(glow, model, beam, q, ring);
         root.position.set(b.x, 0, b.z);
         const view: BoxView = { root, model, beam, glow, q, ring, ringMat, fill, orbit, shown: true, pop: 1 };
         this.group.add(root);
@@ -372,8 +441,9 @@ export class WeaponsView {
         this.fx.ring(b.x, b.z, '#ffd84a', 1.9, 0.45, 0.45); // it lands with a ripple
       }
       v.shown = show;
-      v.root.visible = show;
-      if (!show) continue;
+      const nearCam = !!this.camPos && (this.camPos.x - b.x) ** 2 + (this.camPos.z - b.z) ** 2 < 3.2 * 3.2;
+      v.root.visible = show && !nearCam;
+      if (!show || nearCam) continue;
       v.pop = Math.min(1, v.pop + dt * 2.6);
       // drops in from above with a little overshoot
       const e = v.pop < 1 ? 1 - Math.pow(1 - v.pop, 3) : 1;
@@ -418,40 +488,101 @@ export class WeaponsView {
 
     // ---- shots
     const seenShot = new Set<number>();
+    const terrain = w.terrain;
     for (const s of br.projectiles) {
       seenShot.add(s.id);
+      const gy = terrain.heightAt(s.x, s.z) + 1.05; // shots fly at chest height over plazas and ramps too
       let m = this.shots.get(s.id);
       if (!m) {
-        m = new THREE.Mesh(this.shotGeo, this.shotMats[s.kind]);
-        m.scale.setScalar(s.kind === 'rocket' ? 0.32 : 0.2);
+        if (s.kind === 'rocket' && this.env.has('weap_missile')) {
+          // the Blender missile (same one the launcher is loaded with), flying nose-first
+          const holder = new THREE.Group();
+          const model = this.env.get('weap_missile')!.clone(true);
+          model.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).castShadow = false) : 0));
+          holder.add(model);
+          holder.scale.setScalar(1.15);
+          holder.rotation.y = Math.atan2(-s.vz, s.vx);
+          m = holder as unknown as THREE.Mesh;
+        } else {
+          m = new THREE.Mesh(this.shotGeo, this.shotMats[s.kind]);
+          m.scale.setScalar(s.kind === 'rocket' ? 0.32 : 0.34);
+        }
+        m.userData.born = performance.now();
         this.group.add(m);
         this.shots.set(s.id, m);
       }
-      m.position.set(s.x, 1.05, s.z);
-      if (s.kind === 'rocket') this.fx.emit(s.x, 1.05, s.z, { n: 2, color: ['#ff8a3d', '#ffd23f', '#aaaaaa'], speed: 1, up: 0.5, life: 0.35, size: 0.5 });
-      else if (Math.random() < 0.4) this.fx.emit(s.x, 1.05, s.z, { n: 1, color: '#bff8ff', speed: 0.4, up: 0.2, life: 0.25, size: 0.25 });
+      m.position.set(s.x, gy, s.z);
+      if (s.kind !== 'rocket') {
+        // wobbly soap film: squash and stretch a little as it flies, grows in from the muzzle
+        const t = (performance.now() - m.userData.born) / 1000;
+        const k = 0.34 * Math.min(1, 0.45 + t * 6);
+        m.scale.set(k * (1 + Math.sin(t * 19) * 0.07), k * (1 - Math.sin(t * 19) * 0.06), k * (1 + Math.cos(t * 23) * 0.06));
+      }
+      if (s.kind === 'rocket') {
+        const back = 0.35 / (Math.hypot(s.vx, s.vz) || 1);
+        this.fx.emit(s.x - s.vx * back, gy, s.z - s.vz * back, { n: 2, color: ['#ff8a3d', '#ffd23f', '#aaaaaa'], speed: 1, up: 0.5, life: 0.35, size: 0.5 });
+      } else if (Math.random() < 0.4) this.fx.emit(s.x, gy, s.z, { n: 1, color: '#bff8ff', speed: 0.4, up: 0.2, life: 0.25, size: 0.25 });
     }
     for (const [id, m] of this.shots)
       if (!seenShot.has(id)) {
         this.group.remove(m);
         this.shots.delete(id);
         // blaster shots burst into droplets where they stop
-        if (m.material === this.shotMats.blaster) this.fx.emit(m.position.x, 1.05, m.position.z, { n: 8, color: ['#bff8ff', '#ffffff'], speed: 3, up: 1, life: 0.3, size: 0.3 });
+        if (m.material === this.shotMats.blaster) {
+          this.fx.emit(m.position.x, m.position.y, m.position.z, { n: 12, color: ['#bff8ff', '#ffffff', '#ffe0fb', '#d8fff0'], speed: 3.6, up: 1.2, life: 0.38, size: 0.28 });
+          this.fx.ring(m.position.x, m.position.z, '#dffbff', 0.9, 0.22, 0.35);
+        }
       }
 
     // ---- banana traps
     const seenMine = new Set<number>();
     for (const n of br.mines) {
       seenMine.add(n.id);
-      if (this.mines.has(n.id)) continue;
-      const g = new THREE.Group();
-      g.position.set(n.x, 0.02, n.z);
-      g.rotation.y = n.id * 2.3;
-      void this.bananaReady?.then((m) => g.add(m.root.clone(true)));
-      this.group.add(g);
-      this.mines.set(n.id, g);
+      let v = this.mines.get(n.id);
+      if (!v) {
+        const g = new THREE.Group();
+        g.position.set(n.x, terrain.heightAt(n.x, n.z) + 0.02, n.z);
+        g.rotation.y = n.id * 2.3;
+        const lamp: { mat: THREE.MeshStandardMaterial | null } = { mat: null };
+        void this.bananaReady?.then((m) => {
+          const root = m.root.clone(true);
+          root.traverse((o) => {
+            const mesh = o as THREE.Mesh;
+            if (mesh.isMesh && (mesh.material as THREE.Material).name === 'bn_green') {
+              lamp.mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+              mesh.material = lamp.mat;
+            }
+          });
+          g.add(root);
+        });
+        this.group.add(g);
+        this.mines.set(n.id, (v = { g, lamp, armed: false, born: performance.now() }));
+      }
+      // drop-in bounce, then the lamp: red and blinking while it arms, steady green when armed (and a pop ring)
+      const age = (performance.now() - v.born) / 1000;
+      v.g.position.y = terrain.heightAt(n.x, n.z) + 0.02 + Math.max(0, Math.sin(Math.min(1, age * 3.2) * Math.PI)) * 0.35;
+      v.g.scale.setScalar(Math.min(1, 0.4 + age * 4));
+      const armed = n.arm <= 0;
+      if (armed && !v.armed) {
+        v.armed = true;
+        this.fx.ring(n.x, n.z, '#7dff8a', 1.3, 0.35, 0.3);
+        this.fx.emit(n.x, terrain.heightAt(n.x, n.z) + 0.4, n.z, { n: 6, color: ['#7dff8a', '#ffffff'], speed: 1.6, up: 1.5, life: 0.35, size: 0.28 });
+      }
+      if (v.lamp.mat) {
+        const m = v.lamp.mat;
+        if (!armed) {
+          const on = Math.sin(age * 22) > 0;
+          m.color.set(on ? '#ff3a3a' : '#661010');
+          m.emissive.set('#ff2020');
+          m.emissiveIntensity = on ? 2.6 : 0.1;
+        } else {
+          m.color.set('#6dff7a');
+          m.emissive.set('#2bff55');
+          m.emissiveIntensity = 1.4 + Math.sin(age * 5) * 0.5;
+        }
+      }
     }
-    for (const [id, g] of this.mines) if (!seenMine.has(id)) (this.group.remove(g), this.mines.delete(id));
+    for (const [id, v] of this.mines) if (!seenMine.has(id)) (this.group.remove(v.g), this.mines.delete(id));
 
     // ---- freeze bombs in the air + where they'll land
     const seenThrow = new Set<number>();
@@ -460,26 +591,26 @@ export class WeaponsView {
       let v = this.throws.get(t.id);
       if (!v) {
         // the same bomb he was holding (spins through the air); a plain ice ball only if the model is missing
-        const bomb = this.env.get('weap_bomb');
+        const bomb = this.env.get('weap_icebomb') ?? this.env.get('weap_bomb');
         let ball: THREE.Object3D;
         if (bomb) {
           ball = new THREE.Group();
           const m = bomb.clone(true);
-          m.position.set(0, -0.18, 0); // the model's pivot is its handle: centre it
+          m.position.set(0, -0.25, 0); // pivot at its base: centre it
           ball.add(m);
-          ball.scale.setScalar(2);
+          ball.scale.setScalar(1.2);
         } else {
           ball = new THREE.Mesh(this.shotGeo, this.iceMat);
           ball.scale.setScalar(0.3);
         }
         const ring = new THREE.Mesh(new THREE.RingGeometry(W.freeze.radius - 0.15, W.freeze.radius, 48), this.ringMat);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(t.tx, 0.06, t.tz);
+        ring.position.set(t.tx, w.terrain.heightAt(t.tx, t.tz) + 0.06, t.tz);
         this.group.add(ball, ring);
         this.throws.set(t.id, (v = { ball, ring }));
       }
       const k = Math.min(1, t.t / t.total);
-      v.ball.position.set(t.fx + (t.tx - t.fx) * k, 1 + Math.sin(k * Math.PI) * 3, t.fz + (t.tz - t.fz) * k);
+      v.ball.position.set(t.fx + (t.tx - t.fx) * k, 1 + w.terrain.heightAt(t.fx + (t.tx - t.fx) * k, t.fz + (t.tz - t.fz) * k) + Math.sin(k * Math.PI) * 3, t.fz + (t.tz - t.fz) * k);
       v.ball.rotation.set(k * 14, k * 6, 0);
       v.ring.scale.setScalar(0.4 + k * 0.6);
     }

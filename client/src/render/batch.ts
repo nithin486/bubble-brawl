@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CEL, toonOf } from './style.ts';
+import { INKED, toonOf } from './style.ts';
 
 /**
  * Draw-call diet for low-end phones.
@@ -55,6 +55,7 @@ export function seeThroughOf(src: THREE.Material): THREE.Material {
     m.customProgramCacheKey = () => 'see' + src.type + (src.transparent ? 't' : '') + ((src as THREE.MeshLambertMaterial).alphaTest ?? 0);
     if (src.transparent) {
       m.transparent = true;
+      m.opacity = (src as THREE.MeshStandardMaterial).opacity; // glass keeps its see-through look
       m.depthWrite = false;
     }
     seeCache.set(src, m);
@@ -98,7 +99,7 @@ function vertexColourMaterial() {
 }
 const isPlain = (m: THREE.Material) => {
   const s = m as THREE.MeshStandardMaterial;
-  return !s.map && !s.transparent && !(s as THREE.MeshStandardMaterial & { alphaTest?: number }).alphaTest && !!s.color && !s.vertexColors && (s.emissiveIntensity ?? 0) * (s.emissive ? s.emissive.r + s.emissive.g + s.emissive.b : 0) < 0.05;
+  return !s.map && !s.transparent && !(s as THREE.MeshStandardMaterial & { alphaTest?: number }).alphaTest && !!s.color && (!s.vertexColors || s.metalness < 0.3) && (s.emissiveIntensity ?? 0) * (s.emissive ? s.emissive.r + s.emissive.g + s.emissive.b : 0) < 0.05;
 };
 
 /** Plain float, non-indexed position/normal/uv (+ colour) — every part can be merged with every other. */
@@ -113,10 +114,19 @@ function plain(src: THREE.BufferGeometry, m: THREE.Matrix4, colour?: THREE.Color
     out.setAttribute(name, new THREE.BufferAttribute(f, size));
   }
   if (!g.getAttribute('normal')) out.computeVertexNormals();
-  if (colour) {
+  // Blender-baked vertex colours (COLOR_0) survive the merge; a material colour multiplies them
+  const vc = g.getAttribute('color') as THREE.BufferAttribute | undefined;
+  if (vc || colour) {
     const n = out.getAttribute('position').count;
     const c = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) c.set([colour.r, colour.g, colour.b], i * 3);
+    for (let i = 0; i < n; i++) {
+      const r = vc ? vc.getX(i) : 1;
+      const gg = vc ? vc.getY(i) : 1;
+      const b = vc ? vc.getZ(i) : 1;
+      c[i * 3] = r * (colour ? colour.r : 1);
+      c[i * 3 + 1] = gg * (colour ? colour.g : 1);
+      c[i * 3 + 2] = b * (colour ? colour.b : 1);
+    }
     out.setAttribute('color', new THREE.BufferAttribute(c, 3));
   }
   out.applyMatrix4(m);
@@ -201,7 +211,7 @@ export class StaticBatch {
     }
     const live = this.items.filter((i) => i.on);
     for (const m of mergeParts(live.flatMap((i) => i.parts), true)) this.group.add(m);
-    if (CEL) {
+    if (INKED) {
       const ink = live.filter((i) => i.outline).flatMap((i) => i.parts.filter((p) => (p.mat as THREE.Material & { alphaTest?: number }).alphaTest === 0 && !p.mat.transparent));
       if (ink.length) {
         // outlines only need position + normal (parts differ in uv/colour attributes)

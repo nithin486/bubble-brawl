@@ -44,6 +44,12 @@ export class BotBrain {
   /** Rival this bot is currently hunting (-1 = none) — shown as a red "!" over its head. */
   targetId = -1;
   private avoidSide = 1;
+  /** Wedged against something big (a fountain, a run of bridge rails)? Sidestep for a moment. */
+  private lastX = 0;
+  private lastZ = 0;
+  private stuckT = 0;
+  private escapeT = 0;
+  private escapeSide = 1;
   private wpCache: { age: number; tx: number; tz: number; mx: number; mz: number; wp: { x: number; z: number } } | null = null;
   readonly personality: Personality;
   private reaction: number;
@@ -139,6 +145,7 @@ export class BotBrain {
         this.wpCache = { age: 0, tx: c.tx, tz: c.tz, mx: me.x, mz: me.z, wp };
       }
     }
+    wp = w.arena.route(me.x, me.z, wp.x, wp.z); // islands joined by bridges: stay on the ground
     let dx = wp.x - me.x;
     let dz = wp.z - me.z;
     const d = len(dx, dz);
@@ -196,8 +203,32 @@ export class BotBrain {
         mz *= d;
       }
     }
+    const moved = Math.hypot(me.x - this.lastX, me.z - this.lastZ);
+    this.lastX = me.x;
+    this.lastZ = me.z;
+    if (me.state === 'normal' && (mx !== 0 || mz !== 0) && moved / dt < 0.8) this.stuckT += dt;
+    else this.stuckT = Math.max(0, this.stuckT - dt * 2);
+    if (this.stuckT > 0.45 && this.escapeT <= 0) {
+      this.escapeT = 0.9;
+      this.escapeSide = this.rng.next() < 0.5 ? 1 : -1;
+      this.stuckT = 0;
+    }
+    if (this.escapeT > 0 && (mx !== 0 || mz !== 0)) {
+      this.escapeT -= dt;
+      const m = Math.hypot(mx, mz);
+      const ex = ((mx / m) * 0.3 - (mz / m) * this.escapeSide) * speed;
+      const ez = ((mz / m) * 0.3 + (mx / m) * this.escapeSide) * speed;
+      mx = ex;
+      mz = ez;
+    }
     const skipBank = this.easy(w) && !mayBankSoon(true, me, w.players[this.humanId], w);
-    const out: Input = { mx, mz, dash: c.dash, grab: c.grab, skill: c.skill, skipBank };
+    // never dash off an island edge or bridge
+    let dash = c.dash;
+    if (dash && w.arena.shape.mask) {
+      const m = Math.hypot(mx, mz) || 1;
+      for (const k of [2.5, 5]) if (!w.arena.safe(me.x + (mx / m) * k, me.z + (mz / m) * k)) dash = false;
+    }
+    const out: Input = { mx, mz, dash, grab: c.grab, skill: c.skill, skipBank };
     c.dash = c.grab = c.skill = false;
     return out;
   }

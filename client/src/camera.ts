@@ -7,7 +7,7 @@ export type CamPreset = 'third' | 'far' | 'close' | 'action' | 'bird';
 export type PlayerCam = Exclude<CamPreset, 'bird'>;
 /** Camera views the player can pick in Settings. */
 export const CAM_PRESETS: Record<CamPreset, { label: string; offset: [number, number, number]; look: [number, number, number]; lead: number; fov: number }> = {
-  third: { label: 'BEHIND (3RD PERSON)', offset: [0, 7.4, 11.2], look: [0, 1.0, -6], lead: 0.14, fov: 50 },
+  third: { label: 'BEHIND (3RD PERSON)', offset: [0, 4.4, 7.6], look: [0, 1.5, -7], lead: 0.12, fov: 54 },
   far: { label: 'TOP · FAR', offset: [0, 14, 12.5], look: [0, 0.8, -1.2], lead: 0.35, fov: 45 },
   close: { label: 'TOP · CLOSE', offset: [0, 11, 9], look: [0, 0.9, -1.4], lead: 0.45, fov: 46 },
   /** Dev view (?cam=bird): the whole big map from above. */
@@ -46,12 +46,23 @@ export class CameraRig {
   /** Desired vertical FOV for this preset (Stage keeps aspect handling). */
   presetFov = 45;
 
+  /** Vertical look (third person): 1 = default; bigger = higher, more top-down; smaller = lower, looking farther. */
+  heightMul = 1;
+  private heightS = 1;
+
   /** Camera yaw (radians). 0 = looking toward -z. Only the third-person view turns. */
   yaw = 0;
   private manualT = 9;
 
   get turns() {
     return this.preset === 'third';
+  }
+
+  /** Third-person look up/down (radians): + = look up / farther, - = look down. */
+  pitch = 0;
+  addPitch(d: number) {
+    if (!this.turns || !d) return;
+    this.pitch = Math.min(0.55, Math.max(-0.5, this.pitch + d));
   }
 
   /** Manual turn (mouse / right-side drag / Q-E). */
@@ -123,10 +134,20 @@ export class CameraRig {
     const crowdK = this.turns ? 0.12 : 0.28;
     const off = new THREE.Vector3().copy(this.offset).multiplyScalar((1 - this.zoom * 0.45) * (1 + this.crowdS * crowdK));
     off.y -= this.zoom * 1.2;
+    if (this.turns) {
+      this.heightS += (this.heightMul - this.heightS) * Math.min(1, dt * 8);
+      off.y *= this.heightS;
+      off.z *= 1 + (this.heightS - 1) * 0.25;
+      // shooter-style pitch: looking down raises the camera over the hero, looking up lowers it behind the shoulder
+      off.y -= this.pitch * 3.2;
+      off.z += Math.abs(this.pitch) * 0.6;
+    }
     const yaw = this.turns ? this.yaw : 0;
     off.applyAxisAngle(UP, yaw);
     this.camera.position.copy(this.target).add(off);
-    const look = new THREE.Vector3().copy(this.target).add(this.lookOffset.clone().applyAxisAngle(UP, yaw));
+    const lo = this.lookOffset.clone();
+    if (this.turns) lo.y += this.pitch * 7.5;
+    const look = new THREE.Vector3().copy(this.target).add(lo.applyAxisAngle(UP, yaw));
     look.y += this.zoom * 0.6;
     if (this.shakeT > 0) {
       this.shakeT -= dt;

@@ -42,6 +42,10 @@ export interface ArenaShape {
   /** Square grids: tile edge length (m). Hex grids use the KayKit hex size. */
   tileSize: number;
   radius: number;
+  /** Square grids: which tiles exist (i, j = tile indices); everything else is open air. Default: all tiles inside the radius. */
+  mask?: (i: number, j: number) => boolean;
+  /** Tiles that are narrow paths (bridges with walls): AI walks them along the tile centres. */
+  narrow?: (i: number, j: number) => boolean;
 }
 
 export class Arena {
@@ -62,7 +66,7 @@ export class Arena {
     } else {
       const s = shape.tileSize;
       const n = Math.ceil(R / s) + 1;
-      for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) this.add(i, j, i * s, j * s, R - s * 0.3);
+      for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) if (!shape.mask || shape.mask(i, j)) this.add(i, j, i * s, j * s, R - s * 0.3);
     }
   }
 
@@ -98,6 +102,64 @@ export class Arena {
   solid(x: number, z: number) {
     const t = this.tileAt(x, z);
     return !!t && t.state !== 2;
+  }
+
+  /**
+   * Next waypoint from (x, z) towards (tx, tz) that keeps you on the ground. Only maps with gaps (a tile mask: islands joined by
+   * bridges) need it: when the straight line leaves the ground we walk the tile graph (breadth first) so bots use the bridges.
+   */
+  route(x: number, z: number, tx: number, tz: number): { x: number; z: number } {
+    if (!this.shape.mask) return { x: tx, z: tz };
+    const dx = tx - x;
+    const dz = tz - z;
+    const d = Math.hypot(dx, dz);
+    const n = Math.ceil(d / 0.8);
+    let clear = true;
+    const narrow = (px: number, pz: number) => {
+      const t = this.tileAt(px, pz);
+      return !!t && !!this.shape.narrow?.(t.q, t.r);
+    };
+    if (narrow(x, z)) clear = false;
+    for (let i = 1; i <= n && clear; i++) {
+      const px = x + (dx * i) / n;
+      const pz = z + (dz * i) / n;
+      if (!this.safe(px, pz) || narrow(px, pz)) clear = false;
+    }
+    if (clear) return { x: tx, z: tz };
+    const s = this.tileAt(x, z);
+    let g = this.tileAt(tx, tz);
+    if (!s) return { x: tx, z: tz };
+    if (!g || g.state !== 0) {
+      // goal over open air: aim for the nearest solid tile
+      let bd = Infinity;
+      for (const t of this.tiles) {
+        if (t.state !== 0) continue;
+        const dd = (t.x - tx) ** 2 + (t.z - tz) ** 2;
+        if (dd < bd) {
+          bd = dd;
+          g = t;
+        }
+      }
+    }
+    if (!g) return { x: tx, z: tz };
+    const prev = new Map<Tile, Tile | null>([[s, null]]);
+    const queue: Tile[] = [s];
+    for (let h = 0; h < queue.length && !prev.has(g); h++) {
+      const t = queue[h];
+      for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const o = this.map.get(key(t.q + a, t.r + b));
+        if (!o || o.state !== 0 || prev.has(o)) continue;
+        prev.set(o, t);
+        queue.push(o);
+      }
+    }
+    if (!prev.has(g)) return { x: tx, z: tz };
+    const path: Tile[] = [];
+    for (let t: Tile | null | undefined = g; t; t = prev.get(t)) path.push(t);
+    path.reverse();
+    const next = path[Math.min(path.length - 1, 1)];
+    // the last tile: go to the real target; otherwise to the next tile's centre
+    return path.length <= 2 && g === this.tileAt(tx, tz) ? { x: tx, z: tz } : { x: next.x, z: next.z };
   }
 
   /** Safe for AI targets and spawns: solid and not about to fall. */

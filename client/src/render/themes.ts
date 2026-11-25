@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { World } from '../../../shared/sim/world.ts';
 import type { MapId, Obstacle } from '../../../shared/config/maps.ts';
-import { SPOKES, spokeTile, CANDY_K, DESERT } from '../../../shared/config/maps.ts';
+import { SPOKES, spokeTile, CANDY_K, DESERT, bgTile, bgBridgeAxis } from '../../../shared/config/maps.ts';
 import { hexToWorld, key } from '../../../shared/sim/arena.ts';
 import type { Rng } from '../../../shared/sim/math.ts';
 
@@ -34,6 +34,8 @@ export interface TilePlan {
   scale: [number, number, number];
   y: number;
   color?: THREE.Color;
+  /** Underside size factor (default 1; ~0 = none, e.g. under a bridge). */
+  underScale?: number;
 }
 
 export interface Theme {
@@ -68,8 +70,9 @@ export interface Theme {
 const CANDY_TILE_Y = -1; // candy tiles are 1 m thick, grounded at y = 0: top surface at world y = 0
 const candy: Theme = {
   id: 'candy',
-  sky: { top: '#6fd0ff', mid: '#ffb3e6', horizon: '#fff2c9', bottom: '#ffd0ee' },
-  fog: { color: '#f3d3ee', near: 55, far: 210 }, // soft haze: far candy fades into the sky, near stays crisp
+  // clear summer sky: deep blue overhead, light at the horizon; haze only very far away
+  sky: { top: '#1f7cf2', mid: '#62b4ff', horizon: '#dff1ff', bottom: '#ffd0ee' },
+  fog: { color: '#cfe7ff', near: 120, far: 320 },
   bloom: { strength: 0.3, threshold: 0.97 },
   hemi: { sky: '#fff3fb', ground: '#b87fae', intensity: 0.58 },
   sun: { color: '#ffe9c4', intensity: 2.5, pos: [-16, 22, 11] }, // warm low sun: long readable shadows
@@ -607,14 +610,14 @@ const dhash = (a: number, b: number) => {
 const desert: Theme = {
   id: 'desert',
   pbr: true,
-  grade: { sat: 0.98, con: 1.08 },
-  sky: { top: '#2f5db0', mid: '#e8a56d', horizon: '#ffd9a4', bottom: '#dba56e' },
-  fog: { color: '#ebc59b', near: 55, far: 230 },
-  bloom: { strength: 0.18, threshold: 0.98 },
-  hemi: { sky: '#fff1dc', ground: '#8f7456', intensity: 0.9 },
-  sun: { color: '#ffe3bb', intensity: 3.0, pos: [-26, 16, 11] }, // low sun: long, readable shadows
-  exposure: 0.95,
-  clouds: { color: '#ffd9bb', emissive: '#ff9f6a', intensity: 0.25 },
+  grade: { sat: 1.12, con: 1.06 },
+  sky: { top: '#2b7cf0', mid: '#6fb6ff', horizon: '#ffd9b0', bottom: '#e09a6e' },
+  fog: { color: '#f3c9a4', near: 70, far: 260 },
+  bloom: { strength: 0.3, threshold: 0.9 },
+  hemi: { sky: '#cfe6ff', ground: '#b9714a', intensity: 1.0 },
+  sun: { color: '#ffe0b0', intensity: 3.0, pos: [-22, 20, 12] }, // low warm sun: long, readable shadows
+  exposure: 1.0,
+  clouds: { color: '#ffffff', emissive: '#ffd2b0', intensity: 0.2 },
   waterfalls: false,
   bubbles: false,
   under: { piece: 'desert_under', sx: 1, sy: 1, sz: 1, y: -3.8 },
@@ -637,7 +640,8 @@ const desert: Theme = {
       // tone the orange sand down towards the pale one and vary every tile a little, so the ground never reads as a grid of patches
       const tone = kind === 'sand' ? 0.82 : kind === 'gravel' ? 0.94 : 1;
       const v = tone * (0.93 + dhash(i + 5, j + 9) * 0.1);
-      const color = new THREE.Color(v, v * (kind === 'sand' ? 0.9 : 0.97), v * (kind === 'sand' ? 0.8 : 0.94));
+      // warm terracotta cast, like sun-baked canyon stone
+      const color = new THREE.Color(v * 1.04, v * (kind === 'sand' ? 0.82 : 0.88), v * (kind === 'sand' ? 0.68 : 0.78));
       return { piece: `desert_tile_${kind}`, rot: Math.floor(dhash(j, i) * 4) * (Math.PI / 2), scale: [1, 1, 1] as [number, number, number], y: 0, color };
     });
   },
@@ -645,7 +649,11 @@ const desert: Theme = {
     const D = DESERT;
     switch (o.kind) {
       case 'dcliff':
-        add('desert_cliff', D.cliff.s, 0, 0, Math.PI / 2); // the model runs along x; the collision row runs along the prop's z
+        // a ridge of stylized sandstone along the collision row (prop's z axis)
+        for (let k = -1; k <= 1; k++) {
+          const h = dhash(o.x + k, o.z - k);
+          add('desert_boulder_a', 2.4 + h * 0.3, (h - 0.5) * 0.3, k * 2.9, h * 6.28); // ~3.6–4 m: the size of the collision circles
+        }
         break;
       case 'dboulder':
         add('desert_boulder_a', D.boulder.s);
@@ -657,24 +665,15 @@ const desert: Theme = {
         add('desert_barrel', D.barrel.s);
         break;
       case 'dstove':
-        add('desert_stove', D.stove.s);
+        add('desert_barrel', D.barrel.s);
         glow('#ff8a3d', 2.6, 0, 1.45, 0); // fire in the barrel
         break;
       case 'dbarrier':
         add('desert_barrier', D.barrier.s, 0, 0, Math.PI / 2);
         break;
-      case 'dcar': {
-        const car = add('desert_car', D.car.s);
-        // the scanned tarp is nearly black: lift it so the car reads as a shape, not a hole
-        car?.traverse((m) => {
-          const mesh = m as THREE.Mesh;
-          if (!mesh.isMesh) return;
-          const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-          mat.color.setScalar(2.4);
-          mesh.material = mat;
-        });
+      case 'dcar':
+        add('desert_car', D.car.s);
         break;
-      }
       case 'dquiverA':
         add('desert_quiver_a', D.quiverA.s);
         break;
@@ -685,16 +684,16 @@ const desert: Theme = {
         add('desert_deadtree', D.dead.s);
         break;
       case 'dstone':
-        add('desert_boulder_b', 2.2);
+        add('desert_boulder_a', 0.42, 0, 0, o.rot * 3);
         break;
       case 'dpebbles':
-        add('desert_boulders', 2.6);
+        add('desert_boulder_a', 0.28, 0, 0, o.rot * 5);
         break;
       case 'dtyre':
         add('desert_tyre', 1.8);
         break;
       case 'dplanks':
-        add('desert_rocks', 3);
+        add('desert_boulder_a', 0.34, 0, 0, o.rot * 7);
         break;
     }
   },
@@ -708,10 +707,191 @@ const desert: Theme = {
       const a = (k / 16) * Math.PI * 2 + dhash(k, 3) * 0.3;
       const d = 80 + dhash(k, 5) * 70;
       const sc = 7 + dhash(k, 7) * 8;
-      ctx.place('desert_cliff', Math.sin(a) * d, -52 + dhash(k, 9) * 22, Math.cos(a) * d, sc, dhash(k, 11) * 6.28);
-      if (k % 3 === 0) ctx.place('desert_cliff', Math.sin(a + 0.12) * (d + 20), -50 + dhash(k, 13) * 18, Math.cos(a + 0.12) * (d + 20), sc * 1.5, dhash(k, 15) * 6.28);
+      ctx.place('desert_mesa', Math.sin(a) * d, -52 + dhash(k, 9) * 22, Math.cos(a) * d, sc * 0.9, dhash(k, 11) * 6.28);
+      if (k % 3 === 0) ctx.place('desert_mesa', Math.sin(a + 0.12) * (d + 20), -50 + dhash(k, 13) * 18, Math.cos(a + 0.12) * (d + 20), sc * 1.3, dhash(k, 15) * 6.28);
     }
   },
 };
 
-export const THEMES: Record<MapId, Theme> = { candy, downtown, city, spooky, village, desert };
+
+// =================================================================== Bubblegum Islands (the premium map)
+
+/** Tiny deterministic hash for tile tints. */
+const bghash = (a: number, b: number) => {
+  const h = Math.sin(a * 91.3 + b * 47.7) * 43758.5453;
+  return h - Math.floor(h);
+};
+
+/** Iridescent soap bubbles rising round the fountain: one Points draw call, animated on the GPU. */
+function fountainBubbles(): THREE.Points {
+  const N = 170;
+  const pos = new Float32Array(N * 3);
+  const seed = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) {
+    const a = bghash(i, 1) * Math.PI * 2;
+    const r = 0.8 + bghash(i, 2) * 7.5;
+    pos[i * 3] = Math.cos(a) * r;
+    pos[i * 3 + 1] = bghash(i, 3) * 16;
+    pos[i * 3 + 2] = Math.sin(a) * r;
+    seed[i * 2] = bghash(i, 4);
+    seed[i * 2 + 1] = 0.4 + bghash(i, 5) * 0.9;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('seed', new THREE.BufferAttribute(seed, 2));
+  const m = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { time: { value: 0 }, scale: { value: 300 } },
+    vertexShader: `uniform float time; uniform float scale; attribute vec2 seed; varying float vS; varying float vA;
+      void main(){
+        vec3 p = position;
+        p.y = 1.3 + mod(p.y + time * (0.7 + seed.y * 0.8), 16.0);
+        p.x += sin(time * 0.6 + seed.x * 40.0) * 0.5; p.z += cos(time * 0.5 + seed.x * 30.0) * 0.5;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        vS = seed.x; vA = smoothstep(0.0, 2.0, p.y - 1.3) * smoothstep(16.0, 11.0, p.y - 1.3);
+        gl_PointSize = (0.16 + 0.34 * seed.x) * scale / -mv.z;
+      }`,
+    fragmentShader: `varying float vS; varying float vA;
+      void main(){
+        vec2 c = gl_PointCoord - 0.5; float d = length(c) * 2.0;
+        if (d > 1.0) discard;
+        float rim = smoothstep(0.55, 0.95, d) * (1.0 - smoothstep(0.95, 1.0, d));
+        vec3 irid = 0.55 + 0.45 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + vS + d * 0.6));
+        float glint = smoothstep(0.35, 0.0, length(c - vec2(-0.18, 0.2)));
+        gl_FragColor = vec4(irid * rim + vec3(glint), (0.12 + rim * 0.55 + glint * 0.6) * vA);
+      }`,
+  });
+  const pts = new THREE.Points(g, m);
+  pts.position.y = 1.2;
+  pts.frustumCulled = false;
+  pts.renderOrder = 5;
+  pts.onBeforeRender = (r) => {
+    m.uniforms.time.value = performance.now() / 1000;
+    m.uniforms.scale.value = r.domElement.height * 0.9;
+  };
+  return pts;
+}
+
+const bubblegum: Theme = {
+  id: 'bubblegum',
+  // dreamy daylight: saturated blue up high melting into pink candy haze at the horizon
+  sky: { top: '#3f7dff', mid: '#8cc8ff', horizon: '#ffe3f4', bottom: '#ffb8e2' },
+  fog: { color: '#ffc4e6', near: 110, far: 360 },
+  bloom: { strength: 0.26, threshold: 0.98 },
+  hemi: { sky: '#f6e8ff', ground: '#b878d0', intensity: 0.46 },
+  sun: { color: '#fff0d2', intensity: 2.3, pos: [-18, 24, 12] },
+  exposure: 0.84,
+  grade: { sat: 1.22, con: 1.12 },
+  clouds: { color: '#ffffff', emissive: '#ffd0ee', intensity: 0.55 },
+  waterfalls: false,
+  bubbles: true,
+  under: { piece: 'bg_under', sx: 1, sy: 1, sz: 1, y: -3.6, chunkY: -3.6 },
+  core: [
+    { y: -4.8, r: 14, s: 0.95 },
+    { y: -6.2, r: 10, s: 0.9 },
+    { y: -7.6, r: 6, s: 0.85 },
+  ],
+  tiles(world) {
+    return world.arena.tiles.map((t) => {
+      const i = t.q;
+      const j = t.r;
+      const kind = bgTile(i, j);
+      const even = (i + j) % 2 === 0;
+      const tint = 0.95 + bghash(i, j) * 0.08;
+      const color = new THREE.Color(tint, tint, tint);
+      if (kind === 'bridge') {
+        const axis = bgBridgeAxis(i, j);
+        return { piece: 'bg_bridge', rot: axis === 'x' ? Math.PI / 2 : 0, scale: [1, 1, 1] as [number, number, number], y: -1, color: new THREE.Color(1, 1, 1), underScale: 0.0001 };
+      }
+      const piece =
+        kind === 'island'
+          ? Math.max(Math.abs(i), Math.abs(j)) <= 1
+            ? 'bg_tile_pink'
+            : (i === 0 || j === 0)
+              ? 'bg_tile_cream'
+              : even
+                ? 'bg_tile_mint'
+                : 'bg_tile_mint2'
+          : kind === 'sat'
+            ? even
+              ? 'bg_tile_sky'
+              : 'bg_tile_sky2'
+            : even
+              ? 'bg_tile_lilac'
+              : 'bg_tile_lilac2';
+      return { piece, rot: Math.floor(bghash(j, i) * 4) * (Math.PI / 2), scale: [1, 1, 1] as [number, number, number], y: -1, color };
+    });
+  },
+  prop(o, add, glow) {
+    const DECK = 1.2;
+    switch (o.kind) {
+      case 'bgplaza':
+        add('bg_plaza', 1);
+        break;
+      case 'bgramp':
+        add('bg_ramp', 1);
+        break;
+      case 'bgramp4':
+        add('bg_ramp4', 1);
+        break;
+      case 'bgblock':
+        add('bg_block', 1);
+        break;
+      case 'bgfountain':
+        add('bg_fountain', 1, 0, 0, 0, DECK);
+        glow('#ff9ad8', 7, 0, DECK + 7.6, 0);
+        break;
+      case 'bggumball':
+        add('bg_gumball', 1);
+        break;
+      case 'bgmush_pink':
+        add('bg_mush_pink', 0.78);
+        break;
+      case 'bgmush_aqua':
+        add('bg_mush_aqua', 0.78);
+        break;
+      case 'bgmush_lilac':
+        add('bg_mush_lilac', 0.78);
+        break;
+      case 'bgcry_pink':
+        add('bg_cry_pink', 1);
+        glow('#ff8fd0', 3.2, 0, 1.4, 0);
+        break;
+      case 'bgcry_aqua':
+        add('bg_cry_aqua', 1);
+        glow('#7fe8ff', 3.2, 0, 1.4, 0);
+        break;
+      case 'bgcry_lilac':
+        add('bg_cry_lilac', 1);
+        glow('#c2a0ff', 3.2, 0, 1.4, 0);
+        break;
+      case 'bgpillar':
+        add('bg_pillar', 1);
+        break;
+      case 'bglamp':
+        add('bg_lamp', 1);
+        glow('#ffdca0', 2.6, 0, 2.5, 0.2);
+        break;
+      case 'bgboulder':
+        add('bg_boulder', 1);
+        break;
+    }
+  },
+  extras(ctx) {
+    ctx.add(fountainBubbles());
+  },
+  backdrop(ctx) {
+    // a whole archipelago: floating islands with waterfalls, a candy castle and crystal gardens, big ones far away for depth
+    const spots: [string, number, number, number, number][] = [
+      // [piece, angle, distance, y, scale]
+      ['bg_islet_a', 0.45, 62, -7, 1.1], ['bg_islet_b', 1.15, 88, -11, 1.5], ['bg_islet_c', 1.9, 66, -5, 1.0], ['bg_islet_a', 2.55, 98, -16, 1.8],
+      ['bg_islet_b', 3.2, 70, -8, 1.15], ['bg_islet_c', 3.85, 100, -14, 1.8], ['bg_islet_a', 4.5, 64, -6, 1.05], ['bg_islet_b', 5.2, 96, -20, 2.0],
+      ['bg_islet_c', 5.85, 74, -9, 1.25], ['bg_islet_b', 0.0, 130, -26, 2.6], ['bg_islet_a', 2.1, 140, -30, 2.8], ['bg_islet_c', 4.2, 135, -28, 2.7],
+    ];
+    spots.forEach(([piece, a, d, y, s], k) => ctx.place(piece, Math.sin(a) * d, y, Math.cos(a) * d, s, bghash(k, 7) * 6.28));
+  },
+};
+
+export const THEMES: Record<MapId, Theme> = { candy, downtown, city, spooky, village, desert, bubblegum };

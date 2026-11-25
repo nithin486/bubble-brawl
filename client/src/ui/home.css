@@ -207,3 +207,17 @@
   .step .n { width: 22px; height: 22px; border-radius: 7px; }
   .step .n svg { width: 14px; height: 14px; }
 }
+
+/* ---------- premium arcade skin (navy glass + gold, matches the in-game HUD) ---------- */
+#home .shade { background: radial-gradient(ellipse at 50% 55%, transparent 45%, #0a102c80 100%), linear-gradient(180deg, #0a102c50 0%, transparent 24%, transparent 70%, #0a102ca0 100%); }
+.logo .w { -webkit-text-stroke: 10px #1a57c4; text-shadow: 0 8px 0 #0a1f5c, 0 14px 26px #0a102c90; }
+.logo .w.b { background: linear-gradient(180deg, #fff6b0, #ffd23f 50%, #ff9a1f); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-stroke: 0; filter: drop-shadow(0 0 0 #1a57c4) drop-shadow(4px 0 0 #1a57c4) drop-shadow(-4px 0 0 #1a57c4) drop-shadow(0 4px 0 #1a57c4) drop-shadow(0 -4px 0 #1a57c4) drop-shadow(0 7px 0 #0a1f5c); }
+.chip, .icon-btn { background: linear-gradient(180deg, #2a3f86f0, #16204ff0); box-shadow: inset 0 0 0 2px #ffffff40, inset 0 2px 0 #ffffff55, 0 4px 14px #0a102c66, 0 3px 0 #0a102c; }
+.icon-btn { border-radius: 50%; }
+.chip { border-radius: 999px; }
+.hero-name h2 { -webkit-text-stroke: 8px #1a57c4; text-shadow: 0 6px 0 #0a1f5c, 0 10px 20px #0a102c80; }
+.role { background: #16204fd0; border-radius: 999px; }
+.ability { background: linear-gradient(180deg, #2a3f86e8, #16204fee); box-shadow: inset 0 0 0 2px #ffffff38, 0 8px 22px #0a102c70; border-radius: 22px; }
+.arrow { background: radial-gradient(circle at 50% 30%, #ffffff, #dfe6ff 70%); box-shadow: 0 5px 0 #4a64b8, 0 8px 16px #0a102c60, inset 0 0 0 2px #ffffff; }
+.mode { box-shadow: inset 0 0 0 2px #ffffff70, inset 0 3px 0 #ffffff80, 0 5px 0 #a0237f, 0 10px 20px #0a102c60; }
+.play { border-radius: 999px; }

@@ -1,0 +1,12 @@
+{
+ "name": "bg_ramp4",
+ "title": "bg_ramp4",
+ "source": "own",
+ "author": "Bubble Brawl (Blender, Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "centre x/y, base z=0",
+  "forward": "-Y (glTF +Z)"
+ }
+}

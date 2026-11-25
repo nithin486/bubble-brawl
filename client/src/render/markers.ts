@@ -28,6 +28,8 @@ export class Markers {
   private scopeMat!: THREE.SpriteMaterial;
   /** Set by the game each frame: where the player is pointing (camera centre or mouse). null = use the hero's facing. */
   aimHint: { heading: number; dist: number } | null = null;
+  /** Third person uses the HUD crosshair instead of the floating scope. */
+  hideScope = false;
   /** The game camera: the scope is resized each frame so it stays a small, fixed size on screen. */
   cam: THREE.PerspectiveCamera | null = null;
   /** Rival under your Grab reticle (-1 = none). */
@@ -87,7 +89,7 @@ export class Markers {
     const k = me.weapon;
     const on = active && world.mode === 'weapons' && !!k && me.ammo > 0 && world.phase === 'playing' && me.state !== 'falling' && me.state !== 'bubble' && me.state !== 'stunned';
     this.scope.visible = false;
-    if (!on || !k || !this.cam) return;
+    if (!on || !k || !this.cam || this.hideScope) return;
     const W = TUNING.weapons;
     const hint = this.aimHint;
     const heading = hint ? hint.heading : me.facing;

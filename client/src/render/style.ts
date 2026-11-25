@@ -5,8 +5,41 @@ import * as THREE from 'three';
  * Cheaper than PBR on phones, and reads like Brawl Stars / Smash Karts instead of "plain low-poly".
  */
 
-/** ?style=old turns the new look off for A/B comparisons. */
-export const CEL = new URLSearchParams(location.search).get('style') !== 'old';
+/**
+ * Look switch. Default 'toy': soft PBR shading (vinyl-toy sheen, env reflections, AO) with no ink lines,
+ * like a modern stylized arcade game. ?style=cel = the older cel bands + ink outlines; ?style=old = raw materials.
+ */
+const STYLE = new URLSearchParams(location.search).get('style');
+export const LOOK: 'toy' | 'cel' | 'old' = STYLE === 'cel' ? 'cel' : STYLE === 'old' ? 'old' : 'toy';
+export const CEL = LOOK !== 'old';
+/** Ink outlines only in the cel look. */
+export const INKED = LOOK === 'cel';
+
+/** Toy look: a PBR copy with a soft, slightly glossy plastic finish that picks up the environment map. */
+function toyOf(s: THREE.MeshStandardMaterial, hero: boolean): THREE.Material {
+  // plain standard material for everything (physical clearcoat/sheen cost too much on phones and caused hitches)
+  const m = new THREE.MeshStandardMaterial();
+  m.name = s.name;
+  m.map = s.map;
+  m.color.copy(s.color);
+  m.emissive.copy(s.emissive);
+  m.emissiveMap = s.emissiveMap;
+  m.emissiveIntensity = s.emissiveIntensity;
+  m.normalMap = s.normalMap;
+  m.roughnessMap = s.roughnessMap;
+  m.aoMap = s.aoMap;
+  m.transparent = s.transparent;
+  m.opacity = s.opacity;
+  m.alphaTest = s.alphaTest;
+  m.side = s.side;
+  m.vertexColors = s.vertexColors;
+  m.metalness = Math.min(s.metalness, 0.6);
+  // stylized surfaces: never fully matte (no highlight), never mirror-like
+  m.roughness = hero ? 0.48 : s.roughnessMap ? s.roughness : THREE.MathUtils.clamp(s.roughness, 0.42, 0.82);
+  m.envMapIntensity = hero ? 1.0 : 0.75;
+  m.userData.pbr = s;
+  return m;
+}
 
 let ramp: THREE.DataTexture | null = null;
 /** Light ramp: shadow band, mid band, lit band. Shadows stay warm and bright (cartoon, not gritty). */
@@ -25,10 +58,18 @@ function gradient() {
 const cache = new Map<THREE.Material, THREE.Material>();
 
 /** Standard (PBR) material → toon material with the same texture and colours. */
-export function toonOf(src: THREE.Material): THREE.Material {
+const heroCache = new Map<THREE.Material, THREE.Material>();
+
+export function toonOf(src: THREE.Material, hero = false): THREE.Material {
   if (!CEL) return src;
   const s = src as THREE.MeshStandardMaterial;
   if (!s.isMeshStandardMaterial) return src;
+  if (LOOK === 'toy') {
+    const c = hero ? heroCache : cache;
+    let t = c.get(src);
+    if (!t) c.set(src, (t = toyOf(s, hero)));
+    return t;
+  }
   let t = cache.get(src);
   if (!t) {
     const m = new THREE.MeshToonMaterial({
@@ -53,12 +94,12 @@ export function toonOf(src: THREE.Material): THREE.Material {
 }
 
 /** Swap every standard material under `root` for its toon version. */
-export function celify(root: THREE.Object3D) {
+export function celify(root: THREE.Object3D, hero = false) {
   if (!CEL) return;
   root.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
-    m.material = Array.isArray(m.material) ? m.material.map(toonOf) : toonOf(m.material);
+    m.material = Array.isArray(m.material) ? m.material.map((x) => toonOf(x, hero)) : toonOf(m.material, hero);
   });
 }
 
@@ -92,7 +133,7 @@ function outlineMaterial(width: number) {
  * `width` is in the mesh's own units. Returns the outline materials (for fading).
  */
 export function addOutlines(root: THREE.Object3D, width: number): THREE.MeshBasicMaterial[] {
-  if (!CEL) return [];
+  if (!INKED) return [];
   const mats: THREE.MeshBasicMaterial[] = [];
   const meshes: THREE.Mesh[] = [];
   root.traverse((o) => {

@@ -1,0 +1,25 @@
+// In-game screenshots of the Bubble Ranger (unlocks him in a throwaway browser profile first).
+import { createRequire } from 'node:module';
+const { chromium } = createRequire(import.meta.url)('playwright-core');
+const out = process.argv[2] || 'shots';
+const url = process.env.URL || 'http://localhost:5173/';
+const browser = await chromium.launch({ executablePath: process.env.CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+const logs = [];
+page.on('console', (m) => m.type() === 'error' && logs.push(m.text()));
+page.on('pageerror', (e) => logs.push('pageerror ' + e.message));
+await page.addInitScript(() => localStorage.setItem('bb_profile_v1', JSON.stringify({ matches: 5, coins: 100, xp: 100, map: 'candy', name: 'Nithin', camera: 'third', unlocked: ['bones', 'pinch', 'grizzle', 'ranger'], hero: 'ranger', firstSeen: '2026-11-24', lastSeen: '2026-11-24', sound: true, shake: true, quality: 'auto' })));
+await page.goto(url);
+await page.waitForFunction(() => !document.getElementById('boot'), null, { timeout: 90000 });
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${out}/01-home.png` });
+await page.keyboard.press('Enter');
+await page.waitForTimeout(9000);
+await page.screenshot({ path: `${out}/01-start.png` });
+const hold = async (k, ms) => { await page.keyboard.down(k); await page.waitForTimeout(ms); await page.keyboard.up(k); };
+await hold('KeyW', 1200);
+await page.screenshot({ path: `${out}/02-run.png` });
+await hold('KeyD', 900);
+await page.screenshot({ path: `${out}/03-run-side.png` });
+console.log('errors:', logs.join('\n') || 'none');
+await browser.close();

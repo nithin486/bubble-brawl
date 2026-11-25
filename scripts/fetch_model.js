@@ -35,7 +35,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { NodeIO, Logger } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { prune, dedup, weld, meshopt, textureCompress, getBounds, unpartition, flatten, join, simplify } from '@gltf-transform/functions';
+import { metalRough, prune, dedup, weld, meshopt, textureCompress, getBounds, unpartition, flatten, join, simplify } from '@gltf-transform/functions';
 import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer';
 import sharp from 'sharp';
 
@@ -248,7 +248,8 @@ async function process3d(input, out, o) {
   const tris = () => root.listMeshes().reduce((n, m) => n + m.listPrimitives().reduce((k, p) => k + ((p.getIndices()?.getCount() ?? p.getAttribute('POSITION').getCount()) / 3), 0), 0);
   const trisIn = tris();
 
-  const steps = [dedup(), prune(), weld()];
+  // old spec/gloss materials render plain white in three.js: convert them to metal/rough first
+  const steps = [metalRough(), dedup(), prune(), weld()];
   if (!skinned) steps.push(flatten(), join()); // fewer draw calls for static props
   // over budget: simplify (static meshes only — skinned ones would tear)
   if (!skinned && trisIn > o.maxTris) steps.push(simplify({ simplifier: MeshoptSimplifier, ratio: Math.max(0.01, o.maxTris / trisIn), error: 0.08 }));

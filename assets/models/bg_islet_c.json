@@ -1,0 +1,12 @@
+{
+ "name": "bg_islet_c",
+ "title": "bg_islet_c",
+ "source": "own",
+ "author": "Bubble Brawl (Blender, Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "centre x/y, base z=0",
+  "forward": "-Y (glTF +Z)"
+ }
+}
