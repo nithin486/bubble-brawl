@@ -768,3 +768,15 @@ body[data-buttons='large'] #hud:not(.desktop) .controls { zoom: 1.18; }
   .panel.menu-panel .toggle button { min-width: 88px; font-size: 12px; padding-top: 4px; padding-bottom: 4px; }
   .panel.menu-panel .toggle button.switch { min-width: 70px; height: 30px; padding: 0 10px 0 30px; }
 }
+
+/* friends lobby */
+.friends-panel .big-btn.wa { background: linear-gradient(180deg, #4be37a, #1ea952); color: #fff; }
+.friends-panel .big-btn:disabled { filter: grayscale(.7); opacity: .7; cursor: default; }
+@media (max-height: 520px) { .friends-panel .btn-row .big-btn { font-size: 14px; padding: 6px 12px; min-width: 0; } }
+
+.row.gone { opacity: .4; }
+.ad-cover { position: fixed; inset: 0; z-index: 80; background: #0a102c80; }
+.results .big-btn.double { font-size: 15px; padding: 5px 14px; min-width: 0; }
+.results .rw-coins .coin-ico { vertical-align: middle; }
+.results .big-btn.double:disabled { filter: grayscale(.6); opacity: .8; }
+.credits a { color: var(--yellow); pointer-events: auto; }

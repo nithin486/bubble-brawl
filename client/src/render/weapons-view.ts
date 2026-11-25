@@ -372,7 +372,7 @@ export class WeaponsView {
     while (this.beams.length < 14) this.beams.push(this.makeBeam());
   }
 
-  laser(from: THREE.Vector3, to: THREE.Vector3, hit: boolean) {
+  laser(from: THREE.Vector3, to: THREE.Vector3, hit: boolean, colors: string[] = ['#ffffff', '#00c8ff', '#ff2fc0']) {
     if (this.beams.length < 14) this.warm();
     this.beamNext = (this.beamNext + 1) % this.beams.length;
     const b = this.beams[this.beamNext];
@@ -384,12 +384,15 @@ export class WeaponsView {
     b.end.position.copy(to);
     b.end.userData.s = hit ? 1.9 : 1.15;
     b.t = WeaponsView.LIFE;
+    colors.forEach((c, i) => (b.mats[i] as THREE.MeshBasicMaterial | undefined)?.color.set(c));
+    b.muzzle.material.color.set(colors[1]);
+    b.end.material.color.set(colors[2]);
     // bubbles shed along the beam and a pop where it lands
     for (let k = 1; k <= 5; k++) {
       const u = (k - Math.random()) / 5.2;
-      this.fx.emit(from.x + (to.x - from.x) * u, from.y + (to.y - from.y) * u, from.z + (to.z - from.z) * u, { n: 1, color: ['#8ff0ff', '#ff9fe6', '#ffffff'], speed: 0.8, up: 0.7, life: 0.36, size: 0.26 });
+      this.fx.emit(from.x + (to.x - from.x) * u, from.y + (to.y - from.y) * u, from.z + (to.z - from.z) * u, { n: 1, color: [colors[1], colors[2], '#ffffff'], speed: 0.8, up: 0.7, life: 0.36, size: 0.26 });
     }
-    this.fx.emit(to.x, to.y, to.z, { n: hit ? 14 : 7, color: hit ? ['#ffffff', '#ff4fc0', '#37e0ff'] : ['#37e0ff', '#ffffff'], speed: hit ? 4.5 : 2.6, up: 1.3, life: 0.3, size: hit ? 0.38 : 0.26 });
+    this.fx.emit(to.x, to.y, to.z, { n: hit ? 14 : 7, color: hit ? ['#ffffff', colors[2], colors[1]] : [colors[1], '#ffffff'], speed: hit ? 4.5 : 2.6, up: 1.3, life: 0.3, size: hit ? 0.38 : 0.26 });
   }
 
   private tickBeams(dt: number) {

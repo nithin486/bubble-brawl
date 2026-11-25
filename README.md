@@ -1,6 +1,8 @@
 # Bubble Brawl
 
-Grab it, steal it, bank it. A 3–8 player carry-and-bank party brawler for the web (PWA) and Google Play (TWA).
+A cartoon arena shooter for the web, CrazyGames and Google Play: 3-minute brawls, solo against bots or 2–6 friends.
+
+**Publishing and earning:** [`docs/RELEASE.md`](docs/RELEASE.md) · `npm run release:check`
 
 - Start here: [`CLAUDE.md`](CLAUDE.md)
 - Design: [`docs/GDD.md`](docs/GDD.md)
@@ -9,7 +11,7 @@ Grab it, steal it, bank it. A 3–8 player carry-and-bank party brawler for the 
 
 ## Play
 
-**Live: https://bubble-brawl.21351cm038.workers.dev** — tap *Play with friends* → *CREATE ROOM* → send the invite link.
+**Live: https://bubble-brawl.21351cm038.workers.dev** — tap *Play with friends* → *CREATE ROOM* → send the invite link. Rooms hold 2–6 real players, no bots.
 
 Hosting: the Cloudflare Worker in `deploy/worker.js` serves the built game from `site/` on this branch
 (via raw.githubusercontent.com, cached by Cloudflare for ~2 minutes). To publish a new version:
@@ -28,10 +30,12 @@ npm run dev      # http://localhost:5173  (also reachable from a phone on the sa
 
 ```bash
 npm test         # headless: plays full bot matches through the shared sim
-npm run build    # type-check + production build into dist/
+npm run build             # website + Android app build into dist/
+npm run build:crazygames  # CrazyGames upload into dist-crazygames/
+node tools/release-test.mjs   # shop, purchases, rooms, offline, CrazyGames (needs both builds)
 ```
 
-Debug URL params: `?fps` (FPS counter), `?q=low|medium|high` (force quality), `?autoplay` (a bot plays for you), `?speed=4` (fast-forward).
+Debug URL params (the test switches work on localhost only): `?fps` (FPS counter), `?q=low|medium|high` (force quality), `?autoplay` (a bot plays for you), `?speed=4` (fast-forward).
 
 Controls — desktop: WASD/arrows move · Space dash · J or left-click grab · K or right-click skill · Esc pause. Mobile: drag on the left half, buttons on the right.
 

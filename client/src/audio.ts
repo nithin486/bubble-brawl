@@ -7,6 +7,8 @@ export class Sfx {
   private master: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
   muted = false;
+  /** Silenced by an ad or by the platform, whatever the player's own setting. */
+  blocked = false;
   private lastPickup = 0;
   private pickupStreak = 0;
 
@@ -30,7 +32,7 @@ export class Sfx {
 
   private tone(freq: number, dur: number, opts: { type?: Wave; vol?: number; slide?: number; delay?: number; attack?: number } = {}) {
     const c = this.ctx;
-    if (!c || !this.master || this.muted) return;
+    if (!c || !this.master || this.muted || this.blocked) return;
     const t0 = c.currentTime + (opts.delay ?? 0);
     const o = c.createOscillator();
     const g = c.createGain();
@@ -48,7 +50,7 @@ export class Sfx {
 
   private noise(dur: number, opts: { vol?: number; freq?: number; q?: number; delay?: number; sweep?: number } = {}) {
     const c = this.ctx;
-    if (!c || !this.master || !this.noiseBuf || this.muted) return;
+    if (!c || !this.master || !this.noiseBuf || this.muted || this.blocked) return;
     const t0 = c.currentTime + (opts.delay ?? 0);
     const s = c.createBufferSource();
     s.buffer = this.noiseBuf;

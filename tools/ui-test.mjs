@@ -94,7 +94,7 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   check('map picker goes back', (await page.textContent('.mapcard b')) === maps[1]);
   await until(page, (n) => window.__bb.world.map.name === n, maps[1]);
 
-  check('friends button says SOON and is off', (await page.locator('.friends').isDisabled()) && /SOON/.test(await page.textContent('.friends')));
+  check('friends button is open', !(await page.locator('.friends').isDisabled()));
   await page.click('.set');
   await row('Aim speed').click();
   check('settings: aim speed cycles', (await saved(page)).aimSpeed === 'high');

@@ -82,7 +82,7 @@ export class SnapshotEncoder {
         r1(p.dashCd), r1(p.grabCd), r1(p.skillCd), r1(p.invuln), r1(p.stickyT), r2(p.bankT),
         r1(p.magnetT), r1(p.speedT), r1(p.shieldT), p.combo, p.isBot ? 1 : 0,
         p.stats.steals, p.stats.stolen, p.stats.falls, p.stats.bestBank, p.stats.banks,
-        p.hp, WEAPON_IDS.indexOf(p.weapon), p.ammo, r1(p.fireCd), r1(p.bubbleT), p.kos, r2(p.charge), r1(p.superT), r1(p.rageT),
+        p.hp, WEAPON_IDS.indexOf(p.weapon), p.ammo, r1(p.fireCd), r1(p.bubbleT), p.kos, r2(p.charge), r1(p.superT), r1(p.rageT), p.gone ? 1 : 0,
       ]),
       ca: w.players.filter((p) => p.cast).map((p) => [p.id, p.cast!.kind, r2(p.cast!.t), r2(p.cast!.total)]),
       cu,
@@ -158,6 +158,7 @@ export function applySnapshot(w: World, s: Snapshot, targets: { x: number; z: nu
       p.charge = a[34] as number;
       p.superT = a[35] as number;
       p.rageT = a[36] as number;
+      p.gone = !!a[37];
     }
     p.cast = null;
   });

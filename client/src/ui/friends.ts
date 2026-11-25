@@ -35,7 +35,7 @@ export class FriendsPanel {
     const x = el('button', 'fp-x', '✕');
     x.addEventListener('click', () => this.onLeave());
     this.box.append(x, el('h1', 'stroke', 'Play with friends'));
-    this.box.append(el('div', 'sub', 'Make a room, send the link on WhatsApp, play together. Bots fill empty seats.'));
+    this.box.append(el('div', 'sub', 'Make a room, send the invite to your friends and fight each other. No bots: 2 to 6 real players.'));
     const nameRow = el('label', 'fp-field', '<span>Your name</span>');
     const nameIn = el('input') as HTMLInputElement;
     nameIn.maxLength = 14;
@@ -69,7 +69,7 @@ export class FriendsPanel {
     this.box.insertBefore(el('div', 'fp-err', esc(text)), this.box.children[2]);
   }
 
-  lobby(code: string, link: string, members: Member[], isHost: boolean, mapName: string) {
+  lobby(code: string, link: string, members: Member[], isHost: boolean, mapName: string, externalShare: boolean) {
     this.box.innerHTML = '';
     const x = el('button', 'fp-x', '✕');
     x.title = 'Leave room';
@@ -87,7 +87,12 @@ export class FriendsPanel {
       }
     });
     share.append(copy);
-    if (navigator.share) {
+    if (externalShare) {
+      const wa = el('button', 'big-btn wa', 'WHATSAPP');
+      wa.addEventListener('click', () => window.open(`https://wa.me/?text=${encodeURIComponent(`Join my Bubble Brawl room ${code}! ${link}`)}`, '_blank', 'noopener'));
+      share.append(wa);
+    }
+    if (externalShare && navigator.share) {
       const sh = el('button', 'big-btn alt', 'SHARE');
       sh.addEventListener('click', () => navigator.share({ title: 'Bubble Brawl', text: `Join my Bubble Brawl room ${code}!`, url: link }).catch(() => {}));
       share.append(sh);
@@ -99,14 +104,16 @@ export class FriendsPanel {
       list.append(
         m
           ? el('div', 'fp-seat', `<div class="face" style="background-image:url(${this.portraits.get(m.hero)})"></div><b>${esc(m.name)}</b>${i === 0 ? '<em>HOST</em>' : ''}`)
-          : el('div', 'fp-seat empty', '<div class="face"></div><b>Bot</b><span>waiting…</span>'),
+          : el('div', 'fp-seat empty', '<div class="face"></div><b>Empty</b><span>invite a friend</span>'),
       );
     }
     this.box.append(list);
-    this.box.append(el('div', 'sub', `Map: <b>${esc(mapName)}</b> · ${members.length} player${members.length === 1 ? '' : 's'} + ${MAX_HUMANS - members.length} bots`));
+    this.box.append(el('div', 'sub', `Map: <b>${esc(mapName)}</b> · ${members.length} of ${MAX_HUMANS} players · no bots`));
     const row = el('div', 'btn-row');
     if (isHost) {
-      const go = el('button', 'big-btn', 'START MATCH');
+      const alone = members.length < 2;
+      const go = el('button', 'big-btn start', alone ? 'WAITING FOR A FRIEND…' : `START · ${members.length} PLAYERS`) as HTMLButtonElement;
+      go.disabled = alone;
       go.addEventListener('click', () => this.onStart());
       row.append(go);
     } else row.append(el('div', 'fp-wait', 'Waiting for the host to start…'));

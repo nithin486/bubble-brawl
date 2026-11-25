@@ -1,0 +1,7 @@
+{
+  "packageId": "in.nithin486.bubblebrawl",
+  "packageIdConfirmed": false,
+  "appName": "Bubble Brawl",
+  "startUrl": "/?source=play",
+  "note": "The package id can never change after the first upload. Set packageIdConfirmed to true once you are sure."
+}

@@ -20,6 +20,10 @@ import { BankView } from './render/bank.ts';
 import { Fx, makeGlowTexture } from './render/fx.ts';
 import { CameraRig, CAM_PRESETS, type CamPreset, type PlayerCam } from './camera.ts';
 import { InputManager, haptics } from './input.ts';
+import { platform, type AdHooks, type Product } from './platform/index.ts';
+import { RELEASE } from './platform/release.ts';
+import { ITEMS, adCoinsLeft, buyOrWear, countAd, item, redeem, cleanLook, type Look } from './cosmetics.ts';
+import { Shop, type ShopState } from './ui/shop.ts';
 import { Hud, PLAYER_COLORS } from './ui/hud.ts';
 import { Sfx } from './audio.ts';
 import { track } from './analytics.ts';
@@ -73,10 +77,10 @@ const BOT_NAMES = ['Chintu', 'Golu', 'Mango', 'Rocket', 'Bunty', 'Zara', 'Pixel'
 let LOCAL = 0;
 // debug: ?autoplay lets a bot drive the local hero; ?speed=N fast-forwards the sim
 const PARAMS = new URLSearchParams(location.search);
-const AUTOPLAY = PARAMS.has('autoplay');
-const SPEED = Number(PARAMS.get('speed')) || 1;
-/** Friends rooms are switched off for this release (the button says "soon"). */
-const FRIENDS_ON = new URLSearchParams(location.search).has('friends');
+/** Test switches (?play ?autoplay ?debug ?speed) only work on a developer's machine: players can't use them to cheat. */
+const DEV = import.meta.env.DEV || ['localhost', '127.0.0.1'].includes(location.hostname);
+const AUTOPLAY = DEV && PARAMS.has('autoplay');
+const SPEED = (DEV && Number(PARAMS.get('speed'))) || 1;
 
 type TutStep = 'move' | 'coins' | 'bank' | 'done';
 
@@ -234,7 +238,7 @@ export class Game {
       this.mapId = forced as MapId;
       this.profile.map = forced;
     }
-    if (AUTOPLAY || PARAMS.has('play')) {
+    if (AUTOPLAY || (DEV && PARAMS.has('play'))) {
       this.mode = 'match';
       const begin = () => {
         this.startMatch(profile.hero);
@@ -244,11 +248,26 @@ export class Game {
       };
       void this.ensureMap(this.mapId).then(begin);
     } else this.goHome();
-    // invite link: straight into the friend's room
-    const invite = PARAMS.get('room');
-    if (invite && !AUTOPLAY && FRIENDS_ON) setTimeout(() => this.openFriends(invite.toUpperCase().slice(0, 5)), 300);
+    // opened from an invite: straight into the friend's room
+    const invite = platform.launchRoom();
+    if (!AUTOPLAY && this.mode === 'home') {
+      if (invite) setTimeout(() => this.openFriends(invite), 300);
+      else if (platform.wantsRoom()) setTimeout(() => this.openFriends('', true), 300);
+    }
+    platform.onJoinRoom((code) => {
+      if (this.room?.code === code) return;
+      this.leaveRoom();
+      this.friends?.close();
+      this.friends = null;
+      this.hud?.closePanel();
+      this.goHome();
+      this.openFriends(code);
+    });
+    platform.onMuted(() => (this.sfx.blocked = this.adOpen || platform.muted()));
+    this.sfx.blocked = platform.muted();
+    void this.settlePurchases();
     requestAnimationFrame(this.frame);
-    if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
+    if ((DEV && PARAMS.has('debug')) || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
   }
 
   /**
@@ -335,7 +354,7 @@ export class Game {
       xpFrac: lv.frac,
       hero: this.profile.hero,
       matches: this.profile.matches,
-      friends: FRIENDS_ON,
+      friends: true,
       xpLeft: lv.left,
       xpNeed: lv.need,
       missions: this.profile.missions,
@@ -392,6 +411,7 @@ export class Game {
     };
     this.home.onHero(this.home.hero, false);
     this.home.onSettings = () => this.setPaused(true);
+    this.home.onShop = () => this.openShop();
     this.home.onFriends = () => {
       this.sfx.click();
       this.openFriends();
@@ -477,6 +497,14 @@ export class Game {
     this.targets = this.world.players.map((p) => ({ x: p.x, z: p.z, y: 0 }));
     this.sfx.muted = attract || !this.profile.sound;
 
+    // looks: yours, your friends', and a few bots showing off what the shop sells
+    this.looks = this.world.players.map((p, i) => {
+      if (net) return i === LOCAL ? this.profile.look : cleanLook(net.start.seats[i]?.look);
+      if (i === LOCAL) return this.profile.look;
+      const one = (slot: 'laser' | 'trail' | 'ko') => rng.pick(ITEMS.filter((x) => x.slot === slot)).id;
+      return rng.next() < 0.35 ? { laser: one('laser'), trail: one('trail'), ko: one('ko') } : cleanLook(null);
+    });
+
     // views
     for (const h of this.heroes) release(h.root);
     this.heroes = this.world.players.map((p) => {
@@ -547,8 +575,9 @@ export class Game {
     if (dt > 0.1) dt = 0.1;
     this.time += dt;
     this.monitorFps(dt);
+    platform.gameplay(this.mode === 'match' && !this.paused && !this.adOpen && this.world.phase === 'playing');
     // a shared match never pauses (the menu still opens, the game keeps running)
-    if (this.paused && !this.room) {
+    if ((this.paused && !this.room) || this.adOpen) {
       this.stage.render();
       this.showcase.render(this.stage.renderer);
       return;
@@ -639,6 +668,7 @@ export class Game {
     for (const h of this.heroes) {
       h.view = this.visPos(h.player.id);
       if (h.update(adt, this.time, frozen)) this.fx.dust(h.player.x, h.player.z);
+      if (h.player.gone) h.root.visible = false;
     }
     this.powers?.update(this.time);
     if (this.markers) {
@@ -663,7 +693,9 @@ export class Game {
     if (this.trailT <= 0) {
       this.trailT = 0.05;
       for (const p of this.world.players) {
-        if (p.state === 'falling') continue;
+        if (p.state === 'falling' || p.gone) continue;
+        const trail = item(this.looks[p.id]?.trail ?? '')?.colors;
+        if (trail?.length && Math.hypot(p.vx, p.vz) > 2) this.fx.emit(p.x, p.y + 0.35, p.z, { n: 2, color: trail, speed: 0.4, up: 0.6, life: 0.55, size: 0.36, spread: 0.5 });
         if (p.superT > 0) this.fx.emit(p.x, p.y + 0.9, p.z, { n: 3, color: [HEROES[p.hero].color, '#ffffff'], speed: 1.2, up: 1.6, life: 0.45, size: 0.45, spread: 0.8 });
         if (p.rageT > 0) this.fx.emit(p.x, p.y + 1.2, p.z, { n: 1, color: ['#ff4a6e', '#ffd23f'], speed: 0.8, up: 1.8, life: 0.45, size: 0.4, spread: 0.7 });
         if (p.speedT > 0 && Math.hypot(p.vx, p.vz) > 2) this.fx.emit(p.x, 0.5, p.z, { n: 2, color: ['#ffd23f', '#fff6b0'], speed: 0.3, up: 0.5, life: 0.4, size: 0.45 });
@@ -822,7 +854,7 @@ export class Game {
     for (const e of s.ev) this.onEvent(e);
   }
 
-  private openFriends(joinCode = '') {
+  private openFriends(joinCode = '', createNow = false) {
     this.friends?.close();
     const fp = new FriendsPanel(this.portraits);
     this.friends = fp;
@@ -831,11 +863,12 @@ export class Game {
       this.profile.name = `Player${Math.floor(100 + Math.random() * 900)}`;
       saveProfile(this.profile);
     }
-    const me = () => ({ name: this.profile.name, hero: this.profile.hero });
+    const me = () => ({ name: this.profile.name, hero: this.profile.hero, look: this.profile.look });
     const lobby = () => {
       const r = this.room;
       if (!r || this.mode === 'match') return;
-      fp.lobby(r.code, r.link(), r.members, r.isHost, MAPS[this.mapId].name);
+      platform.roomOpen(r.code, r.members.length < MAX_HUMANS);
+      fp.lobby(r.code, platform.roomLink(r.code, r.link()), r.members, r.isHost, MAPS[this.mapId].name, platform.externalShare);
     };
     const wire = (r: Room) => {
       this.room = r;
@@ -879,21 +912,32 @@ export class Game {
       this.friends = null;
       this.home?.show(true);
     };
+    // back from a match: the room is still there
+    if (this.room) return wire(this.room);
     fp.menu(this.profile.name, joinCode);
     if (joinCode) fp.onJoin(joinCode, this.profile.name);
+    else if (createNow) fp.onCreate(this.profile.name);
   }
 
-  /** Host: fill empty seats with bots and start everyone's match. */
+  /** Host: start the match with the people in the room (no bots). */
   private hostStart() {
     const r = this.room;
     if (!r?.isHost) return;
+    if (r.members.length < 2) {
+      // everyone else has left: back to the lobby to invite someone
+      this.showcase.clear();
+      this.hud.closePanel();
+      this.goHome();
+      this.openFriends();
+      return;
+    }
     const rng = new Rng((Math.random() * 1e9) | 0);
-    const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
-    const seats: StartMsg['seats'] = r.members.slice(0, MAX_HUMANS).map((m) => ({ name: m.name, hero: m.hero, isBot: false, peer: m.peer }));
-    for (let i = seats.length; i < TUNING.match.playersPerMatch; i++) seats.push({ name: names[i], hero: HERO_IDS[i % HERO_IDS.length], isBot: true, peer: '' });
+    const seats: StartMsg['seats'] = r.members.slice(0, MAX_HUMANS).map((m) => ({ name: m.name, hero: m.hero, isBot: false, peer: m.peer, look: m.look }));
     seats[0].hero = this.profile.hero;
+    seats[0].look = this.profile.look;
     const start: StartMsg = { map: this.mapId, seed: rng.int(1, 1e9), seats };
     r.start(start);
+    platform.roomOpen(r.code, false);
     track('room_start', { humans: r.members.length });
     this.beginNet(start, 0);
   }
@@ -911,14 +955,17 @@ export class Game {
   }
 
   private peerLeft(peer: string) {
-    if (this.mode !== 'match') return;
+    if (this.mode !== 'match' || !this.room?.isHost) return;
     const seat = this.seatPeers.indexOf(peer);
-    if (seat < 0) return;
+    if (seat < 0 || this.world.phase === 'matchEnd') return;
     this.seatPeers[seat] = '';
     const p = this.world.players[seat];
-    p.isBot = true;
-    this.brains.push(new BotBrain(seat, new Rng(seat * 31 + 7), LOCAL));
-    this.hud.feed(`<b>${p.name}</b> left — a bot took over`);
+    this.world.remove(seat);
+    this.hud.feed(`<b>${p.name}</b> left the match`);
+    if (this.world.players.filter((q) => !q.gone).length < 2) {
+      this.hud.banner('Everyone else left', 'red', true);
+      this.world.roundTime = TUNING.match.roundSeconds;
+    }
   }
 
   private roomClosed(why: string) {
@@ -931,6 +978,7 @@ export class Game {
   }
 
   private leaveRoom() {
+    if (this.room) platform.roomLeft();
     this.room?.leave();
     this.room = null;
   }
@@ -1120,7 +1168,7 @@ export class Game {
         const H = hv(e.p);
         const from = H.muzzle(new THREE.Vector3()) ?? new THREE.Vector3(w.players[e.p].x, w.players[e.p].y + 1.05, w.players[e.p].z);
         const to = new THREE.Vector3(e.tx, e.ty, e.tz);
-        this.weapons?.laser(from, to, e.hit >= 0);
+        this.weapons?.laser(from, to, e.hit >= 0, item(this.looks[e.p]?.laser ?? '')?.colors);
         if (e.p === LOCAL) {
           this.hud.shotKick();
           if (e.hit >= 0) this.hud.hitMarker(false);
@@ -1256,6 +1304,11 @@ export class Game {
       case 'ko': {
         const P = w.players[e.victim];
         if (e.by === LOCAL) this.hud.hitMarker(true);
+        const pop = e.by >= 0 ? item(this.looks[e.by]?.ko ?? '')?.colors : undefined;
+        if (pop?.length) {
+          this.fx.emit(e.x, 1.4, e.z, { n: 60, color: pop, speed: 8, up: 7, life: 0.9, size: 0.5, gravity: 7 });
+          this.fx.ring(e.x, e.z, pop[0], 3.4, 0.55, 0.5);
+        }
         this.fx.emit(e.x, 1.2, e.z, { n: 30, color: ['#ffffff', '#b38cff', '#bff8ff'], speed: 6, up: 3, life: 0.5, size: 0.5 });
         this.fx.ring(e.x, e.z, '#b38cff', 2.6, 0.4, 0.4);
         if (e.by === LOCAL) {
@@ -1644,6 +1697,7 @@ export class Game {
       this.sfx.win();
     }
     if (this.mode === 'home') return;
+    if (rank === 1) platform.celebrate();
     this.profile.matches++;
     const rounds = TUNING.match.rounds;
     const coinsWon = 20 + Math.round(me.bankedTotal / 2) + (rank === 1 ? 50 : 0);
@@ -1691,8 +1745,20 @@ export class Game {
         levelUp: after.level > before.level,
         xpFrac: after.frac,
         waitForHost: !!this.room && !this.room.isHost,
-        onRematch: () => {
+        double: platform.canReward()
+          ? async () => {
+              if (!(await this.withAd((h) => platform.rewarded('double_coins', h)))) return false;
+              this.profile.coins += coinsWon;
+              saveProfile(this.profile);
+              track('ad_reward', { kind: 'double', coins: coinsWon });
+              return true;
+            }
+          : null,
+        onRematch: async () => {
+          if (this.adBusy) return;
           this.sfx.click();
+          // a short break between solo matches (never before a newcomer's second match, never mid-friends-session)
+          if (!this.room && this.profile.matches >= 2) await this.withAd((h) => platform.breakAd('rematch', h));
           this.fillScreen();
           this.captureMouse();
           track('rematch_click', { hero: this.world.players[LOCAL].hero, room: !!this.room });
@@ -1813,6 +1879,11 @@ export class Game {
     return { ...i, grab: i.grab || auto, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist, aimY: this.aimInfo?.y };
   }
   private lastStickFwd = 0;
+  /** What each seat wears. */
+  private looks: Look[] = [];
+  private adOpen = false;
+  private adBusy = false;
+  private shop: Shop | null = null;
   private superTold = false;
 
   /** Phones: should the held weapon (or fist) attack by itself right now? */
@@ -1976,6 +2047,109 @@ export class Game {
     }
   }
 
+  /** Run something that may show an ad: the game stands still and silent, and nothing can be clicked meanwhile. */
+  private async withAd<T>(run: (h: AdHooks) => Promise<T>): Promise<T | undefined> {
+    if (this.adBusy) return undefined;
+    this.adBusy = true;
+    const cover = document.createElement('div');
+    cover.className = 'ad-cover';
+    document.body.append(cover);
+    try {
+      return await run({
+        start: () => {
+          this.adOpen = true;
+          this.sfx.blocked = true;
+          this.input.releaseMouse();
+        },
+        end: () => {
+          this.adOpen = false;
+          this.sfx.blocked = platform.muted();
+        },
+      });
+    } finally {
+      cover.remove();
+      this.adOpen = this.adBusy = false;
+      this.sfx.blocked = platform.muted();
+    }
+  }
+
+  private today() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  private openShop() {
+    if (this.shop) return;
+    this.sfx.unlock();
+    this.sfx.click();
+    track('shop_open', { coins: this.profile.coins });
+    let products: Product[] = [];
+    const state = (): ShopState => ({
+      wallet: this.profile,
+      products,
+      ads: platform.canReward() ? { left: adCoinsLeft(this.profile, this.today(), RELEASE.adCoinsPerDay), coins: RELEASE.adCoins } : null,
+    });
+    const shop = (this.shop = new Shop(state()));
+    this.home?.show(false);
+    const refresh = (note = '') => {
+      saveProfile(this.profile);
+      this.home?.setCoins(this.profile.coins);
+      if (this.shop === shop) shop.update(state(), note);
+    };
+    shop.onItem = (id) => {
+      const had = this.profile.coins;
+      if (!buyOrWear(this.profile, id)) return refresh(`You need ${item(id)!.price - this.profile.coins} more coins`);
+      if (had !== this.profile.coins) {
+        track('shop_buy', { id });
+        this.sfx.power();
+      } else this.sfx.click();
+      refresh();
+    };
+    shop.onAd = async () => {
+      if (adCoinsLeft(this.profile, this.today(), RELEASE.adCoinsPerDay) <= 0) return;
+      if (!(await this.withAd((h) => platform.rewarded('shop_coins', h)))) return refresh('No video available right now');
+      countAd(this.profile, this.today());
+      this.profile.coins += RELEASE.adCoins;
+      track('ad_reward', { kind: 'shop', coins: RELEASE.adCoins });
+      refresh();
+    };
+    shop.onPack = async (id) => {
+      const bought = await platform.buy(id);
+      if (!bought) return refresh('Nothing was charged');
+      const done = await this.handOut(bought.id, bought.token);
+      refresh(done ? '' : 'Payment received. Your coins arrive as soon as it is confirmed.');
+    };
+    shop.onClose = () => {
+      this.sfx.click();
+      shop.close();
+      this.shop = null;
+      this.home?.show(true);
+    };
+    void platform.products().then((p) => {
+      products = p;
+      if (this.shop === shop) shop.update(state());
+    });
+  }
+
+  /** Confirm a paid pack, give its coins (once), save, then tell the store. False: left for the next start. */
+  private async handOut(id: string, token: string) {
+    const pack = RELEASE.coinPacks.find((p) => p.id === id);
+    if (!pack) return false;
+    // already handed out here: only the store still needs telling
+    if (!this.profile.redeemed.includes(token) && !(await platform.confirm(id, token))) return false;
+    if (redeem(this.profile, pack.coins, token)) {
+      saveProfile(this.profile);
+      track('iap', { id });
+      this.sfx.crown();
+    }
+    await platform.consume(token).catch((e) => console.warn('store did not confirm yet', e));
+    return true;
+  }
+
+  private async settlePurchases() {
+    for (const p of await platform.pending()) await this.handOut(p.id, p.token);
+    this.home?.setCoins(this.profile.coins);
+  }
+
   private applyPhonePrefs() {
     document.body.dataset.buttons = this.profile.buttons;
     haptics.on = this.profile.vibrate;
@@ -1983,7 +2157,7 @@ export class Game {
 
   /** Phones: fill the screen and hold landscape once the player starts a match (needs their tap). */
   private fillScreen() {
-    if (!this.touch || document.fullscreenElement || navigator.webdriver) return;
+    if (!platform.canFullscreen || !this.touch || document.fullscreenElement || navigator.webdriver) return;
     void document.documentElement
       .requestFullscreen?.({ navigationUI: 'hide' })
       .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))

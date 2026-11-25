@@ -137,6 +137,7 @@ export class World {
     const n = this.players.length;
     const startA = this.rng.next() * Math.PI * 2;
     this.players.forEach((pl, i) => {
+      if (pl.gone) return;
       const a = startA + (i / n) * Math.PI * 2;
       resetForRound(pl);
       void a;
@@ -226,7 +227,7 @@ export class World {
 
   ranking() {
     return [...this.players]
-      .sort((a, b) => b.bankedTotal - a.bankedTotal || b.roundsWon - a.roundsWon || a.id - b.id)
+      .sort((a, b) => Number(a.gone) - Number(b.gone) || b.bankedTotal - a.bankedTotal || b.roundsWon - a.roundsWon || a.id - b.id)
       .map((p) => p.id);
   }
 
@@ -313,6 +314,7 @@ export class World {
   }
 
   private tickPlayer(p: Player, inp: Input, dt: number) {
+    if (p.gone) return;
     p.dashCd = Math.max(0, p.dashCd - dt);
     p.grabCd = Math.max(0, p.grabCd - dt);
     p.skillCd = Math.max(0, p.skillCd - dt);
@@ -1105,6 +1107,22 @@ export class World {
   }
 
   /** Soft body separation so heroes don't overlap. */
+  /** A friend left: take them off the map for good (their score stays on the board). */
+  remove(id: number) {
+    const p = this.players[id];
+    if (!p || p.gone) return;
+    p.gone = true;
+    p.x = p.z = 1000;
+    p.y = p.vx = p.vz = p.kx = p.kz = p.vy = 0;
+    p.state = 'normal';
+    p.stateT = 0;
+    p.cast = null;
+    p.weapon = null;
+    p.ammo = 0;
+    p.superT = p.rageT = p.speedT = p.shieldT = p.magnetT = 0;
+    p.carried = 0;
+  }
+
   private separate() {
     const min = T.hero.personalSpace;
     const ps = this.players;
@@ -1301,7 +1319,7 @@ export class World {
 
 export function targetable(o: Player) {
   // (a Shadow Rush hides you from aim assist and from bots)
-  return o.state !== 'falling' && o.state !== 'launched' && o.invuln <= 0 && !(o.superT > 0 && o.hero === 'pinch');
+  return !o.gone && o.state !== 'falling' && o.state !== 'launched' && o.invuln <= 0 && !(o.superT > 0 && o.hero === 'pinch');
 }
 
 function newPlayer(id: number, s: PlayerSetup): Player {
@@ -1352,6 +1370,7 @@ function newPlayer(id: number, s: PlayerSetup): Player {
     lastHitBy: -1,
     lastHitT: 0,
     kos: 0,
+    gone: false,
     charge: 0,
     superT: 0,
     rageT: 0,

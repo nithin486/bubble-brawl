@@ -1,7 +1,8 @@
 // A friends room: lobby list, match start, inputs up, snapshots down.
-import type { HeroId } from '../../../shared/config/heroes.ts';
+import { HERO_IDS, type HeroId } from '../../../shared/config/heroes.ts';
 import type { MapId } from '../../../shared/config/maps.ts';
 import type { Input } from '../../../shared/sim/types.ts';
+import { cleanLook, type Look } from '../cosmetics.ts';
 import type { Snapshot } from '../../../shared/sim/snapshot.ts';
 import { localHost, localJoin, makeCode, peerHost, peerJoin, type Msg, type Transport } from './transport.ts';
 
@@ -9,13 +10,14 @@ export interface Member {
   peer: string;
   name: string;
   hero: HeroId;
+  look: Look;
 }
 
 export interface StartMsg {
   map: MapId;
   seed: number;
   /** One entry per seat; humans first, then bots. */
-  seats: { name: string; hero: HeroId; isBot: boolean; peer: string }[];
+  seats: { name: string; hero: HeroId; isBot: boolean; peer: string; look?: Look }[];
 }
 
 export const MAX_HUMANS = 6;
@@ -42,11 +44,11 @@ export class Room {
     return this.t.isHost;
   }
 
-  static async create(me: { name: string; hero: HeroId }) {
+  static async create(me: { name: string; hero: HeroId; look: Look }) {
     const code = makeCode();
     const t = useLocal() ? await localHost(code) : await peerHost(code);
     const room = new Room(code, t);
-    room.members = [{ peer: t.id, name: me.name, hero: me.hero }];
+    room.members = [{ peer: t.id, name: me.name, hero: me.hero, look: me.look }];
     t.onMessage = (from, msg) => room.hostMessage(from, msg);
     t.onLeave = (peer) => {
       room.members = room.members.filter((m) => m.peer !== peer);
@@ -57,12 +59,12 @@ export class Room {
     return room;
   }
 
-  static async join(code: string, me: { name: string; hero: HeroId }) {
+  static async join(code: string, me: { name: string; hero: HeroId; look: Look }) {
     const t = useLocal() ? await localJoin(code) : await peerJoin(code);
     const room = new Room(code, t);
     t.onMessage = (_from, msg) => room.clientMessage(msg);
     t.onLeave = () => room.onClosed('The host left the room');
-    t.broadcast({ t: 'hello', name: me.name, hero: me.hero });
+    t.broadcast({ t: 'hello', name: me.name, hero: me.hero, look: me.look });
     return room;
   }
 
@@ -70,8 +72,10 @@ export class Room {
 
   private hostMessage(from: string, msg: Msg) {
     if (msg.t === 'hello') {
-      if (this.members.length >= MAX_HUMANS || this.members.some((m) => m.peer === from)) return;
-      this.members.push({ peer: from, name: String(msg.name).slice(0, 14) || 'Friend', hero: msg.hero as HeroId });
+      if (this.members.some((m) => m.peer === from)) return;
+      if (this.members.length >= MAX_HUMANS) return this.t.send(from, { t: 'full' });
+      const hero = HERO_IDS.includes(msg.hero as HeroId) ? (msg.hero as HeroId) : HERO_IDS[0]; // messages are not trusted
+      this.members.push({ peer: from, name: String(msg.name ?? '').slice(0, 14) || 'Friend', hero, look: cleanLook(msg.look) });
       this.sendLobby();
     } else if (msg.t === 'in') {
       const prev = this.inputs.get(from);
@@ -89,7 +93,7 @@ export class Room {
       });
     } else if (msg.t === 'hero') {
       const m = this.members.find((x) => x.peer === from);
-      if (m) m.hero = msg.hero as HeroId;
+      if (m && HERO_IDS.includes(msg.hero as HeroId)) m.hero = msg.hero as HeroId;
       this.sendLobby();
     }
   }
@@ -123,7 +127,8 @@ export class Room {
     if (msg.t === 'lobby') {
       this.members = msg.members as Member[];
       this.onLobby(this.members);
-    } else if (msg.t === 'start') this.onStart(msg as unknown as StartMsg, Number(msg.you));
+    } else if (msg.t === 'full') this.onClosed('That room is full (6 players)');
+    else if (msg.t === 'start') this.onStart(msg as unknown as StartMsg, Number(msg.you));
     else if (msg.t === 'snap') this.onSnap(msg.s as Snapshot);
   }
 

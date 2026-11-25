@@ -8,9 +8,12 @@ import { loadProfile, saveProfile } from './save.ts';
 import { track } from './analytics.ts';
 import { DEFAULT_MAP } from './progress.ts';
 import { HERO_IDS } from '../../shared/config/heroes.ts';
+import { platform } from './platform/index.ts';
 
 async function boot() {
+  await platform.init(); // first: saved progress may live with the platform
   const profile = loadProfile();
+  if (!profile.name && platform.username()) profile.name = platform.username().slice(0, 14);
   profile.lastSeen = new Date().toISOString().slice(0, 10);
   saveProfile(profile);
   track('session_start', { matches: profile.matches, first_seen: profile.firstSeen, returning: profile.firstSeen !== profile.lastSeen });
@@ -40,8 +43,31 @@ async function boot() {
   const boot = document.getElementById('boot')!;
   boot.style.opacity = '0';
   setTimeout(() => boot.remove(), 400);
+  platform.loadingDone();
   track('ready', { ms_since_load: Math.round(performance.now()) });
 }
+
+// offline play and instant repeat visits for the website and the Android app
+if (import.meta.env.PROD && import.meta.env.VITE_PLATFORM !== 'crazygames' && 'serviceWorker' in navigator) {
+  // a newer version took over while this one was still loading: start again, so old and new files never mix
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => document.getElementById('boot') && location.reload(), { once: true });
+  }
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch((e) => console.warn('offline mode unavailable', e)));
+}
+// a phone that runs out of graphics memory drops the 3D view: say so and offer a restart instead of a frozen screen
+window.addEventListener(
+  'webglcontextlost',
+  (e) => {
+    e.preventDefault();
+    const d = document.createElement('div');
+    d.className = 'crashed';
+    d.innerHTML = '<div><b>The graphics stopped</b><span>Your device ran low on memory.</span><button>RESTART</button></div>';
+    d.querySelector('button')!.addEventListener('click', () => location.reload());
+    document.body.append(d);
+  },
+  true,
+);
 
 boot().catch((e) => {
   console.error(e);

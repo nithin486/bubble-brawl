@@ -511,6 +511,7 @@ export class Brawl {
    * (false: shielded, invulnerable, or it was a bubble pop).
    */
   damage(o: Player, by: Player | null, kind: HitKind, n: number, nx: number, nz: number, knock: number): boolean {
+    if (o.gone) return false;
     const w = this.w;
     if (o.state === 'bubble') {
       if (by && by.id !== o.id) this.pop(o, by);

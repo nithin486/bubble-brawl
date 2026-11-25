@@ -429,6 +429,7 @@ export class Hud {
       const r = this.rows[p.id];
       r.style.order = String(i);
       r.classList.toggle('far', i >= 3 && p.id !== localId);
+      r.classList.toggle('gone', p.gone);
       const rk = r.querySelector('.rk')!;
       if (rk.textContent !== String(i + 1)) rk.textContent = String(i + 1);
       const v = world.finale && playing && p.id !== localId ? '???' : String(p.bankedTotal + p.bankedRound);
@@ -555,7 +556,7 @@ export class Hud {
       const box = { x: sx - 40, y: sy - 34, w: 80, h: 34 };
       const overlaps = placed.some((q) => box.x < q.x + q.w && box.x + box.w > q.x && box.y < q.y + q.h && box.y + box.h > q.y);
       const important = prio(p) >= 200;
-      const vis = p.state !== 'falling' && this.v.z < 1 && (!overlaps || p.id === localId);
+      const vis = !p.gone && p.state !== 'falling' && this.v.z < 1 && (!overlaps || p.id === localId);
       if (vis) placed.push(box);
       const opacity = vis ? '1' : '0';
       if (t.root.style.opacity !== opacity) t.root.style.opacity = opacity;
@@ -908,6 +909,8 @@ export class Hud {
       levelUp: boolean;
       xpFrac: number;
       waitForHost?: boolean;
+      /** Watch a video to double the coins (null where there are no ads). */
+      double?: (() => Promise<boolean>) | null;
       onRematch: () => void;
       onHome: () => void;
     },
@@ -936,6 +939,17 @@ export class Hud {
     rw.innerHTML = `<div class="rw-coins stroke"><i class="coin-ico"></i>+${opts.coinsWon}</div>
       <div class="rw-xp"><span class="lv">${opts.level}</span><span class="bar"><i style="width:${Math.round(opts.xpFrac * 100)}%"></i></span><b class="stroke">+${opts.xpWon} XP</b></div>`;
     p.append(rw);
+    if (opts.double) {
+      const d = el('button', 'big-btn alt tap double', `▶ DOUBLE COINS`) as HTMLButtonElement;
+      d.addEventListener('click', async () => {
+        d.disabled = true;
+        if (await opts.double!()) {
+          rw.querySelector('.rw-coins')!.innerHTML = `<i class="coin-ico"></i>+${opts.coinsWon * 2}`;
+          d.textContent = 'DOUBLED ✓';
+        } else d.textContent = 'NO VIDEO RIGHT NOW';
+      });
+      rw.append(d);
+    }
     for (const m of opts.missions) p.append(el('div', 'mdone', `<span>MISSION COMPLETE</span><b>${m.text}</b><em>+${m.xp} XP</em>`));
     if (opts.levelUp) p.append(el('div', 'unlock stroke', `LEVEL UP! You are level ${opts.level}`));
     for (const u of opts.unlocks) p.append(el('div', 'unlock stroke', `<img src="${u.img}" alt=""> UNLOCKED: ${u.name.toUpperCase()}`));
@@ -960,7 +974,7 @@ export class Hud {
       v.prepend(el('div', 'confetti', Array.from({ length: 24 }, (_, i) => `<i style="left:${(i * 41) % 100}%;background:${colors[i % 5]};animation-delay:-${((i * 7) % 32) / 10}s"></i>`).join('')));
     }
     this.root.classList.add('menu');
-    re.focus();
+    re.focus({ preventScroll: true }); // your place and score stay in view
     const key = (e: KeyboardEvent) => {
       if (e.code === 'Enter' && !opts.waitForHost) {
         window.removeEventListener('keydown', key);
@@ -976,6 +990,7 @@ export class Hud {
     const p = el('div', 'panel menu-panel credits');
     p.append(el('h1', 'stroke', 'Credits'));
     p.append(el('div', 'cr', CREDITS_HTML));
+    p.append(el('div', 'cr', '<a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a>'));
     const row = el('div', 'btn-row');
     const b = el('button', 'big-btn tap', 'BACK');
     b.addEventListener('click', back);

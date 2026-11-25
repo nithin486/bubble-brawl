@@ -2,6 +2,8 @@
 declare const process: { argv: string[]; exit(code: number): never };
 // Run: node tools/weapons-test.ts   (also part of `npm test`)
 import { World, type MapId } from '../shared/sim/index.ts';
+import { targetable } from '../shared/sim/world.ts';
+import { DEFAULT_LOOK, adCoinsLeft, buyOrWear, cleanLook, countAd, redeem } from '../client/src/cosmetics.ts';
 import { TUNING } from '../shared/config/tuning.ts';
 import type { Player, WeaponKind } from '../shared/sim/types.ts';
 
@@ -166,6 +168,41 @@ const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
     streaks += w.events.filter((e) => e.t === 'streak').length;
   }
   check('three KOs in a row pay a streak reward', streaks === 1 && a.streak === 3);
+}
+
+// ------------------------------------------------------------------ a friend leaves the room
+{
+  const w = arena();
+  const [a, b, c] = w.players;
+  park(w, a, b, c);
+  place(a, BX, BZ, Math.PI / 2); place(b, BX + 3, BZ); place(c, BX, BZ + 6);
+  b.bankedTotal = 99;
+  w.remove(b.id);
+  check('a leaver is out of the fight', b.gone && !targetable(b) && Math.hypot(b.x - a.x, b.z - a.z) > 500);
+  const before = b.hp;
+  w.brawl.damage(b, a, 'rocket', 1, 1, 0, 0);
+  a.charge = 1;
+  run(w, 3);
+  check('a leaver is left alone', b.hp === before, `${before} -> ${b.hp}`);
+  check('a leaver ranks last whatever their score', w.ranking().at(-1) === b.id);
+  w.roundTime = TUNING.match.roundSeconds;
+  let ended = false;
+  for (let i = 0; i < 10 / DT && !ended; i++) {
+    w.tick(DT, w.players.map(() => noInput));
+    ended = w.events.some((e) => e.t === 'matchEnd');
+  }
+  check('the match still ends normally', ended && b.gone);
+}
+
+// ------------------------------------------------------------------ shop and purchases
+{
+  const wallet = { coins: 200, owned: [] as string[], look: { ...DEFAULT_LOOK }, redeemed: [] as string[], adDay: '', adCount: 0 };
+  check('an item too dear is refused', !buyOrWear(wallet, 'laser_gold') && wallet.coins === 200 && wallet.look.laser === 'laser_classic');
+  check('buying takes the coins once and wears it', buyOrWear(wallet, 'laser_lime') && wallet.coins === 50 && wallet.look.laser === 'laser_lime' && buyOrWear(wallet, 'laser_classic') && buyOrWear(wallet, 'laser_lime') && wallet.coins === 50);
+  check('a paid pack is handed out exactly once', redeem(wallet, 500, 'tok1') && !redeem(wallet, 500, 'tok1') && wallet.coins === 550);
+  check('looks from other players are cleaned', cleanLook({ laser: 'ko_gold', trail: 'nonsense', ko: 'ko_gold' }).laser === 'laser_classic' && cleanLook({ ko: 'ko_gold' }).ko === 'ko_gold' && cleanLook(null).trail === 'trail_none');
+  for (let i = 0; i < 5; i++) countAd(wallet, '2026-11-25');
+  check('videos for coins are limited per day', adCoinsLeft(wallet, '2026-11-25', 5) === 0 && adCoinsLeft(wallet, '2026-11-26', 5) === 5);
 }
 
 // ------------------------------------------------------------------ Rocket Launcher

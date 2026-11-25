@@ -89,6 +89,8 @@ export interface Player {
   lastHitT: number;
   kos: number;
   /** Super meter 0..1, seconds of an active Super, seconds of damage boost, KOs since last knocked out. */
+  /** A friend who left the room: out of the match, kept in the standings. */
+  gone: boolean;
   charge: number;
   superT: number;
   rageT: number;

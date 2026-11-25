@@ -46,6 +46,7 @@ export class Home {
   onPlay: ((h: HeroId) => void) | null = null;
   onFriends: (() => void) | null = null;
   onSettings: (() => void) | null = null;
+  onShop: (() => void) | null = null;
   onSound: (() => boolean) | null = null;
   onMap: ((id: string) => void) | null = null;
   private mapIdx = 0;
@@ -87,7 +88,7 @@ export class Home {
           <div class="who"><b>${esc(state.name)}</b><span class="xp"><i style="width:${Math.round(state.xpFrac * 100)}%"></i></span></div>
           <div class="lv" title="Player level ${state.level}: ${state.xpLeft} / ${state.xpNeed} XP">${state.level}</div>
         </div>
-        <div class="wallet glass" title="Coins">${UI.coin}<b>${state.coins}</b></div>
+        <button class="wallet glass tap" aria-label="Shop" title="Shop">${UI.coin}<b>${state.coins}</b><em>+</em></button>
         <button class="round-btn snd tap" aria-label="Sound"></button>
         <button class="round-btn set tap" aria-label="Settings">${UI.gear}</button>
       </header>
@@ -132,6 +133,7 @@ export class Home {
         this.refresh();
       });
     r.querySelector('.set')!.addEventListener('click', () => this.onSettings?.());
+    r.querySelector('.wallet')!.addEventListener('click', () => this.onShop?.());
     this.setSound(state.sound);
     this.soundBtn.addEventListener('click', () => this.setSound(this.onSound?.() ?? true));
     this.mapIdx = Math.max(0, state.maps.findIndex((m) => m.id === state.map));
@@ -201,7 +203,7 @@ export class Home {
   }
 
   private onKey = (e: KeyboardEvent) => {
-    if (this.root.classList.contains('hide') || document.querySelector('.friends-veil')) return;
+    if (this.root.classList.contains('hide') || document.querySelector('.friends-veil')) return; // (the shop uses the same veil)
     if (e.code === 'Enter' || e.code === 'Space') {
       // a focused button handles Enter/Space itself
       if ((e.target as HTMLElement).tagName === 'BUTTON') return;
@@ -236,6 +238,10 @@ export class Home {
     const need = this.lockedAt();
     this.playBtn.disabled = !!need;
     this.playBtn.innerHTML = need ? `LOCKED<small>reach level ${need}</small>` : `PLAY<small>as ${HEROES[this.hero].name}</small>`;
+  }
+
+  setCoins(n: number) {
+    this.root.querySelector('.wallet b')!.textContent = String(n);
   }
 
   show(on: boolean) {

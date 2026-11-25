@@ -93,6 +93,7 @@ export function castRay(w: World, ox: number, oy: number, oz: number, dx: number
   for (const p of w.players) {
     if (p === shooter || p.state === 'falling' || p.state === 'launched') continue;
     const base = p.y; // a hero's y is already its height in the world (ground, ramp or deck)
+    if (p.gone) continue;
     const bubble = p.state === 'bubble';
     const t = bubble
       ? cylinder(ox, oy, oz, dx, dy, dz, p.x, p.z, BODY.bubbleR, base + BODY.bubbleY - BODY.bubbleR, base + BODY.bubbleY + BODY.bubbleR + 1)
