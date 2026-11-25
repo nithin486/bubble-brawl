@@ -259,7 +259,7 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   check('new players see how to play', /How to play/.test(await page.textContent('.howto')));
   check('three heroes start locked', (await page.locator('.pick.locked').count()) === 3);
   await page.click('.pick[data-hero="grizzle"]');
-  check('a locked hero cannot be played', (await page.locator('.play').isDisabled()) && /level 8/i.test(await page.textContent('.play')));
+  check('a locked hero cannot be played', (await page.locator('.play').isDisabled()) && /level 16/i.test(await page.textContent('.play')));
   await page.keyboard.press('Enter');
   await page.waitForTimeout(500);
   check('Enter does not start a locked hero', (await bb(page, () => window.__bb.mode)) === 'home');

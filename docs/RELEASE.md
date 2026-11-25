@@ -26,6 +26,13 @@ Run `npm run release:check` at any time to see what is still missing.
 
 Not built: season pass, starter pack, CrazyGames in-game purchases (invite only).
 
+## Progression and coins
+
+Unlocks (level, rough number of matches): Candy Town 2 (1), Bones 5 (5), Desert 7 (8), Pinch 10 (16), Grizzle 16 (40).
+Coins per match: 5, plus 1 per 5 points, plus 15 for winning or 5 for the top three. Rewarded video: 20. All numbers:
+`client/src/progress.ts`, `TUNING.rewards`, `client/src/platform/release.ts`. Watch where new players stop and ease the
+early unlocks if they leave.
+
 ## 1. CrazyGames
 
 1. `npm run package:crazygames` → unzip `release/crazygames-upload.zip` and upload those files at

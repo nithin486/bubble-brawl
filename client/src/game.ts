@@ -1744,7 +1744,8 @@ export class Game {
     if (rank === 1) platform.celebrate();
     this.profile.matches++;
     const rounds = TUNING.match.rounds;
-    const coinsWon = 20 + Math.round(me.bankedTotal / 2) + (rank === 1 ? 50 : 0);
+    const R = TUNING.rewards;
+    const coinsWon = R.perMatch + Math.floor(me.bankedTotal / R.pointsPerCoin) + (rank === 1 ? R.win : rank <= 3 ? R.podium : 0);
     const matchXp = 60 + me.bankedTotal * 4 + me.roundsWon * 20 + (rank === 1 ? 80 : rank <= 3 ? 40 : 0);
     const before = levelOf(this.profile.xp);
     const t = this.tally;

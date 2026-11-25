@@ -18,6 +18,6 @@ export const RELEASE = {
     { id: 'coins_4000', coins: 4000 },
   ],
   /** "Watch a video" coins in the shop: how many per video, and the most videos per day. */
-  adCoins: 60,
+  adCoins: 20,
   adCoinsPerDay: 5,
 };

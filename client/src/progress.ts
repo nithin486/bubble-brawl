@@ -11,13 +11,11 @@ export type Unlock = { level: number } & ({ hero: HeroId } | { map: MapId } | { 
 
 /** The reward track, in order. Anything not listed is open from level 1. */
 export const UNLOCK_TRACK: Unlock[] = [
-  { level: 2, map: 'candy' },
-  { level: 3, hero: 'bones' },
-  { level: 4, weapon: 'freeze' },
-  { level: 5, map: 'desert' },
-  { level: 6, hero: 'pinch' },
-  { level: 7, weapon: 'hammer' },
-  { level: 8, hero: 'grizzle' },
+  { level: 2, map: 'candy' }, // one quick reward after the first match
+  { level: 5, hero: 'bones' }, // about 5 matches
+  { level: 7, map: 'desert' }, // about 8
+  { level: 10, hero: 'pinch' }, // about 16
+  { level: 16, hero: 'grizzle' }, // about 40
 ];
 
 /** Level n needs 120 + 60·(n−1) XP; a good match gives about 100–200. */

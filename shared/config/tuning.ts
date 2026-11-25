@@ -224,8 +224,14 @@ export const TUNING = {
     groundSlam: { cooldown: 10, coneDeg: 70, range: 3.5, stun: 1, knockback: 1.5, castDelay: 0.45 },
   },
 
+  /** Shop coins are scarce on purpose: an ordinary match pays about 10, a win about 25. */
   rewards: {
-    firstRoundWinCoins: 100,
+    firstRoundWinCoins: 30,
+    perMatch: 5,
+    /** One more coin for every this many points. */
+    pointsPerCoin: 5,
+    win: 15,
+    podium: 5,
   },
 
   /** Weapons mode: mystery boxes, 6 weapons, health and Bubble KO. */
