@@ -3,7 +3,7 @@ export const RELEASE = {
   /** Your public web address (the Play app opens this too). */
   siteUrl: 'https://bubble-brawl.21351cm038.workers.dev/',
   /** Shown in the privacy policy so players can reach you. REQUIRED before publishing. */
-  contactEmail: '',
+  contactEmail: '21351cm038@gmail.com',
   /** CrazyGames: keep false for Basic Launch (they switch ads off); set true once the game is on Full Launch. */
   crazyGamesAds: false,
   /** Your own website only: Google AdSense publisher id ("ca-pub-…") once AdSense approves the site. Empty = no ads. */
