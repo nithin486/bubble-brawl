@@ -19,7 +19,7 @@ def m(name, c, rough=0.8):
     return mat("D_" + name, c, rough)
 
 
-def blocks(k, prefix, w, d, z0, courses, ch, mats, rnd, taper=0.0, bw=0.9, cx=0.0, cy=0.0, bevel=0.05):
+def blocks(k, prefix, w, d, z0, courses, ch, mats, rnd, taper=0.0, bw=0.9, cx=0.0, cy=0.0, bevel=0.0):
     """Hollow rectangle of stone courses (outer size w x d), each block slightly different."""
     for c in range(courses):
         f = 1.0 - taper * c / max(courses, 1)
@@ -277,8 +277,8 @@ def rib_tube(k, name, pts, radii, mm, ribs=9):
 def flower(k, name, x, y, z, s=1.0):
     for i in range(5):
         a = i * 2 * math.pi / 5
-        k.sphere(f"{name}{i}", 0.1 * s, (x + math.cos(a) * 0.1 * s, y + math.sin(a) * 0.1 * s, z), m("pink", PINK, 0.6), scale=(1, 1, 0.5), seg=7, rings=4)
-    k.sphere(name + "c", 0.07 * s, (x, y, z + 0.04 * s), m("gold", GOLD, 0.5), seg=7, rings=4)
+        k.sphere(f"{name}{i}", 0.1 * s, (x + math.cos(a) * 0.1 * s, y + math.sin(a) * 0.1 * s, z), m("pink", PINK, 0.6), scale=(1, 1, 0.5), seg=5, rings=3)
+    k.sphere(name + "c", 0.07 * s, (x, y, z + 0.04 * s), m("gold", GOLD, 0.5), seg=5, rings=3)
 
 
 def cactus():
@@ -299,12 +299,12 @@ def prickly():
     pads = [((0, 0, 0.42), 0.42, 0.1, 0.0), ((-0.38, 0.05, 0.95), 0.34, 0.55, 0.5), ((0.36, -0.04, 1.0), 0.36, -0.5, -0.4),
             ((-0.62, 0.02, 1.45), 0.24, 0.8, 0.2), ((0.2, 0.06, 1.52), 0.28, -0.1, 0.9), ((0.7, -0.08, 1.46), 0.22, -0.7, -0.8)]
     for i, (p, r, tilt, yaw) in enumerate(pads):
-        k.sphere(f"pad{i}", r, p, g if i % 2 == 0 else gl, scale=(0.82, 0.28, 1.15), rot=(0, tilt, yaw), seg=12, rings=8)
-        if i >= 3:
+        k.sphere(f"pad{i}", r, p, g if i % 2 == 0 else gl, scale=(0.82, 0.28, 1.15), rot=(0, tilt, yaw), seg=9, rings=6)
+        if i >= 4:
             flower(k, f"fl{i}", p[0] + math.sin(tilt) * r * 1.15, p[1], p[2] + math.cos(tilt) * r * 1.15, 0.75)
     for i in range(7):
         a = i * 0.9
-        k.sphere(f"st{i}", rnd.uniform(0.09, 0.17), (math.cos(a) * 0.62, math.sin(a) * 0.5, 0.06), m("s3", SANDD), scale=(1.2, 1, 0.7), seg=7, rings=5, smooth=False)
+        k.sphere(f"st{i}", rnd.uniform(0.09, 0.17), (math.cos(a) * 0.62, math.sin(a) * 0.5, 0.06), m("s3", SANDD), scale=(1.2, 1, 0.7), seg=5, rings=3, smooth=False)
     return k, make_vary(0, 1.8, ao=0.35, noise=0.1)
 
 
@@ -317,7 +317,7 @@ def strata(p, t):
     return (1, 1, 1)
 
 
-def stone_stack(k, prefix, layers, mm, seed, seg=11):
+def stone_stack(k, prefix, layers, mm, seed, seg=11, soft=True):
     """Stacked irregular slabs: [(z0, z1, r_bottom, r_top, off_x, off_y)]."""
     rnd = random.Random(seed)
     for i, (z0, z1, r0, r1, ox, oy) in enumerate(layers):
@@ -329,19 +329,19 @@ def stone_stack(k, prefix, layers, mm, seed, seg=11):
             bm.faces.new((lo[j], lo[(j + 1) % seg], hi[(j + 1) % seg], hi[j]))
         bm.faces.new(lo[::-1]); bm.faces.new(hi)
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-        k.mesh(f"{prefix}{i}", bm, mm, bevel=min(0.09, (z1 - z0) * 0.25), seg=1, smooth=False)
+        k.mesh(f"{prefix}{i}", bm, mm, bevel=min(0.09, (z1 - z0) * 0.25) if soft else 0.0, seg=1, smooth=False)
 
 
 def rock():
     """Layered sandstone outcrop: flat tilted slabs in alternating tones, so the strata read from far away."""
     k = Kit("D_Rock")
     a, b, c = m("rock", ROCK), m("rockl", ROCKL), m("rockd", (0.34, 0.12, 0.048))
-    stone_stack(k, "a", [(0.0, 0.40, 0.80, 0.74, 0.0, 0.0), (0.38, 0.50, 0.66, 0.66, 0.02, 0.0)], c, 41, 8)
+    stone_stack(k, "a", [(0.0, 0.40, 0.80, 0.74, 0.0, 0.0), (0.38, 0.50, 0.66, 0.66, 0.02, 0.0)], c, 41, 8, False)
     stone_stack(k, "b", [(0.48, 0.90, 0.76, 0.66, -0.08, 0.04)], a, 47, 7)
-    stone_stack(k, "c", [(0.88, 1.00, 0.52, 0.52, -0.05, 0.03)], c, 52, 7)
+    stone_stack(k, "c", [(0.88, 1.00, 0.52, 0.52, -0.05, 0.03)], c, 52, 7, False)
     stone_stack(k, "d", [(0.98, 1.38, 0.62, 0.50, -0.14, 0.07)], b, 58, 6)
-    stone_stack(k, "e", [(0.0, 0.36, 0.40, 0.36, 0.52, -0.34), (0.34, 0.66, 0.32, 0.25, 0.50, -0.34)], b, 63, 6)
-    stone_stack(k, "f", [(0.0, 0.24, 0.30, 0.22, -0.60, -0.46)], a, 71, 6)
+    stone_stack(k, "e", [(0.0, 0.36, 0.40, 0.36, 0.52, -0.34), (0.34, 0.66, 0.32, 0.25, 0.50, -0.34)], b, 63, 6, False)
+    stone_stack(k, "f", [(0.0, 0.24, 0.30, 0.22, -0.60, -0.46)], a, 71, 6, False)
     return k, make_vary(0, 1.4, ao=0.3, noise=0.12)
 
 

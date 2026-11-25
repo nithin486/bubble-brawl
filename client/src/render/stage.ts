@@ -192,16 +192,19 @@ export class Stage {
   setQuality(q: Quality) {
     this.quality = q;
     const dpr = window.devicePixelRatio || 1;
-    this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1)); // sharper: low res read as 'blurry'
+    this.renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : q === 'medium' ? 1.25 : 1)); // sharper: low res read as 'blurry'
     this.sun.castShadow = q !== 'low';
-    if (q === 'low' || (AO_ON && this.composer && (q === 'high') !== !!this.ao)) {
-      // rebuild when AO availability changes
+    const sm = q === 'high' ? 4096 : 1024;
+    if (this.sun.shadow.mapSize.x !== sm) {
+      this.sun.shadow.mapSize.set(sm, sm);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    if (q !== 'high') {
+      // post-processing is the biggest frame cost on phone-class GPUs (~3x the frame time at 'medium'): only 'high' has it
       this.composer?.dispose();
       this.composer = null;
       this.ao = null;
-    }
-    if (q === 'low') {
-      this.composer = null;
       this.bloom = null;
       this.gradePass = null;
     } else if (!this.composer) {

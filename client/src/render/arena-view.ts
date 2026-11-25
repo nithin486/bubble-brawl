@@ -181,7 +181,7 @@ export class ArenaView {
       if (th.pbr) worldGroundUv(m, 0.42);
       const im = new THREE.InstancedMesh(geo, m, n);
       im.receiveShadow = true;
-      im.castShadow = true;
+      im.castShadow = false; // flat ground has nothing to shade below it: skip it in the shadow pass
       meshes.set(piece, im);
       this.group.add(im);
     }
@@ -392,12 +392,16 @@ export class ArenaView {
       return ok;
     };
     const take = this.placed.filter((o) => o.parent === this.group && keep(o));
-    const parts = take.flatMap((o) => bakeParts(o, false));
-    for (const o of take) this.group.remove(o);
-    for (const m of mergeParts(parts, false)) {
-      m.castShadow = false;
-      this.group.add(m);
+    // merged per compass quarter: whatever is behind the camera is frustum-culled
+    for (let quarter = 0; quarter < 4; quarter++) {
+      const parts = take.filter((o) => (o.position.x >= 0 ? 0 : 1) + (o.position.z >= 0 ? 0 : 2) === quarter).flatMap((o) => bakeParts(o, false));
+      if (!parts.length) continue;
+      for (const m of mergeParts(parts, false)) {
+        m.castShadow = false;
+        this.group.add(m);
+      }
     }
+    for (const o of take) this.group.remove(o);
     this.placed = [];
   }
 

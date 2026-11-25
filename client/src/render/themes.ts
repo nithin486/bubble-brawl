@@ -76,9 +76,10 @@ const candy: Theme = {
   sky: { top: '#1f7cf2', mid: '#62b4ff', horizon: '#dff1ff', bottom: '#ffd0ee' },
   fog: { color: '#cfe7ff', near: 120, far: 320 },
   bloom: { strength: 0.3, threshold: 0.97 },
-  hemi: { sky: '#fff3fb', ground: '#b87fae', intensity: 0.58 },
-  sun: { color: '#ffe9c4', intensity: 2.5, pos: [-16, 22, 11] }, // warm low sun: long readable shadows
-  exposure: 0.9,
+  grade: { sat: 1.2, con: 1.08 },
+  hemi: { sky: '#fff3fb', ground: '#b06ab0', intensity: 0.6 },
+  sun: { color: '#ffe6bd', intensity: 2.45, pos: [-16, 22, 11] }, // warm low sun: long readable shadows
+  exposure: 0.86,
   clouds: { color: '#ffffff', emissive: '#ffd6f0', intensity: 0.5 },
   waterfalls: false,
   bubbles: true,
@@ -111,8 +112,8 @@ const candy: Theme = {
         add('candy_ramp', 1);
         break;
       case 'fountain':
-        add('candy_sundae', 1.35, 0, 0, 0, DECK);
-        glow('#ffd23f', 2.4, 0, DECK + 2.6, 0);
+        add('candy_fountain', 1, 0, 0, 0, DECK);
+        glow('#ff7ac8', 2.8, 0, DECK + 3.4, 0);
         break;
       case 'decksundae':
         add('candy_sundae', 1.2, 0, 0, 0, DECK);
@@ -125,9 +126,11 @@ const candy: Theme = {
         break;
       case 'gumdrop':
         add(['candy_gumdrop_red', 'candy_gumdrop_green', 'candy_gumdrop_blue'][Math.abs(Math.round(o.x + o.z)) % 3], CANDY_K);
+        add('candy_garden', 0.7, 1.15, 0, 0.7, 0); // low flowers round the foot: walk-through decoration
         break;
       case 'cupcake':
         add('candy_cupcake', CANDY_K);
+        add('candy_garden', 0.6, -1.25, 0, 0.6, 2);
         break;
       case 'icecream':
         add('candy_icecream', CANDY_K);
@@ -142,33 +145,61 @@ const candy: Theme = {
         add('candy_sundae', 1);
         break;
       case 'swirl':
-        add('candy_swirl', CANDY_K);
+        // the outer ring is a candy orchard: lollipop and cotton-candy trees turn about
+        if (o.x * o.z > 0) add('candy_lollytree', 0.95, 0, 0, -o.rot);
+        else add('candy_floss', 0.92, 0, 0, -o.rot);
         break;
     }
   },
+  edge: { piece: 'candy_rim', scale: 1, y: 0 },
   backdrop(ctx) {
-    const S = 4.8;
-    const blocks = [
-      { a: -0.2, d: 52, y: -1, w: 3, h: 2, main: 'candy_icecream' },
-      { a: 0.75, d: 50, y: -5, w: 2, h: 2, main: 'candy_cupcake' },
-      { a: -1.0, d: 48, y: -4, w: 2, h: 2, main: 'candy_cake' },
-      { a: 1.6, d: 48, y: -9, w: 2, h: 1, main: 'candy_swirl' },
-      { a: -1.75, d: 46, y: -8, w: 1, h: 2, main: 'candy_sundae' },
-      { a: 0.25, d: 72, y: 8, w: 2, h: 2, main: 'candy_icecream' },
-      { a: 2.7, d: 50, y: -6, w: 2, h: 2, main: 'candy_cupcake' },
-      { a: -2.6, d: 51, y: -7, w: 2, h: 2, main: 'candy_cake' },
-    ];
-    for (const b of blocks) {
-      const cx = Math.sin(b.a) * b.d;
-      const cz = -Math.cos(b.a) * b.d;
-      const cells: { x: number; z: number }[] = [];
-      for (let i = 0; i < b.w; i++) for (let j = 0; j < b.h; j++) cells.push({ x: cx + (i - (b.w - 1) / 2) * S, z: cz + (j - (b.h - 1) / 2) * S });
-      ctx.chunk(cells, b.y, 'candy_tile_pink', 1, { sx: 1, sy: 1, sz: 1 });
-      ctx.place(b.main, cx, b.y, cz, ctx.rng.range(1.1, 1.5), ctx.rng.range(0, 6.28));
-      for (const c of cells.slice(0, 2)) ctx.place(ctx.rng.pick(['candy_swirl', 'candy_sundae', 'candy_cupcake']), c.x + ctx.rng.range(-1, 1), b.y, c.z + ctx.rng.range(-1, 1), 1, ctx.rng.range(0, 6.28));
-    }
+    candyTown(ctx);
   },
 };
+
+/** The town round the arena: cake islands with houses, towers, orchards and fountains, tied by wafer bridges. */
+function candyTown(ctx: ThemeCtx) {
+  // [piece, along the island (m), towards the arena (m), scale, extra turn]
+  type Item = [string, number, number, number, number?];
+  const islands: { y: number; d: number; items: Item[] }[] = [
+    { y: -1.0, d: 53, items: [['candy_house', -2.8, 0, 1.15, 0.25], ['candy_house_mint', 3.8, -1.6, 0.9, -0.35], ['candy_lollytree', -6.2, 2.4, 1.2], ['candy_garden', 1, 4.6, 1.8]] },
+    { y: 1.5, d: 57, items: [['candy_tower', 0, 0, 1.25], ['candy_floss', -4.8, 2.8, 1.2], ['candy_lollytree', 4.9, 2.2, 1.0], ['candy_sundae', 3, 5, 1.1]] },
+    { y: -3.5, d: 54, items: [['candy_fountain', 0, 1.5, 1.8], ['candy_floss', -5.2, -1, 1.4], ['candy_floss', 5.4, -0.5, 1.1], ['candy_cupcake', 0, -4.6, 1.1]] },
+    { y: 0.5, d: 52, items: [['candy_house_lilac', 0, -1, 1.35], ['candy_icecream', -5.8, 0.5, 1.0], ['candy_garden', 3.6, 4, 2.0], ['candy_lollytree', 5.6, 1, 1.15]] },
+    { y: -2.0, d: 55, items: [['candy_house_mint', -3.4, 0, 1.1, 0.3], ['candy_tower', 3.8, -2, 0.85], ['candy_garden', -0.5, 4.5, 1.7]] },
+    { y: 2.5, d: 61, items: [['candy_cake', 0, 0, 1.7], ['candy_floss', -5.4, 1.5, 1.3], ['candy_lollytree', 5.4, 1.5, 1.3]] },
+    { y: -1.5, d: 53, items: [['candy_house', 2.8, 0, 1.2, -0.25], ['candy_house_lilac', -3.8, -1.6, 0.9, 0.35], ['candy_swirl', 6.2, 2, 0.9], ['candy_garden', -1, 4.6, 1.8]] },
+    { y: 1.0, d: 56, items: [['candy_tower', -2.6, -0.5, 1.05], ['candy_house_mint', 3.6, 0.6, 0.95, -0.4], ['candy_floss', 0.6, 4.6, 0.9]] },
+  ];
+  const at: { x: number; y: number; z: number }[] = [];
+  islands.forEach((is, k) => {
+    // half a step round, so no island sits straight behind a corner castle
+    const a = ((k + 0.5) / islands.length) * Math.PI * 2;
+    const x = Math.sin(a) * is.d;
+    const z = Math.cos(a) * is.d;
+    at.push({ x, y: is.y, z });
+    const face = a + Math.PI;
+    ctx.place('candy_shelf', x, is.y, z, 1.15, ctx.rng.range(0, 6.28));
+    for (const [name, side, front, scale, turn] of is.items) {
+      const px = x + Math.cos(face) * side + Math.sin(face) * front;
+      const pz = z - Math.sin(face) * side + Math.cos(face) * front;
+      ctx.place(name, px, is.y, pz, scale * 1.12, face + (turn ?? 0));
+    }
+  });
+  for (const [i, j] of [[0, 1], [2, 3], [4, 5], [6, 7]]) {
+    const p = at[i];
+    const q = at[j];
+    const dx = q.x - p.x;
+    const dz = q.z - p.z;
+    const len = Math.hypot(dx, dz) - 17;
+    const o = ctx.place('candy_bridge', (p.x + q.x) / 2, (p.y + q.y) / 2, (p.z + q.z) / 2, 1, Math.atan2(-dz, dx));
+    if (o) {
+      o.scale.set(len / 10, 1.4, 1.5);
+      o.rotation.order = 'YZX';
+      o.rotation.z = Math.atan2(q.y - p.y, len);
+    }
+  }
+}
 
 // =================================================================== City Streets
 

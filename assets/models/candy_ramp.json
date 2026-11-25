@@ -1,29 +1,12 @@
 {
-  "name": "candy_ramp",
-  "query": "",
-  "title": "candy_ramp (Blender)",
-  "source": "file",
-  "id": "candy_ramp.glb",
-  "link": "",
-  "author": "Bubble Brawl",
-  "authorLink": "",
-  "licence": "own work",
-  "needsCredit": false,
-  "triangles": 8,
-  "trianglesOriginal": 8,
-  "bytes": 3200,
-  "dimensions": [
-    4.8,
-    2.4,
-    7.2
-  ],
-  "animations": [],
-  "skinned": false,
-  "fetched": "2026-11-24",
-  "normalized": {
-    "pivot": "centre x/z, ground y=0",
-    "height": null,
-    "rotateY": 0,
-    "forward": "+z"
-  }
+ "name": "candy_ramp",
+ "title": "Candy Ramp",
+ "source": "own",
+ "author": "Bubble Brawl (Blender, Claude Code)",
+ "licence": "Original work (CC0)",
+ "needsCredit": false,
+ "normalized": {
+  "pivot": "centre x/y, base z=0",
+  "forward": "-Y (glTF +Z)"
+ }
 }
