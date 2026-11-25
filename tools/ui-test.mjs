@@ -181,18 +181,15 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   await page.locator('.big-btn', { hasText: 'RESUME' }).click();
   check('P pauses, RESUME resumes', !(await page.locator('.menu-panel').count()));
 
+  check('the match is one 3 minute round', await bb(page, () => /^0[0-3]:/.test(document.querySelector('.timer').textContent) && getComputedStyle(document.querySelector('.round')).display === 'none'));
+  await bb(page, () => Object.assign(window.__bb.world.players[0], { charge: 1, state: 'normal', stateT: 0 }));
+  check('a full Super meter lights the button', await until(page, () => document.querySelector('.btn.ult').dataset.s === 'full', null, 5000));
+  await page.keyboard.press('KeyF');
+  check('F unleashes the Super', await until(page, () => window.__bb.world.players[0].charge < 0.5, null, 5000));
   await bb(page, () => (window.__bb.world.roundTime = 999));
-  check('round end panel', await until(page, () => document.querySelector('.panel .standings'), null, 6000));
-  check('next round starts by itself', await until(page, () => window.__bb.world.round === 2, null, 30000));
-  await bb(page, () => {
-    const w = window.__bb.world;
-    w.round = 3;
-    w.phase = 'playing';
-    w.roundTime = 999;
-  });
   check('final results panel', await until(page, () => document.querySelector('.panel.results'), null, 30000));
   await page.locator('.big-btn', { hasText: 'REMATCH' }).click();
-  check('REMATCH starts a new match', await until(page, () => window.__bb.world.round === 1 && !document.querySelector('.panel.results'), null, 15000));
+  check('REMATCH starts a new match', await until(page, () => window.__bb.world.roundTime < 20 && !document.querySelector('.panel.results'), null, 15000));
   await page.keyboard.press('Escape');
   await page.locator('.big-btn', { hasText: 'QUIT' }).click();
   check('QUIT returns to the lobby', await until(page, () => window.__bb.mode === 'home' && document.getElementById('home'), null, 10000));
@@ -280,9 +277,9 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
     const me = w.players[0];
     me.kos = 6;
     me.bankedTotal = 12;
-    me.roundsWon = 3;
+    me.roundsWon = 1;
     window.__bb.tally.boxes = 7;
-    w.round = 3;
+    w.phase = 'playing';
     w.roundTime = 999;
   });
   check('results show', await until(page, () => document.querySelector('.panel.results'), null, 30000));
@@ -349,6 +346,10 @@ for (const map of ['bubblegum', 'candy', 'desert']) {
   check('joystick moves the hero', Math.hypot(after.x - before.x, after.z - before.z) > 0.8);
   await page.tap('.btn.skill', { force: true }); // it pulses while ready
   check('tap skill', await until(page, () => window.__bb.world.players[0].skillCd > 0, null, 3000));
+  await bb(page, () => Object.assign(window.__bb.world.players[0], { charge: 1 }));
+  await until(page, () => document.querySelector('.btn.ult').dataset.s === 'full', null, 5000);
+  await page.tap('.btn.ult', { force: true });
+  check('tap SUPER', await until(page, () => window.__bb.world.players[0].charge < 0.5, null, 5000));
   await bb(page, () => Object.assign(window.__bb.world.players[0], { weapon: 'blaster', ammo: 5, fireCd: 0, state: 'normal', stateT: 0 }));
   await page.waitForTimeout(800); // let the skill's wind-up finish
   await page.tap('.btn.grab', { force: true });
@@ -362,10 +363,10 @@ for (const map of ['bubblegum', 'candy', 'desert']) {
     g.updateAim = () => ((g.aimLocked = true), (g.aimInfo = { heading: Math.PI, dist: 6 }));
   });
   check('touch auto-fire shoots a rival under the crosshair', await until(page, () => window.__bb.world.players[0].ammo < 17, null, 5000));
-  const sizes = [await c('.btn.dash'), await c('.btn.skill'), await c('.btn.grab')].map((s) => Math.round(s.w));
+  const sizes = [await c('.btn.dash'), await c('.btn.skill'), await c('.btn.grab'), await c('.btn.ult')].map((s) => Math.round(s.w));
   check('phone action buttons are finger sized', sizes.every((s) => s >= 44), sizes.join('/') + ' px');
   const overlap = await bb(page, () => {
-    const boxes = ['.btn.dash', '.btn.skill', '.btn.grab', '.rack', '.mine', '.board', '.pause-btn', '.top-center'].map((s) => [s, document.querySelector(s)?.getBoundingClientRect()]).filter((b) => b[1] && b[1].width);
+    const boxes = ['.btn.dash', '.btn.skill', '.btn.grab', '.btn.ult', '.rack', '.mine', '.board', '.pause-btn', '.top-center'].map((s) => [s, document.querySelector(s)?.getBoundingClientRect()]).filter((b) => b[1] && b[1].width);
     const hit = [];
     for (let i = 0; i < boxes.length; i++)
       for (let j = i + 1; j < boxes.length; j++) {
@@ -379,6 +380,11 @@ for (const map of ['bubblegum', 'candy', 'desert']) {
   check('phone HUD pieces do not overlap', !overlap.length, overlap.join(' '));
   await shot(page, 'm-hud');
   await page.tap('.pause-btn');
+  await until(page, () => document.querySelector('.menu-panel'), null, 5000);
+  await page.waitForTimeout(600);
+  check('every phone setting and RESUME fit on screen', await bb(page, () => [...document.querySelectorAll('.menu-panel button')].every((b) => { const r = b.getBoundingClientRect(); return r.top >= -1 && r.bottom <= innerHeight + 1; })));
+  await page.locator('.menu-panel button[aria-label^="Button size"]').tap();
+  check('button size can be changed', await bb(page, () => document.body.dataset.buttons === 'large'));
   check('tap pause', await visible(page, '.menu-panel'));
   await shot(page, 'm-pause');
   await page.locator('.big-btn', { hasText: 'QUIT' }).tap();

@@ -1,10 +1,10 @@
 import { release } from './render/dispose.ts';
 import { castRay, propHeight } from '../../shared/sim/ray.ts';
 import * as THREE from 'three';
-import { World } from '../../shared/sim/world.ts';
+import { World, targetable } from '../../shared/sim/world.ts';
 import { BotBrain } from '../../shared/sim/bots.ts';
 import { Rng } from '../../shared/sim/math.ts';
-import { NO_INPUT, type Input, type SimEvent } from '../../shared/sim/types.ts';
+import { NO_INPUT, type Input, type Player, type SimEvent } from '../../shared/sim/types.ts';
 import { TUNING } from '../../shared/config/tuning.ts';
 import { HEROES, HERO_IDS, type HeroId } from '../../shared/config/heroes.ts';
 import { Stage, isTouch, type Quality } from './render/stage.ts';
@@ -19,7 +19,7 @@ import { CoinsView } from './render/coins.ts';
 import { BankView } from './render/bank.ts';
 import { Fx, makeGlowTexture } from './render/fx.ts';
 import { CameraRig, CAM_PRESETS, type CamPreset, type PlayerCam } from './camera.ts';
-import { InputManager } from './input.ts';
+import { InputManager, haptics } from './input.ts';
 import { Hud, PLAYER_COLORS } from './ui/hud.ts';
 import { Sfx } from './audio.ts';
 import { track } from './analytics.ts';
@@ -210,6 +210,7 @@ export class Game {
     this.applyCamera((PARAMS.get('cam') as CamPreset) || profile.camera || 'close');
     this.sfx.muted = !profile.sound;
     this.applyAimSpeed();
+    this.applyPhonePrefs();
     this.fx = new Fx(stage.scene, this.glowTex);
     this.fx.ground = (x, z) => this.world?.terrain.heightAt(x, z) ?? 0; // ground effects ride raised plazas and ramps
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
@@ -401,6 +402,7 @@ export class Game {
       track('play_click', { hero: h });
       this.profile.hero = h;
       saveProfile(this.profile);
+      this.fillScreen();
       this.captureMouse();
       const go = () => {
         this.home?.destroy();
@@ -525,6 +527,7 @@ export class Game {
     this.tutT = 0;
     this.movedDist = 0;
     this.roundStats = { stolen: 0, steals: 0 };
+    this.superTold = false;
     this.matchStart = performance.now();
     this.input.enabled = !attract;
     if (!attract) track('match_start', { hero, first: this.firstMatch });
@@ -555,6 +558,7 @@ export class Game {
     if (this.mode === 'match' && this.input.enabled) {
       this.rig.addYaw(this.input.takeYaw(dt));
       this.rig.addPitch(this.input.takePitch());
+      this.aimMagnet(dt);
       if (this.rig.turns && !this.paused) {
         const me = this.world.players[LOCAL];
         const at = this.visPos(LOCAL) ?? me;
@@ -660,6 +664,8 @@ export class Game {
       this.trailT = 0.05;
       for (const p of this.world.players) {
         if (p.state === 'falling') continue;
+        if (p.superT > 0) this.fx.emit(p.x, p.y + 0.9, p.z, { n: 3, color: [HEROES[p.hero].color, '#ffffff'], speed: 1.2, up: 1.6, life: 0.45, size: 0.45, spread: 0.8 });
+        if (p.rageT > 0) this.fx.emit(p.x, p.y + 1.2, p.z, { n: 1, color: ['#ff4a6e', '#ffd23f'], speed: 0.8, up: 1.8, life: 0.45, size: 0.4, spread: 0.7 });
         if (p.speedT > 0 && Math.hypot(p.vx, p.vz) > 2) this.fx.emit(p.x, 0.5, p.z, { n: 2, color: ['#ffd23f', '#fff6b0'], speed: 0.3, up: 0.5, life: 0.4, size: 0.45 });
         if (p.stickyT > 0) this.fx.emit(p.x, 1.1, p.z, { n: 2, color: ['#ff5fd2', '#ffb3ec'], speed: 0.8, up: 1.2, life: 0.5, size: 0.3, spread: 0.7 });
         if (p.magnetT > 0) this.fx.emit(p.x, 0.4, p.z, { n: 1, color: ['#ff5f7a'], speed: 3.5, up: 0.2, life: 0.4, size: 0.25 });
@@ -718,6 +724,15 @@ export class Game {
       skillHits: this.markers?.skillHits ?? 0,
     });
     if (this.mode === 'match') {
+      // say it once a match, the first time the Super is charged
+      const meS = this.world.players[LOCAL];
+      if (!this.superTold && this.world.mode === 'weapons' && this.world.phase === 'playing' && meS.charge >= 1) {
+        this.superTold = true;
+        const def = HEROES[meS.hero];
+        this.hud.tip(`SUPER READY: ${def.superName}! ${this.touch ? 'Tap the glowing button' : 'Press F'}`, 4);
+        this.sfx.power();
+        haptics.buzz([20, 60, 20]);
+      }
       this.tutorial(dt);
       this.bankTicks(dt);
     }
@@ -1133,8 +1148,57 @@ export class Game {
         if (e.weapon === 'hammer') this.fx.cone(e.x, e.z, e.facing, TUNING.weapons.hammer.radius, 360, '#ffd23f', TUNING.weapons.hammer.windup + 0.05, 0.4);
         break;
       }
+      case 'super': {
+        const def = HEROES[w.players[e.p].hero];
+        const gy = w.terrain.heightAt(e.x, e.z);
+        if (e.p !== LOCAL) this.fx.pillar(e.x, e.z, def.color, 8, 0.5, 0.6); // never in front of your own view
+        this.fx.ring(e.x, e.z, def.color, 4.5, 0.6, 0.6);
+        this.fx.ring(e.x, e.z, '#ffffff', 2.8, 0.45, 0.4);
+        this.fx.emit(e.x, gy + 1.2, e.z, { n: 60, color: [def.color, '#ffffff', '#ffd23f'], speed: 8, up: 6, life: 0.7, size: 0.55 });
+        hv(e.p).bump(0.5);
+        if (w.players[e.p].hero !== 'bones') hv(e.p).oneShot('Cheer', this.time, 2, 0.5);
+        if (e.p === LOCAL) {
+          this.hud.skillBanner(def.superName + '!', def.color);
+          this.hud.flash(def.color, 0.55);
+          this.sfx.crown();
+          this.rig.shake(0.35);
+          haptics.buzz([30, 40, 60]);
+        } else {
+          this.hud.feed(`${this.who(e.p)} unleashed <b>${def.superName}</b>!`);
+          if (Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 18) this.sfx.warn();
+        }
+        break;
+      }
+      case 'superEnd':
+        this.fx.ring(w.players[e.p].x, w.players[e.p].z, '#ffffff', 2, 0.3);
+        break;
+      case 'streak': {
+        const q = w.players[e.p];
+        if (e.p !== LOCAL) this.fx.pillar(q.x, q.z, '#ffd23f', 7, 0.4, 0.5);
+        else this.fx.ring(q.x, q.z, '#ffd23f', 3, 0.5, 0.5);
+        if (e.p === LOCAL) {
+          setTimeout(() => this.hud.banner(`${e.n} KO STREAK!`, 'gold'), 900);
+          setTimeout(() => this.hud.banner('Health + speed + Super energy', 'teal', true), 1600);
+          this.sfx.crown();
+          haptics.buzz([20, 30, 20]);
+        } else this.hud.feed(`${this.who(e.p)} is on a <b>${e.n} KO streak</b>!`);
+        break;
+      }
+      case 'twist':
+        if (this.mode === 'match' && e.mod !== 'double') { // (the finale banner announces double points)
+          this.hud.twist(e.mod, w.mode);
+          this.sfx.land2();
+        }
+        break;
       case 'boom': {
-        if (e.kind === 'rocket') {
+        if (e.kind === 'quake') {
+          this.fx.ring(e.x, e.z, '#7fe3ff', e.r + 0.5, 0.7, 0.8);
+          this.fx.ring(e.x, e.z, '#ffffff', e.r * 0.65, 0.5, 0.5);
+          this.fx.dome(e.x, e.z, '#7fe3ff', e.r * 0.7, 0.5);
+          this.fx.crack(e.x, e.z, e.r * 1.6);
+          this.fx.dust(e.x, e.z, true);
+          this.fx.emit(e.x, 0.6, e.z, { n: 70, color: ['#7fe3ff', '#ffffff'], speed: 13, up: 4, life: 0.6, size: 0.6 });
+        } else if (e.kind === 'rocket') {
           this.fx.emit(e.x, 1, e.z, { n: 40, color: ['#ff8a3d', '#ffd23f', '#ffffff', '#555555'], speed: 8, up: 4, life: 0.6, size: 0.7 });
           this.fx.dome(e.x, e.z, '#ff8a3d', e.r * 1.3, 0.35);
           this.fx.dust(e.x, e.z, true);
@@ -1443,8 +1507,8 @@ export class Game {
         this.fx.ring(e.x, e.z, '#7ff3ff', 3.2, 0.6, 0.5);
         break;
       case 'finale':
-        this.hud.banner('FINAL 15 SECONDS!', 'red');
-        setTimeout(() => this.hud.banner(this.world.mode === 'weapons' ? 'Scores hidden · the edges are crumbling' : 'Scores hidden · coins ×2', 'gold', true), 1100);
+        this.hud.banner(`FINAL ${TUNING.finale.seconds} SECONDS!`, 'red');
+        setTimeout(() => this.hud.banner(this.world.mode === 'weapons' ? 'Double points · the edges are crumbling' : 'Scores hidden · coins ×2', 'gold', true), 1100);
         this.sfx.rumble();
         this.rig.shake(0.2);
         break;
@@ -1535,6 +1599,18 @@ export class Game {
       this.fx.coinBurst(p.x, 1.2, p.z, 8);
     }
     this.heroes[e.winner].celebrating = true;
+    if (TUNING.match.rounds === 1) {
+      if (won && this.firstMatch) {
+        this.profile.coins += TUNING.rewards.firstRoundWinCoins;
+        saveProfile(this.profile);
+      }
+      this.hud.prompt(null);
+      this.hud.hintButton(null);
+      this.tut = 'done';
+      this.hud.banner('TIME!', 'gold');
+      track('round_end', { round: e.round, banked: me.bankedRound, stolen: this.roundStats.stolen, steals: this.roundStats.steals, won, lostUnbanked: lost });
+      return;
+    }
     let reward = 0;
     if (won && this.firstMatch && e.round === 1) {
       reward = TUNING.rewards.firstRoundWinCoins;
@@ -1617,6 +1693,7 @@ export class Game {
         waitForHost: !!this.room && !this.room.isHost,
         onRematch: () => {
           this.sfx.click();
+          this.fillScreen();
           this.captureMouse();
           track('rematch_click', { hero: this.world.players[LOCAL].hero, room: !!this.room });
           if (this.room?.isHost) {
@@ -1731,10 +1808,46 @@ export class Game {
     this.lastStickFwd = -i.mz;
     // the laser is automatic: hold fire, or (touch, optional) just keep the crosshair on a rival
     const me = this.world.players[LOCAL];
-    const auto = me.weapon === 'blaster' && (this.input.firing || (this.touch && this.profile.autoFire && this.aimLocked));
+    const phoneAuto = this.touch && this.profile.autoFire && this.world.phase === 'playing' && this.autoAttack(me);
+    const auto = phoneAuto || (me.weapon === 'blaster' && this.input.firing);
     return { ...i, grab: i.grab || auto, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist, aimY: this.aimInfo?.y };
   }
   private lastStickFwd = 0;
+  private superTold = false;
+
+  /** Phones: should the held weapon (or fist) attack by itself right now? */
+  private autoAttack(me: Player) {
+    const T = TUNING.weapons;
+    const near = (r: number) => this.world.players.some((q) => q !== me && targetable(q) && Math.hypot(q.x - me.x, q.z - me.z) < r);
+    if (!me.weapon) return near(1.7);
+    if (me.weapon === 'hammer') return near(T.hammer.radius * 0.85);
+    if (me.weapon === 'banana') return false; // a trap is a choice
+    if (!this.aimLocked) return false;
+    return me.weapon === 'blaster' || me.weapon === 'rocket' ? true : near(11);
+  }
+
+  /** Phones: while attacking, the view drifts onto a rival who is almost under the crosshair. */
+  private aimMagnet(dt: number) {
+    if (!this.touch || !this.profile.aimAssist || !this.rig.turns || performance.now() - this.input.lookT < 140) return;
+    const me = this.world.players[LOCAL];
+    if (this.mode !== 'match' || !this.input.enabled || !me.weapon || me.weapon === 'banana' || me.weapon === 'hammer') return;
+    this.stage.camera.getWorldDirection(this.v);
+    const view = Math.atan2(this.v.x, this.v.z);
+    const cam = this.stage.camera.position;
+    let best = (11 * Math.PI) / 180;
+    let turn = 0;
+    for (const q of this.world.players) {
+      if (q === me || !targetable(q) || Math.hypot(q.x - me.x, q.z - me.z) > 18) continue;
+      let off = Math.atan2(q.x - cam.x, q.z - cam.z) - view;
+      off = Math.atan2(Math.sin(off), Math.cos(off));
+      if (Math.abs(off) < best && this.canSee(me, q)) {
+        best = Math.abs(off);
+        turn = off;
+      }
+    }
+    const step = Math.min(Math.abs(turn), dt * 1.1);
+    if (step > 0.001) this.rig.addYaw(Math.sign(turn) * step);
+  }
   /** Where the local player is pointing this frame (camera centre line in 3rd person, cursor on desktop top-down). */
   private aimInfo: { heading: number; dist: number; y?: number } | null = null;
   private aimLocked = false;
@@ -1863,6 +1976,20 @@ export class Game {
     }
   }
 
+  private applyPhonePrefs() {
+    document.body.dataset.buttons = this.profile.buttons;
+    haptics.on = this.profile.vibrate;
+  }
+
+  /** Phones: fill the screen and hold landscape once the player starts a match (needs their tap). */
+  private fillScreen() {
+    if (!this.touch || document.fullscreenElement || navigator.webdriver) return;
+    void document.documentElement
+      .requestFullscreen?.({ navigationUI: 'hide' })
+      .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
+      .catch(() => {});
+  }
+
   private applyCamera(p: CamPreset) {
     if (!CAM_PRESETS[p]) p = 'close';
     this.rig.setPreset(p);
@@ -1911,6 +2038,8 @@ export class Game {
           aimSpeed: this.profile.aimSpeed,
           autoFire: this.touch ? this.profile.autoFire : null,
           aimAssist: this.touch ? this.profile.aimAssist : null,
+          buttons: this.touch ? this.profile.buttons : null,
+          vibrate: this.touch ? this.profile.vibrate : null,
         },
         {
           resume: () => {
@@ -1922,9 +2051,9 @@ export class Game {
             track('quit_match', { round: this.world.round });
             if (this.mode === 'match' && !this.room && this.world.phase !== 'matchEnd') {
               const me = this.world.players[LOCAL];
-              const done = this.world.round - 1;
+              const done = Math.floor(this.world.roundTime / 60); // whole minutes played
               if (done > 0) {
-                this.profile.xp += done * 20 + me.bankedTotal * 4;
+                this.profile.xp += done * 20 + (me.bankedTotal + me.bankedRound) * 4;
                 saveProfile(this.profile);
               }
             }
@@ -1958,6 +2087,20 @@ export class Game {
             this.setPaused(true);
           },
           credits: () => this.hud.showCredits(() => this.setPaused(true)),
+          buttons: () => {
+            const order = ['small', 'normal', 'large'] as const;
+            this.profile.buttons = order[(order.indexOf(this.profile.buttons) + 1) % 3];
+            this.applyPhonePrefs();
+            saveProfile(this.profile);
+            this.setPaused(true);
+          },
+          vibrate: () => {
+            this.profile.vibrate = !this.profile.vibrate;
+            this.applyPhonePrefs();
+            haptics.buzz(30);
+            saveProfile(this.profile);
+            this.setPaused(true);
+          },
           camera: () => {
             const order: PlayerCam[] = ['third', 'close', 'far', 'action'];
             const cur = order.indexOf(this.rig.preset as PlayerCam);

@@ -84,7 +84,8 @@ export class BotBrain {
 
   /** Easy mode is active in round 1 of the player's first match. */
   private easy(w: World) {
-    return w.firstMatch && w.round === 1 && this.id !== this.humanId;
+    // the opening of a newcomer's first match: bots go easy, then wake up
+    return w.firstMatch && w.roundTime < B.firstMatch.seconds && this.id !== this.humanId;
   }
 
   newRound() {
@@ -98,6 +99,9 @@ export class BotBrain {
     if (w.phase !== 'playing' || me.state === 'falling' || me.state === 'launched') return NO_INPUT;
     // trapped in a KO bubble: mash to break out
     if (me.state === 'bubble') return { ...NO_INPUT, grab: this.rng.next() < (this.easy(w) ? 0.05 : 0.15) };
+    // Super ready and a rival within reach: use it (weaker bots hesitate)
+    if (me.charge >= 1 && w.mode === 'weapons' && !this.easy(w) && this.rng.next() < dt * (0.25 + w.skill) && w.players.some((o) => o !== me && targetable(o) && Math.hypot(o.x - me.x, o.z - me.z) < (me.hero === 'bones' ? 6 : 12)))
+      return { ...NO_INPUT, ult: true };
     this.thinkT -= dt;
     if (this.thinkT <= 0) {
       this.thinkT += 1 / B.thinkHz;
@@ -428,6 +432,9 @@ export class BotBrain {
       return { mode: 'steal', tx: bubble.x, tz: bubble.z, dash: d > 3 && me.dashCd <= 0 && this.rng.next() < 0.3, grab: shoot ? d < 9 : d < 2.2, skill: false };
     }
     const rivals = w.players.filter((o) => o !== me && targetable(o) && o.state !== 'bubble' && canHit(o));
+    // a power bubble close by is worth a detour (health when hurt, anything else if nobody is on top of me)
+    const goody = w.powerups.filter((u) => dist(u) < 9 && (u.kind !== 'heal' || me.hp < 70) && w.arena.safe(u.x, u.z)).sort((a, b) => dist(a) - dist(b))[0];
+    if (goody && !easy && (me.hp < 50 || !rivals.some((o) => dist(o) < 4))) return { ...idle, mode: 'collect', tx: goody.x, tz: goody.z, grab: !!me.weapon && rivals.some((o) => dist(o) < 8) };
     // no weapon: nearest box (or punch whoever is right here)
     if (!me.weapon) {
       const close = rivals.find((o) => dist(o) < 1.8);

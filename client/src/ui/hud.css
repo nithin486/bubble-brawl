@@ -731,3 +731,40 @@ body.cam-third .tag.me .tn{display:none}
 /* smooth: tags ride their own compositor layer; small pieces can't force the page to lay out again */
 .tag { left: 0; top: 0; will-change: transform; contain: layout style; transition: none; }
 .board, .mine, .rack, .controls, .top-center, .feed { contain: layout style; }
+
+/* ---------------------------------------------------------------- Weapon Brawl controls: FIRE is the big button under the thumb */
+.mode-weapons .controls { width: 290px; height: 240px; transform-origin: right bottom; }
+.mode-weapons .btn.grab { width: 118px; height: 118px; right: 0; bottom: 0; }
+.mode-weapons .btn.grab .wicon { width: 66px; height: 66px; }
+.mode-weapons .btn.grab svg:not(.wicon) { width: 52px; height: 52px; }
+.mode-weapons .btn.grab:not(.can) { filter: none; }
+.mode-weapons .btn.grab:not(.armed) { background: radial-gradient(circle at 50% 35%, #ffd2f4, #ff5fd2 70%); }
+.mode-weapons .btn.dash { width: 80px; height: 80px; right: 132px; bottom: 0; }
+.mode-weapons .btn.skill { width: 76px; height: 76px; right: 116px; bottom: 94px; }
+.mode-weapons .btn.skill svg { width: 34px; height: 34px; }
+.mode-weapons .btn.skill .lbl { font-size: 12px; }
+.btn.ult { width: 86px; height: 86px; right: 8px; bottom: 136px; background: radial-gradient(circle at 50% 35%, #fff, var(--hc, #b06bff) 72%); box-shadow: 0 5px 0 #0006, inset 0 3px 0 #ffffff80; }
+.btn.ult svg { width: 36px; height: 36px; }
+.btn.ult .lbl { font-size: 13px; }
+.btn.ult .pct { position: absolute; z-index: 3; top: -9px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 13px; padding: 0 7px; border-radius: 8px; background: #1d0d52d0; }
+.btn.ult .pct:empty { display: none; }
+.btn.ult[data-s=''] { filter: saturate(.6) brightness(.85); }
+.btn.ult[data-s='full'] { animation: hint .45s infinite alternate; box-shadow: 0 0 0 4px #fff, 0 0 22px 8px var(--hc, #b06bff); }
+.btn.ult[data-s='full'] .pct { background: var(--yellow); color: #1d0d52; text-shadow: none; }
+.btn.ult[data-s='active'] { box-shadow: 0 0 0 4px var(--yellow), 0 0 26px 10px var(--hc, #b06bff); }
+/* Button size setting (phones) */
+body[data-buttons='small'] #hud:not(.desktop) .controls { zoom: 0.85; }
+body[data-buttons='large'] #hud:not(.desktop) .controls { zoom: 1.18; }
+
+/* short screens: two columns, so every setting and the RESUME button are on screen at once */
+@media (max-height: 520px) {
+  .veil .panel.menu-panel { display: grid; grid-template-columns: 1fr 1fr; align-content: start; column-gap: 14px; width: min(660px, 95vw); max-width: 95vw; padding: 8px 14px 10px; }
+  .panel.menu-panel > h1 { grid-column: 1 / -1; margin: 0 0 2px; font-size: 24px; }
+  .panel.menu-panel > .btn-row, .panel.menu-panel > .keys { grid-column: 1 / -1; margin-top: 8px; }
+  .panel.menu-panel .toggle { padding: 3px 0; font-size: 13px; gap: 6px; }
+  .panel.menu-panel .toggle .tl { gap: 6px; }
+  .panel.menu-panel .toggle .tl i { width: 24px; height: 24px; border-radius: 8px; }
+  .panel.menu-panel .toggle .tl i .ico { width: 15px; height: 15px; }
+  .panel.menu-panel .toggle button { min-width: 88px; font-size: 12px; padding-top: 4px; padding-bottom: 4px; }
+  .panel.menu-panel .toggle button.switch { min-width: 70px; height: 30px; padding: 0 10px 0 30px; }
+}

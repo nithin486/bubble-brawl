@@ -26,13 +26,16 @@ export interface Profile {
   autoFire: boolean;
   /** Touch screens: a rival very close to the crosshair takes the shot. */
   aimAssist: boolean;
+  /** Touch screens: size of the on-screen buttons, and vibration. */
+  buttons: 'small' | 'normal' | 'large';
+  vibrate: boolean;
 }
 
 const KEY = 'bb_profile_v1';
 
 export function loadProfile(): Profile {
   const today = new Date().toISOString().slice(0, 10);
-  const base: Profile = { matches: 0, coins: 0, xp: 0, map: DEFAULT_MAP, name: '', camera: 'third', missions: startMissions(), form: 0, hero: DEFAULT_HERO, firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto', aimSpeed: 'normal', autoFire: true, aimAssist: true };
+  const base: Profile = { matches: 0, coins: 0, xp: 0, map: DEFAULT_MAP, name: '', camera: 'third', missions: startMissions(), form: 0, hero: DEFAULT_HERO, firstSeen: today, lastSeen: today, sound: true, shake: true, quality: 'auto', aimSpeed: 'normal', autoFire: true, aimAssist: true, buttons: 'normal', vibrate: true };
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {

@@ -57,7 +57,7 @@ if (made) {
     const g = await guest.evaluate((s) => ({ x: window.__bb.world.players[s].x, z: window.__bb.world.players[s].z }), seat);
     check('guest and host agree on the position', Math.hypot(g.x - b.x, g.z - b.z) < 2.5, `${Math.hypot(g.x - b.x, g.z - b.z).toFixed(1)} m apart`);
     await host.evaluate(() => (window.__bb.world.roundTime = 999));
-    check('round end reaches the guest', await until(guest, () => document.querySelector('.panel .standings')));
+    check('the results reach the guest', await until(guest, () => document.querySelector('.panel .standings')));
     if (out) await guest.screenshot({ path: `${out}/guest-round-end.png` });
   }
 }

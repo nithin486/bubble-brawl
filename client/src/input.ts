@@ -4,9 +4,22 @@ import type { Input } from '../../shared/sim/types.ts';
  * Keyboard + mouse + touch → sim Input. Camera looks toward -z, so "up" on screen is -z.
  * Button presses latch until the sim consumes them (no lost taps between frames).
  */
+/** A short buzz on phones that support it (off with the Vibration setting). */
+export const haptics = {
+  on: true,
+  buzz(ms: number | number[]) {
+    if (!this.on) return;
+    try {
+      navigator.vibrate?.(ms);
+    } catch {
+      /* not supported */
+    }
+  },
+};
+
 export class InputManager {
   private keys = new Set<string>();
-  private latch = { dash: false, grab: false, skill: false };
+  private latch = { dash: false, grab: false, skill: false, ult: false };
   private stick = { x: 0, y: 0, active: false };
   /** Fire held down: mouse button, J key or the touch fire button (automatic weapons keep shooting). */
   private mouseHeld = false;
@@ -38,6 +51,7 @@ export class InputManager {
       if (e.code === 'Space') this.press('dash');
       if (e.code === 'KeyJ') this.press('grab');
       if (e.code === 'KeyK') this.press('skill');
+      if (e.code === 'KeyF') this.press('ult');
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -83,7 +97,7 @@ export class InputManager {
     }
   }
 
-  press(b: 'dash' | 'grab' | 'skill') {
+  press(b: 'dash' | 'grab' | 'skill' | 'ult') {
     if (!this.enabled) return;
     this.latch[b] = true;
     this.first();
@@ -98,9 +112,16 @@ export class InputManager {
 
   /** Drag-to-look from the touch look zone. */
   look(dx: number, dy = 0) {
-    this.yaw -= dx * 0.0068 * this.sensitivity;
-    this.pitch -= dy * 0.0048 * this.sensitivity; // drag up = look up
+    // slow drags aim finely, quick flicks turn further; the same thumb travel turns the same on any screen width
+    const size = 780 / Math.max(480, window.innerWidth);
+    const flick = 0.8 + Math.min(1, Math.max(0, Math.hypot(dx, dy) - 3) / 22) * 0.9;
+    const g = this.sensitivity * size * flick;
+    this.yaw -= dx * 0.0062 * g;
+    this.pitch -= dy * 0.0042 * g; // drag up = look up
+    this.lookT = performance.now();
   }
+  /** When the thumb last turned the view (aim assist stays out of its way). */
+  lookT = 0;
 
   holdFire(on: boolean) {
     this.touchHeld = on;
@@ -170,8 +191,8 @@ export class InputManager {
       mx /= m;
       mz /= m;
     }
-    const out: Input = { mx, mz, dash: this.latch.dash, grab: this.latch.grab, skill: this.latch.skill };
-    this.latch.dash = this.latch.grab = this.latch.skill = false;
+    const out: Input = { mx, mz, dash: this.latch.dash, grab: this.latch.grab, skill: this.latch.skill, ult: this.latch.ult };
+    this.latch.dash = this.latch.grab = this.latch.skill = this.latch.ult = false;
     if (!this.enabled) return { mx: 0, mz: 0, dash: false, grab: false, skill: false };
     return out;
   }

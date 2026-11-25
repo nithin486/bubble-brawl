@@ -102,12 +102,70 @@ const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
   give(c, 'blaster');
   w2.tick(DT, w2.players.map((q) => (q === c ? { ...noInput, mx: 0, mz: 1, aim: Math.PI / 2 } : noInput)));
   check('armed hero faces the aim while moving', Math.abs(c.facing - Math.PI / 2) < 1e-6, c.facing.toFixed(2));
-  // locked weapons never come out of the player's boxes
-  const w3 = arena();
-  w3.pool = ['blaster', 'rocket'];
+}
+
+// ------------------------------------------------------------------ one long match, Supers, pickups, streaks
+{
+  const w = arena();
+  check('one 3-minute round', TUNING.match.rounds === 1 && TUNING.match.roundSeconds === 180);
   const got = new Set<string>();
-  for (let i = 0; i < 200; i++) got.add((w3.brawl as unknown as { roll(p: Player): string }).roll(w3.players[0]));
-  if (w3.mod === 'none' || w3.mod === 'turbo') check('boxes respect the unlocked weapon pool', [...got].every((k) => k === 'blaster' || k === 'rocket'), [...got].join(','));
+  for (let i = 0; i < 400; i++) got.add((w.brawl as unknown as { roll(p: Player): string }).roll(w.players[0]));
+  if (!['rockets', 'blasters', 'frost'].includes(w.mod)) check('every weapon can come out of a box', got.size === 6, [...got].join(','));
+  const twists: number[] = [];
+  let ended = -1;
+  for (let i = 0; i < 200 / DT && ended < 0; i++) {
+    w.tick(DT, w.players.map(() => noInput));
+    for (const e of w.events) {
+      if (e.t === 'twist') twists.push(Math.round(w.roundTime));
+      if (e.t === 'matchEnd') ended = Math.round(w.roundTime);
+    }
+  }
+  check('twists change during the match, ending in double points', twists.length >= 3 && twists.at(-1) === TUNING.match.roundSeconds - TUNING.finale.seconds && w.mod === 'double', twists.join(','));
+  check('the match ends after 3 minutes', ended === 180, `${ended} s`);
+}
+{
+  const supers = ['ranger', 'bones', 'pinch', 'grizzle'] as const;
+  for (const hero of supers) {
+    const w = arena();
+    const [a, b] = w.players;
+    park(w, a, b);
+    place(a, BX, BZ, Math.PI / 2); place(b, BX + 3, BZ);
+    a.hero = hero;
+    a.charge = 0.5;
+    const use = () => w.tick(DT, w.players.map((q) => (q === a ? { ...noInput, ult: true } : noInput)));
+    use();
+    check(`${hero}: a half meter does nothing`, a.superT === 0 && b.hp === W.hp);
+    a.charge = 1; a.hp = 40; b.x = hero === 'grizzle' ? BX + 1.2 : BX + 3; b.z = BZ;
+    use();
+    w.tick(DT, w.players.map(() => noInput));
+    const ok = hero === 'ranger' ? a.superT > 0 && a.weapon === 'blaster' && a.ammo > 500 : hero === 'bones' ? b.hp < W.hp : hero === 'pinch' ? a.superT > 0 && a.hp > 40 : a.superT > 0 && a.hp === W.hp && b.hp < W.hp;
+    check(`${hero}: Super works`, ok && a.charge < 0.05, `superT ${a.superT.toFixed(1)} hp ${a.hp.toFixed(0)} rival ${b.hp.toFixed(0)}`);
+    park(w, a);
+    run(w, 9);
+    check(`${hero}: Super ends`, a.superT === 0 && (hero !== 'ranger' || a.weapon === null || a.ammo < 200));
+  }
+  const w = arena();
+  const [a, b] = w.players;
+  park(w, a, b);
+  place(a, BX, BZ); place(b, BX + 8, BZ);
+  w.brawl.damage(b, a, 'rocket', 1, 1, 0, 0);
+  check('hitting rivals charges the Super', a.charge >= W.super.perHit * W.super.quake.chargeRate - 0.001, a.charge.toFixed(2));
+  for (const kind of ['heal', 'speed', 'shield', 'rage', 'energy'] as const) {
+    place(a, BX, BZ); a.hp = 30; a.charge = 0; a.rageT = a.speedT = a.shieldT = 0;
+    w.powerups = [{ id: 999, kind, x: BX, z: BZ, age: 1 }];
+    w.tick(DT, w.players.map(() => noInput));
+    const ok = kind === 'heal' ? a.hp > 70 : kind === 'speed' ? a.speedT > 0 : kind === 'shield' ? a.shieldT > 0 : kind === 'rage' ? a.rageT > 0 : a.charge >= 0.39;
+    check(`pickup ${kind} works`, ok && !w.powerups.some((u) => u.id === 999));
+  }
+  let streaks = 0;
+  a.streak = 0;
+  for (let i = 0; i < 3; i++) {
+    place(b, BX + 8, BZ); b.hp = 1; b.state = 'normal';
+    w.events.length = 0;
+    w.brawl.damage(b, a, 'rocket', 2, 1, 0, 0);
+    streaks += w.events.filter((e) => e.t === 'streak').length;
+  }
+  check('three KOs in a row pay a streak reward', streaks === 1 && a.streak === 3);
 }
 
 // ------------------------------------------------------------------ Rocket Launcher

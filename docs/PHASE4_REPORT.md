@@ -57,14 +57,27 @@ Causes found by measurement, and the fix:
 
 Still short of smooth on this machine in these conditions. Not measured with an idle graphics chip or on a phone.
 
+## One long match, Supers and phone controls
+
+* A match is one 3 minute round. The twist changes at 45, 90 and 135 seconds; the last 30 seconds are double points while the edges crumble. Time up goes straight to the results.
+* All six weapons come out of the mystery boxes from the first level.
+* Super meter: fills by hitting, knocking out, popping and over time. Ranger Overdrive (endless stronger laser), Bones Quake (area blast), Pinch Shadow Rush (speed, healing, harder hits, hidden from bots and aim assist), Grizzle Titan (bigger, tough, flattens on touch).
+* Power bubbles on the map: health, speed, shield, damage boost, Super energy.
+* Every third knockout without being knocked out pays health, speed and Super energy.
+* Phone: fire is the biggest button; new Super button; auto-attack with any weapon; gentle aim magnet; faster flick turning; vibration; button size setting; full screen and landscape on PLAY; two-column settings on short screens.
+
+Bot-only simulation (24 matches, before the last balance nudge to the first match): about 19 Supers and 47 knockouts per match across 6 fighters, first Super at about 29 s, hero win shares between 4 and 9 of 36 seats (small sample).
+
+Not verified in a browser after the last edits: the two-column settings layout, the Super names on the phone lobby, the button size setting, the raised Titan name tag. The menu test run was stopped by low memory before it reported anything.
+
 ## Tests
 
 | Check | Result |
 |---|---|
 | `npm test` | all pass |
-| `tools/ui-test.mjs` | 84 checks, then a test-only timeout on a pulsing button; the remaining 17 pass when rerun |
+| `tools/ui-test.mjs` | updated for the new rules; **not completed** on this version (low memory) |
 | `tools/net-test.mjs` (friends turned on with `?friends`) | 9 of 9 on the previous release; not rerun |
-| `tools/aim-test.mjs` | 29 of 30 on-target shots (the miss was a displaced test hero); other checks pass |
+| `tools/aim-test.mjs` | not rerun on this version (last: 29 of 30) |
 | `tools/collision-audit.mjs` | pass on the previous release; layouts unchanged since |
 | Speed, phone-size, low graphics, Intel HD 620 | Bubblegum 45 → 44 fps, Candy 45 → 46 fps (previous release → this one) |
 

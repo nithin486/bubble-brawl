@@ -285,3 +285,11 @@
   .missions .bar { height: 5px; margin: 2px 0 0; }
   .missions em { font-size: 9px; padding: 1px 5px; }
 }
+
+.ability .sup { margin-top: 4px; }
+.ability .sup em { font: 400 13px var(--display); font-style: normal; color: #d9b8ff; margin-right: 3px; }
+/* phones: just the two names, ability and Super */
+@media (max-height: 520px) {
+  .ability .sup { display: block; margin: 0; font-size: 0; }
+  .ability .sup em { font-size: 11px; margin: 0; white-space: nowrap; }
+}

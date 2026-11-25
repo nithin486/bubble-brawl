@@ -82,6 +82,7 @@ export class Room {
         dash: !!msg.d || !!prev?.dash,
         grab: !!msg.g || !!prev?.grab,
         skill: !!msg.s || !!prev?.skill,
+        ult: !!msg.u || !!prev?.ult,
         aim: msg.a === undefined ? undefined : Number(msg.a),
         aimD: msg.ad === undefined ? undefined : Number(msg.ad),
         aimY: msg.ay === undefined ? undefined : Number(msg.ay),
@@ -97,7 +98,7 @@ export class Room {
   takeInput(peer: string): Input | null {
     const i = this.inputs.get(peer);
     if (!i) return null;
-    this.inputs.set(peer, { ...i, dash: false, grab: false, skill: false });
+    this.inputs.set(peer, { ...i, dash: false, grab: false, skill: false, ult: false });
     return i;
   }
 
@@ -127,7 +128,7 @@ export class Room {
   }
 
   sendInput(i: Input) {
-    this.t.broadcast({ t: 'in', mx: Math.round(i.mx * 100) / 100, mz: Math.round(i.mz * 100) / 100, d: i.dash ? 1 : 0, g: i.grab ? 1 : 0, s: i.skill ? 1 : 0, ...(i.aim !== undefined ? { a: Math.round(i.aim * 100) / 100, ad: Math.round((i.aimD ?? 8) * 10) / 10, ...(i.aimY !== undefined ? { ay: Math.round(i.aimY * 10) / 10 } : {}) } : {}) });
+    this.t.broadcast({ t: 'in', mx: Math.round(i.mx * 100) / 100, mz: Math.round(i.mz * 100) / 100, d: i.dash ? 1 : 0, g: i.grab ? 1 : 0, s: i.skill ? 1 : 0, ...(i.ult ? { u: 1 } : {}), ...(i.aim !== undefined ? { a: Math.round(i.aim * 100) / 100, ad: Math.round((i.aimD ?? 8) * 10) / 10, ...(i.aimY !== undefined ? { ay: Math.round(i.aimY * 10) / 10 } : {}) } : {}) });
   }
 
   setHero(hero: HeroId) {

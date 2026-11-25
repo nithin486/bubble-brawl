@@ -166,8 +166,7 @@ export class World {
   private pickMod(round: number): RoundMod {
     if (this.mode === 'weapons') {
       // weapons-mode twists change how the fight plays (the coin twists mean nothing here)
-      if (round >= T.match.rounds) return 'double'; // final round: every KO and pop counts double
-      if (round === 1) return this.firstMatch ? 'none' : this.rng.pick(['turbo', 'rapid', 'ammo'] as RoundMod[]);
+      if (this.roundTime === 0) return this.firstMatch ? 'none' : this.rng.pick(['turbo', 'rapid', 'ammo'] as RoundMod[]);
       const wpool: RoundMod[] = ['turbo', 'bombs', 'rapid', 'ammo', 'rockets', 'blasters', 'frost', 'boxfest'];
       let wm = this.mod;
       while (wm === this.mod) wm = this.rng.pick(wpool);
@@ -264,8 +263,21 @@ export class World {
     }
     if (this.phase === 'matchEnd') return;
 
+    const before = this.roundTime;
     this.roundTime += dt;
     this.tickFinale();
+    // one long match: a fresh twist every so often, and the last stretch is double points
+    if (this.mode === 'weapons') {
+      const every = T.match.twistEvery;
+      const last = T.match.roundSeconds - T.finale.seconds;
+      let next: RoundMod | null = null;
+      if (before < last && this.roundTime >= last) next = 'double';
+      else if (this.roundTime < last - 10 && Math.floor(before / every) !== Math.floor(this.roundTime / every)) next = this.pickMod(2);
+      if (next) {
+        this.mod = next;
+        this.events.push({ t: 'twist', mod: next });
+      }
+    }
     if (this.mode === 'weapons') this.brawl.tick(dt);
     else {
       this.tickBank(dt);
@@ -293,9 +305,11 @@ export class World {
   // ------------------------------------------------------------------ players
 
   private speedOf(p: Player) {
-    if (p.speedT > 0) return T.hero.walkSpeed * T.powerups.speed.mult * (this.mod === 'turbo' ? T.mods.turbo.speedMult : 1); // speed boots ignore the carry slowdown
+    const S = T.weapons.super;
+    const boost = p.superT > 0 ? (p.hero === 'ranger' ? S.overdrive.speed : p.hero === 'pinch' ? S.rush.speed : 1) : 1;
+    if (p.speedT > 0) return T.hero.walkSpeed * boost * T.powerups.speed.mult * (this.mod === 'turbo' ? T.mods.turbo.speedMult : 1); // speed boots ignore the carry slowdown
     const slow = Math.max(T.hero.carrySlowFloor, 1 - p.carried * T.hero.carrySlowPerCoin);
-    return T.hero.walkSpeed * slow * (this.mod === 'turbo' ? T.mods.turbo.speedMult : 1);
+    return T.hero.walkSpeed * boost * slow * (this.mod === 'turbo' ? T.mods.turbo.speedMult : 1);
   }
 
   private tickPlayer(p: Player, inp: Input, dt: number) {
@@ -364,6 +378,7 @@ export class World {
     // --- actions
     if (live && canAct && !p.cast) {
       if (inp.dash && p.dashCd <= 0 && p.state === 'normal') this.startDash(p, inp);
+      else if (inp.ult && this.mode === 'weapons' && p.charge >= 1 && p.superT <= 0) this.brawl.activateSuper(p);
       else if (inp.skill && p.skillCd <= 0) this.startSkill(p);
       else if (inp.grab && p.weapon) {
         // turn to where the scope points; assist shrinks to a small cone so the shot goes where you aimed
@@ -783,7 +798,7 @@ export class World {
     const total = w.magnet + w.speed + w.shield + w.bomb;
     let r = this.rng.next() * total;
     let kind: PowerKind = 'bomb';
-    for (const k of ['magnet', 'speed', 'shield', 'bomb'] as PowerKind[]) {
+    for (const k of ['magnet', 'speed', 'shield', 'bomb'] as const) {
       r -= w[k];
       if (r <= 0) {
         kind = k;
@@ -1285,7 +1300,8 @@ export class World {
 }
 
 export function targetable(o: Player) {
-  return o.state !== 'falling' && o.state !== 'launched' && o.invuln <= 0;
+  // (a Shadow Rush hides you from aim assist and from bots)
+  return o.state !== 'falling' && o.state !== 'launched' && o.invuln <= 0 && !(o.superT > 0 && o.hero === 'pinch');
 }
 
 function newPlayer(id: number, s: PlayerSetup): Player {
@@ -1336,6 +1352,10 @@ function newPlayer(id: number, s: PlayerSetup): Player {
     lastHitBy: -1,
     lastHitT: 0,
     kos: 0,
+    charge: 0,
+    superT: 0,
+    rageT: 0,
+    streak: 0,
   };
 }
 
@@ -1355,6 +1375,7 @@ function resetForRound(p: Player) {
   p.launch = null;
   p.padCd = 0;
   p.magnetT = p.speedT = p.shieldT = 0;
+  p.superT = p.rageT = p.streak = 0;
   p.combo = p.comboT = 0;
   p.robbedBy = -1;
   p.robbedT = 0;

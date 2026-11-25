@@ -8,6 +8,8 @@ import { TUNING } from '../../../shared/config/tuning.ts';
 import { HEROES, type HeroId } from '../../../shared/config/heroes.ts';
 import type { InputManager } from '../input.ts';
 import { powerIconCanvas, POWER_INFO } from '../render/powerups.ts';
+import { haptics } from '../input.ts';
+import { heroScale } from '../../../shared/sim/ray.ts';
 import type { PowerKind } from '../../../shared/sim/types.ts';
 import { UI } from './icons.ts';
 import { CREDITS_HTML } from './credits.ts';
@@ -80,7 +82,7 @@ export const MOD_INFO: Record<string, { name: string; text: string; icon: string
   turbo: { name: 'TURBO', text: 'Everyone runs 35% faster', icon: UI.bolt, color: '#ffd23f' },
   magnet: { name: 'MAGNET STORM', text: 'Everyone pulls nearby coins', icon: UI.coin, color: '#ff5f7a' },
   goldrush: { name: 'GOLD RUSH', text: 'The jackpot erupts every 9 seconds', icon: UI.coin, color: '#7ff3ff' },
-  double: { name: 'FINAL ROUND · DOUBLE POINTS', text: 'Every bank counts ×2 — anyone can still win!', icon: UI.star, color: '#ff5fd2' },
+  double: { name: 'DOUBLE POINTS', text: 'Every bank counts ×2 — anyone can still win!', icon: UI.star, color: '#ff5fd2' },
   // weapons-mode twists
   rapid: { name: 'RAPID FIRE', text: 'Every weapon reloads twice as fast', icon: UI.bolt, color: '#5fe3ff' },
   ammo: { name: 'DOUBLE AMMO', text: 'Every box gives you twice the ammo', icon: UI.ammo, color: '#9dff7a' },
@@ -105,7 +107,7 @@ export class Hud {
   root = el('div');
   private timer = el('div', 'timer stroke');
   private roundEl = el('div', 'round stroke');
-  private finaleTag = el('div', 'finale-tag', 'FINAL 15s · ISLAND CRUMBLING');
+  private finaleTag = el('div', 'finale-tag', `FINAL ${TUNING.finale.seconds}s · ISLAND CRUMBLING`);
   private board = el('div', 'board');
   private rows: HTMLElement[] = [];
   private carryPill = el('div', 'pill carry');
@@ -118,6 +120,8 @@ export class Hud {
   private btnGrab: HTMLElement;
   private btnDash: HTMLElement;
   private skillTip = el('div', 'btn-tip stroke', 'Press SKILL!');
+  private btnUlt = el('div', 'btn ult tap');
+  private ultWas = -1;
   private fpsEl = el('div', 'fps');
   private panel: HTMLElement | null = null;
   private feedEl = el('div', 'feed');
@@ -163,7 +167,7 @@ export class Hud {
     const mine = el('div', 'mine');
     mine.append(this.carryPill, this.bankPill);
     this.root.append(mine, this.comboEl, this.powersEl, this.flashEl, this.bankValEl);
-    for (const k of ['magnet', 'speed', 'shield'] as PowerKind[]) {
+    for (const k of ['magnet', 'speed', 'shield', 'rage'] as PowerKind[]) {
       const c = el('div', 'pchip', `<img src="${powerShot(k)}"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="#ffffff40" stroke-width="4"/><circle class="t" cx="20" cy="20" r="17" fill="none" stroke="${POWER_INFO[k].color}" stroke-width="4" stroke-dasharray="106.8" transform="rotate(-90 20 20)"/></svg>`);
       this.powerChips.set(k, c);
       this.powersEl.append(c);
@@ -212,13 +216,18 @@ export class Hud {
     this.btnSkill = el('div', 'btn skill tap', `<div class="cd"></div>${ICONS[ab]}<span class="lbl">SKILL</span><span class="num"></span><span class="hits"></span>${touch ? '' : '<span class="key">K</span>'}`);
     this.btnGrab = el('div', 'btn grab tap', `<div class="cd"></div>${ICONS.grab}<span class="lbl">GRAB</span>${touch ? '' : '<span class="key">J</span>'}`);
     this.btnDash = el('div', 'btn dash tap', `<div class="cd"></div>${ICONS.dash}<span class="lbl">DASH</span>${touch ? '' : '<span class="key">SPACE</span>'}`);
+    this.btnUlt.innerHTML = `<div class="cd"></div>${UI.star}<span class="lbl">SUPER</span><span class="pct">0%</span>${touch ? '' : '<span class="key">F</span>'}`;
+    this.btnUlt.style.setProperty('--hc', HEROES[me.hero].color);
+    this.btnUlt.setAttribute('aria-label', `Super: ${HEROES[me.hero].superName}`);
+    if (world.mode === 'weapons') ctr.append(this.btnUlt);
     ctr.append(this.btnSkill, this.btnGrab, this.btnDash, this.skillTip);
     this.root.append(ctr);
-    const bind = (b: HTMLElement, k: 'dash' | 'grab' | 'skill') => {
+    const bind = (b: HTMLElement, k: 'dash' | 'grab' | 'skill' | 'ult') => {
       const down = (e: Event) => {
         e.preventDefault();
         b.classList.add('down');
         input.press(k);
+        if (touch && (k !== 'ult' || this.ultWas >= 100)) haptics.buzz(k === 'ult' ? 40 : 12);
       };
       const up = () => b.classList.remove('down');
       b.addEventListener('pointerdown', down);
@@ -229,6 +238,7 @@ export class Hud {
     bind(this.btnSkill, 'skill');
     bind(this.btnGrab, 'grab');
     bind(this.btnDash, 'dash');
+    bind(this.btnUlt, 'ult');
     // the fire button: hold to keep firing, and slide the thumb to aim while you shoot
     let aimId = -1;
     let ax = 0;
@@ -356,7 +366,7 @@ export class Hud {
   roulette(mod: string, round: number, mode = 'coins') {
     const keys = mode === 'weapons' ? WEAPON_MODS : Object.keys(MOD_INFO).filter((k) => k !== 'double' && k !== 'none' && !WEAPON_MODS.includes(k));
     const card = el('div', 'roulette');
-    card.innerHTML = `<div class="rl-top stroke">ROUND ${round}</div><div class="rl-reel"><span class="rl-ic"></span></div><div class="rl-name stroke"></div><div class="rl-text"></div>`;
+    card.innerHTML = `<div class="rl-top stroke">${TUNING.match.rounds === 1 ? `${TUNING.match.roundSeconds / 60} MINUTE BRAWL` : `ROUND ${round}`}</div><div class="rl-reel"><span class="rl-ic"></span></div><div class="rl-name stroke"></div><div class="rl-text"></div>`;
     this.root.append(card);
     const ic = card.querySelector('.rl-ic') as HTMLElement;
     const nm = card.querySelector('.rl-name') as HTMLElement;
@@ -386,6 +396,14 @@ export class Hud {
     setTimeout(() => card.classList.add('out'), 3400);
     setTimeout(() => card.remove(), 3900);
   }
+  /** The twist changed mid-match. */
+  twist(mod: string, mode = 'weapons') {
+    const m = modInfo(mod, mode);
+    if (!m) return;
+    this.banner(m.name, mod === 'double' ? 'red' : 'gold');
+    setTimeout(() => this.banner(m.text, 'teal', true), 900);
+  }
+
   onTick: (() => void) | null = null;
   onLand: (() => void) | null = null;
 
@@ -402,6 +420,7 @@ export class Hud {
     const dots = Array.from({ length: TUNING.match.rounds }, (_, i) => `<i class="${i + 1 < world.round ? 'done' : i + 1 === world.round ? 'now' : ''}"></i>`).join('');
     const rh = `<span>ROUND ${world.round}</span>${dots}`;
     setHTML(this.roundEl, rh);
+    if (TUNING.match.rounds === 1 && this.roundEl.style.display !== 'none') this.roundEl.style.display = 'none';
     this.finaleTag.classList.toggle('on', world.finale && playing);
 
     // scoreboard: total banked this match (+ this round), hidden during the finale
@@ -504,11 +523,18 @@ export class Hud {
     }
     // active power-ups with time rings
     const P = TUNING.powerups;
-    const times: Record<string, [number, number]> = { magnet: [me.magnetT, P.magnet.seconds], speed: [me.speedT, P.speed.seconds], shield: [me.shieldT, P.shield.seconds] };
+    const WP = TUNING.weapons.pickups;
+    const times: Record<string, [number, number]> = {
+      magnet: [me.magnetT, P.magnet.seconds],
+      speed: [me.speedT, world.mode === 'weapons' ? WP.speedSeconds : P.speed.seconds],
+      shield: [me.shieldT, world.mode === 'weapons' ? WP.shieldSeconds : P.shield.seconds],
+      rage: [me.rageT, WP.rageSeconds],
+    };
+    if (world.mode === 'weapons') this.updateSuper(me);
     for (const [k, c] of this.powerChips) {
       const [t, max] = times[k];
       c.classList.toggle('on', t > 0);
-      if (t > 0) (c.querySelector('.t') as SVGCircleElement).style.strokeDashoffset = String(106.8 * (1 - t / max));
+      if (t > 0) (c.querySelector('.t') as SVGCircleElement).style.strokeDashoffset = String(106.8 * (1 - Math.min(1, t / max)));
     }
 
     // tags above heads
@@ -523,7 +549,7 @@ export class Hud {
     for (const p of order2) {
       const i = p.id;
       const t = this.tags[i];
-      this.v.set(p.x, p.y + 2.25, p.z).project(camera);
+      this.v.set(p.x, p.y + 2.25 * heroScale(p), p.z).project(camera);
       const sx = (this.v.x * 0.5 + 0.5) * w;
       const sy = (-this.v.y * 0.5 + 0.5) * h;
       const box = { x: sx - 40, y: sy - 34, w: 80, h: 34 };
@@ -613,6 +639,20 @@ export class Hud {
     this.cooldown(this.btnDash, me.dashCd, TUNING.dash.cooldown, false);
     this.btnSkill.classList.toggle('ready', me.skillCd <= 0 && playing);
     void now;
+  }
+
+  /** The Super button fills as you fight; it glows when ready and drains while the Super runs. */
+  private updateSuper(me: Player) {
+    const S = TUNING.weapons.super;
+    const active = me.superT > 0;
+    const max = me.hero === 'ranger' ? S.overdrive.seconds : me.hero === 'pinch' ? S.rush.seconds : S.titan.seconds;
+    const pct = active ? Math.round((Math.min(1, me.superT / max) * 100) / 4) * 4 : Math.floor(me.charge * 100 + 0.001);
+    const state = active ? 'active' : pct >= 100 ? 'full' : '';
+    if (pct === this.ultWas && this.btnUlt.dataset.s === state) return;
+    this.ultWas = pct;
+    this.btnUlt.dataset.s = state;
+    (this.btnUlt.querySelector('.cd') as HTMLElement).style.setProperty('--p', `${100 - pct}%`);
+    this.btnUlt.querySelector('.pct')!.textContent = active ? '' : pct >= 100 ? (this.touch ? 'TAP!' : 'PRESS F') : `${pct}%`;
   }
 
   private cooldown(b: HTMLElement, cd: number, max: number, showNum: boolean, ring = '.cd') {
@@ -879,7 +919,7 @@ export class Hud {
     p.classList.add(rank === 1 ? 'win' : 'loss');
     p.append(el('span', 'verdict', rank === 1 ? 'VICTORY' : rank <= 3 ? 'ON THE PODIUM' : 'DEFEAT'));
     p.append(el('h1', 'stroke' + (rank > 3 ? ' lose' : ''), title));
-    p.append(this.standings(world.players, localId, (x) => x.bankedTotal, (x) => `${x.roundsWon} round${x.roundsWon === 1 ? '' : 's'}`));
+    p.append(this.standings(world.players, localId, (x) => x.bankedTotal, (x) => (world.mode === 'weapons' ? `${x.kos} KO${x.kos === 1 ? '' : 's'}` : `${x.stats.banks} banks`)));
 
     const by = (f: (x: Player) => number) => [...world.players].sort((a, b) => f(b) - f(a))[0];
     const thief = by((x) => x.stats.stolen);
@@ -945,8 +985,8 @@ export class Hud {
   }
 
   showPause(
-    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; camera: string; aimSpeed: string; autoFire: boolean | null; aimAssist: boolean | null },
-    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; camera: () => void; aimSpeed: () => void; autoFire: () => void; aimAssist: () => void; credits: () => void },
+    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; camera: string; aimSpeed: string; autoFire: boolean | null; aimAssist: boolean | null; buttons: string | null; vibrate: boolean | null },
+    on: { buttons: () => void; vibrate: () => void; resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; camera: () => void; aimSpeed: () => void; autoFire: () => void; aimAssist: () => void; credits: () => void },
   ) {
     const p = el('div', 'panel menu-panel');
     p.append(el('h1', 'stroke', state.inMatch ? 'Paused' : 'Settings'));
@@ -964,7 +1004,9 @@ export class Hud {
     t(UI.display, 'Graphics', state.quality.toUpperCase(), () => on.quality(), 'cycle');
     t(UI.bolt, 'Aim speed', state.aimSpeed.toUpperCase(), () => on.aimSpeed(), 'cycle');
     if (state.aimAssist !== null) t(UI.star, 'Aim assist', state.aimAssist ? 'ON' : 'OFF', () => on.aimAssist(), 'switch', state.aimAssist);
-    if (state.autoFire !== null) t(UI.star, 'Auto-fire laser', state.autoFire ? 'ON' : 'OFF', () => on.autoFire(), 'switch', state.autoFire);
+    if (state.autoFire !== null) t(UI.star, 'Auto-attack', state.autoFire ? 'ON' : 'OFF', () => on.autoFire(), 'switch', state.autoFire);
+    if (state.buttons !== null) t(UI.gear, 'Button size', state.buttons.toUpperCase(), () => on.buttons(), 'cycle');
+    if (state.vibrate !== null) t(UI.shake, 'Vibration', state.vibrate ? 'ON' : 'OFF', () => on.vibrate(), 'switch', state.vibrate);
     if (!state.inMatch) t(UI.heroes, 'Credits', 'VIEW', () => on.credits(), 'act');
     const row = el('div', 'btn-row');
     if (state.inMatch) {
@@ -977,7 +1019,7 @@ export class Hud {
     row.append(b);
     p.append(row);
     if (state.inMatch && !this.touch)
-      p.append(el('div', 'keys', '<span><kbd>W A S D</kbd>Move</span><span><kbd>SPACE</kbd>Dash</span><span><kbd>J</kbd><kbd>CLICK</kbd>Fire / punch</span><span><kbd>K</kbd><kbd>RIGHT CLICK</kbd>Skill</span>'));
+      p.append(el('div', 'keys', '<span><kbd>W A S D</kbd>Move</span><span><kbd>SPACE</kbd>Dash</span><span><kbd>J</kbd><kbd>CLICK</kbd>Fire / punch</span><span><kbd>K</kbd><kbd>RIGHT CLICK</kbd>Skill</span><span><kbd>F</kbd>Super</span>'));
     this.open(p);
   }
 }

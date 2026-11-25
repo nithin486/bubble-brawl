@@ -111,7 +111,7 @@ export class Home {
           <button class="mp r tap" aria-label="Next map">${UI.right}</button>
           <div class="mt"><small></small><b></b><span></span></div>
         </div>
-        <div class="mode glass">${UI.trophy}<div><b>Weapon Brawl</b><span>${TUNING.match.rounds} rounds · ${TUNING.match.playersPerMatch} fighters · bots fill empty seats</span></div></div>
+        <div class="mode glass">${UI.trophy}<div><b>Weapon Brawl</b><span>${TUNING.match.roundSeconds / 60} minutes · ${TUNING.match.playersPerMatch} fighters · charge your Super</span></div></div>
         <button class="play tap">PLAY<small></small></button>
         <button class="friends tap"${state.friends ? '' : ' disabled'}>${UI.friends}<span>Play with friends</span>${state.friends ? '' : '<em>SOON</em>'}</button>
         <div class="keyhint">${state.touch ? '' : '<kbd>Enter</kbd> play <kbd>←</kbd><kbd>→</kbd> hero'}</div>
@@ -223,7 +223,7 @@ export class Home {
     this.nameEl.textContent = h.name;
     this.roleEl.textContent = h.role.toUpperCase();
     this.roleEl.style.color = h.color;
-    this.abilityEl.innerHTML = `<div class="ic">${ICONS[h.ability]}</div><div><b>${h.abilityName}</b><span>${h.abilityText}</span></div><div class="cdt">${TUNING.abilities[h.ability].cooldown}s</div>`;
+    this.abilityEl.innerHTML = `<div class="ic">${ICONS[h.ability]}</div><div><b>${h.abilityName}</b><span>${h.abilityText}</span><span class="sup"><em>SUPER · ${h.superName}</em> ${h.superText}</span></div><div class="cdt">${TUNING.abilities[h.ability].cooldown}s</div>`;
     this.lockEl.classList.toggle('on', locked);
     this.lockEl.querySelector('span')!.textContent = locked ? `Reach level ${heroLevel(h.id)} to unlock ${h.name}` : '';
     this.refreshPlay();

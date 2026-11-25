@@ -9,6 +9,9 @@ export const POWER_INFO: Record<PowerKind, { name: string; color: string; text: 
   speed: { name: 'SPEED BOOTS', color: '#ffd23f', text: 'Run fast, no carry slowdown' },
   shield: { name: 'BUBBLE SHIELD', color: '#5ff0ff', text: 'Blocks the next hit' },
   bomb: { name: 'BUBBLE BOMB', color: '#ff8a3d', text: 'Boom! Knocks rivals away' },
+  heal: { name: 'HEALTH', color: '#4be36a', text: '+50 health' },
+  rage: { name: 'DOUBLE TROUBLE', color: '#ff4a6e', text: 'Your hits do much more damage' },
+  energy: { name: 'SUPER ENERGY', color: '#b06bff', text: 'Fills your Super meter' },
 };
 
 /** Icon drawn into a canvas: used inside the 3D bubbles and on the HUD. */
@@ -68,6 +71,37 @@ export function powerIconCanvas(kind: PowerKind, size = 128) {
     g.lineTo(96, 36);
     g.quadraticCurveTo(96, 86, 64, 104);
     g.quadraticCurveTo(32, 86, 32, 36);
+    g.closePath();
+    g.stroke();
+    g.fill();
+  } else if (kind === 'heal') {
+    g.beginPath();
+    g.moveTo(52, 30);
+    for (const [x, y] of [[76, 30], [76, 52], [98, 52], [98, 76], [76, 76], [76, 98], [52, 98], [52, 76], [30, 76], [30, 52], [52, 52]]) g.lineTo(x, y);
+    g.closePath();
+    g.stroke();
+    g.fill();
+  } else if (kind === 'rage') {
+    // a flame
+    g.beginPath();
+    g.moveTo(66, 20);
+    g.bezierCurveTo(70, 44, 98, 52, 94, 78);
+    g.bezierCurveTo(92, 98, 76, 108, 62, 108);
+    g.bezierCurveTo(44, 108, 32, 94, 34, 76);
+    g.bezierCurveTo(35, 62, 44, 56, 46, 44);
+    g.bezierCurveTo(56, 52, 58, 60, 57, 68);
+    g.bezierCurveTo(70, 56, 72, 40, 66, 20);
+    g.closePath();
+    g.stroke();
+    g.fill();
+  } else if (kind === 'energy') {
+    // a star
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+      const r = i % 2 ? 18 : 42;
+      g[i ? 'lineTo' : 'moveTo'](64 + Math.cos(a) * r, 66 + Math.sin(a) * r);
+    }
     g.closePath();
     g.stroke();
     g.fill();
@@ -141,7 +175,7 @@ export class PowerView {
     this.scene = scene;
     this.world = world;
     this.glowTex = glowTex;
-    for (const k of ['magnet', 'speed', 'shield', 'bomb'] as PowerKind[]) {
+    for (const k of Object.keys(POWER_INFO) as PowerKind[]) {
       const t = new THREE.CanvasTexture(powerIconCanvas(k));
       t.colorSpace = THREE.SRGBColorSpace;
       this.icons.set(k, t);

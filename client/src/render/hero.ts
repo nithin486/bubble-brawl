@@ -1,4 +1,5 @@
 import { bakePiece } from './arena-view.ts';
+import { heroScale } from '../../../shared/sim/ray.ts';
 import * as THREE from 'three';
 import { addOutlines } from './style.ts';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -108,6 +109,7 @@ export class HeroView {
   readonly player: Player;
   readonly isLocal: boolean;
   celebrating = false;
+  private grow = 1;
   /** Strong carry glow only for you and the crown-holder; others get a soft one. */
   loudGlow = true;
   /** 1 = solid; lower when this hero stands in front of you in a crowd. */
@@ -537,7 +539,8 @@ export class HeroView {
     // squash & stretch
     this.squash *= Math.exp(-dt * 10);
     const sq = this.squash;
-    const s = this.baseScale;
+    this.grow += (heroScale(p) - this.grow) * Math.min(1, dt * 9);
+    const s = this.baseScale * this.grow;
     this.model.scale.set(s * (1 + sq * 0.5), s * (1 - sq), s * (1 + sq * 0.5));
 
     // flash on hit, blink while invulnerable

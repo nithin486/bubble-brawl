@@ -21,6 +21,9 @@ export const GUN_HEIGHT = 1.25;
 /** A hero's hit shape: radius and height of the body, and the radius of a knock-out bubble. */
 export const BODY = { r: 0.55, h: 1.95, bubbleR: 1.15, bubbleY: 1.05 };
 
+/** A Titan is bigger, to look at and to shoot at. */
+export const heroScale = (p: Player) => (p.superT > 0 && p.hero === 'grizzle' ? 1.4 : 1);
+
 export interface RayHit {
   /** Distance along the ray (the maximum when nothing was hit). */
   t: number;
@@ -93,7 +96,7 @@ export function castRay(w: World, ox: number, oy: number, oz: number, dx: number
     const bubble = p.state === 'bubble';
     const t = bubble
       ? cylinder(ox, oy, oz, dx, dy, dz, p.x, p.z, BODY.bubbleR, base + BODY.bubbleY - BODY.bubbleR, base + BODY.bubbleY + BODY.bubbleR + 1)
-      : cylinder(ox, oy, oz, dx, dy, dz, p.x, p.z, Math.max(BODY.r, TUNING.hero.radius), base, base + BODY.h);
+      : cylinder(ox, oy, oz, dx, dy, dz, p.x, p.z, Math.max(BODY.r, TUNING.hero.radius) * heroScale(p), base, base + BODY.h * heroScale(p));
     if (t < best) {
       best = t;
       player = p;
