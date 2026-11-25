@@ -655,3 +655,57 @@ body.cam-third .tag.me .tn{display:none}
 /* phone buttons: finger-sized even at the smallest scale */
 @media (pointer: coarse) and (max-height: 520px) { .controls { transform: scale(0.74); } }
 @media (pointer: coarse) and (max-height: 340px) { .controls { transform: scale(0.62); } .rack .slot { width: 22px; height: 22px; } }
+
+/* ---------- shooter feedback ---------- */
+.xhair.kick i:nth-child(1) { animation: kickU .14s ease-out; }
+.xhair.kick i:nth-child(2) { animation: kickD .14s ease-out; }
+.xhair.kick i:nth-child(3) { animation: kickL .14s ease-out; }
+.xhair.kick i:nth-child(4) { animation: kickR .14s ease-out; }
+@keyframes kickU { 0% { transform: translateY(-7px); } }
+@keyframes kickD { 0% { transform: translateY(7px); } }
+@keyframes kickL { 0% { transform: translateX(-7px); } }
+@keyframes kickR { 0% { transform: translateX(7px); } }
+.hitx { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%) rotate(45deg); pointer-events: none; z-index: 6; animation: hitx .2s ease-out forwards; }
+.hitx i { position: absolute; background: #fff; border-radius: 2px; box-shadow: 0 0 0 1.5px #0a102cc0; }
+.hitx i:nth-child(1) { left: 13.5px; top: 0; width: 3px; height: 9px; }
+.hitx i:nth-child(2) { left: 13.5px; bottom: 0; width: 3px; height: 9px; }
+.hitx i:nth-child(3) { top: 13.5px; left: 0; width: 9px; height: 3px; }
+.hitx i:nth-child(4) { top: 13.5px; right: 0; width: 9px; height: 3px; }
+.hitx.ko { width: 48px; height: 48px; animation-duration: .5s; }
+.hitx.ko i { background: #ffd23f; }
+.hitx.ko i:nth-child(1), .hitx.ko i:nth-child(2) { left: 21.5px; width: 5px; height: 15px; }
+.hitx.ko i:nth-child(3), .hitx.ko i:nth-child(4) { top: 21.5px; height: 5px; width: 15px; }
+@keyframes hitx { 0% { transform: translate(-50%, -50%) rotate(45deg) scale(1.5); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 0; } }
+.xhair.armed { width: 38px; height: 38px; }
+.xhair.armed i:nth-child(1), .xhair.armed i:nth-child(2) { left: 17.5px; }
+.xhair.armed i:nth-child(3), .xhair.armed i:nth-child(4) { top: 17.5px; }
+.xhair.armed b { left: 16.5px; top: 16.5px; }
+
+.mdone { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 5px 12px; border-radius: 99px; background: #0e163690; box-shadow: inset 0 0 0 1.5px #7dff6a80; font-weight: 900; font-size: 13px; }
+.mdone span { font: 400 11px var(--display); letter-spacing: 1px; color: var(--ok); }
+.mdone b { flex: 1; }
+.mdone em { font: 400 14px var(--display); font-style: normal; color: var(--gold-solid); }
+.credits .cr { max-width: 520px; max-height: 50vh; overflow: auto; font-size: 13px; font-weight: 800; line-height: 1.55; user-select: text; }
+.credits .cr h4 { margin: 8px 0 2px; font: 400 15px var(--display); color: var(--gold-solid); }
+.credits .cr ul { margin: 0; padding-left: 18px; }
+.veil .panel.results { max-height: 94vh; }
+@media (max-height: 520px) { .mdone { font-size: 10px; margin-top: 3px; padding: 2px 8px; } .mdone span { font-size: 9px; } .mdone em { font-size: 11px; } .credits .cr { font-size: 11px; max-height: 44vh; } }
+
+/* an open menu owns the screen: no tips or crosshair on top of it */
+#hud:has(.veil) > .prompt, #hud:has(.veil) > .xhair, #hud:has(.veil) > .hitx, #hud:has(.veil) > .cam-hint, #hud:has(.veil) > .rack, #hud:has(.veil) > .respawn { display: none !important; }
+/* results with rewards on a short screen: rewards side by side so REMATCH stays visible */
+.panel .unlock + .unlock { margin-top: 4px; }
+@media (max-height: 520px) {
+  .panel.results { display: flex; flex-direction: column; }
+  .panel.results .st { padding-top: 0; padding-bottom: 0; }
+  /* short screens: the podium three (and you) are enough, so the rewards stay in view */
+  .panel.results .st:nth-child(n+4):not(.me) { display: none; }
+  .panel.results .st .face { width: 20px; height: 20px; border-width: 1.5px; }
+  .panel.results .st .rk, .panel.results .st .sc { font-size: 13px; }
+  .panel.results .standings { gap: 2px; }
+  .panel.results .unlock { font-size: 12px; margin-top: 3px; padding: 2px 8px; }
+  .panel.results .unlock img { width: 22px; height: 22px; }
+  .panel.results .rewards { margin-top: 4px; }
+  .panel.results .sub { font-size: 10px; margin: 3px 0 0; }
+  .panel.results .btn-row { position: sticky; bottom: -12px; margin-top: 6px; padding: 6px 0 4px; background: linear-gradient(180deg, transparent, #141d48 35%); }
+}

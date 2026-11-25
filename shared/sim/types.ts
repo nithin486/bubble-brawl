@@ -233,6 +233,7 @@ export type SimEvent =
   | { t: 'roundEnd'; round: number; winner: number; lost: { p: number; n: number }[] }
   | { t: 'matchEnd'; ranking: number[] }
   | { t: 'boxPick'; p: number; weapon: WeaponKind; x: number; z: number }
+  | { t: 'laser'; p: number; tx: number; tz: number; hit: number }
   | { t: 'fire'; p: number; weapon: WeaponKind; x: number; z: number; facing: number }
   | { t: 'boom'; kind: 'rocket' | 'freeze' | 'hammer'; x: number; z: number; r: number; hits: number }
   | { t: 'hook'; p: number; target: number; x: number; z: number }

@@ -9,7 +9,7 @@ import type { Fx } from './fx.ts';
 
 /** Names, colours and icons for the six weapons (HUD, banners, pickups). */
 export const WEAPON_INFO: Record<WeaponKind, { name: string; icon: string; color: string; tip: string }> = {
-  blaster: { name: 'BUBBLE BLASTER', icon: '🫧', color: '#5fe3ff', tip: 'Rapid bubble shots' },
+  blaster: { name: 'BUBBLE LASER', icon: '🫧', color: '#5fe3ff', tip: 'Hold fire for a rapid beam' },
   rocket: { name: 'ROCKET LAUNCHER', icon: '🚀', color: '#ff7a3d', tip: 'Big boom, 2 damage' },
   banana: { name: 'BANANA TRAP', icon: '🍌', color: '#ffe14a', tip: 'Drop it behind you: chasers slip' },
   freeze: { name: 'FREEZE BOMB', icon: '❄️', color: '#9fe8ff', tip: 'Throw it: freezes everyone it hits' },
@@ -252,6 +252,8 @@ function soapBubbleMaterial() {
 /** Draws mystery boxes, shots, banana traps, freeze bombs, KO bubbles and what each hero holds. */
 export class WeaponsView {
   group = new THREE.Group();
+  /** The seat you play (set by the game each match). */
+  localId = 0;
   private world: World;
   private fx: Fx;
   private boxes = new Map<number, BoxView>();
@@ -333,6 +335,55 @@ export class WeaponsView {
     this.group.visible = world.mode === 'weapons';
   }
 
+  // ---- Bubble Laser beams: a white core in a cyan glow, gone in a blink (pooled, nothing allocated per shot)
+  private beams: { g: THREE.Group; core: THREE.MeshBasicMaterial; halo: THREE.MeshBasicMaterial; t: number }[] = [];
+  private beamNext = 0;
+  private static beamGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+
+  laser(from: THREE.Vector3, to: THREE.Vector3, hit: boolean) {
+    if (this.beams.length < 14) {
+      const mk = (color: string, r: number) => {
+        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+        const mesh = new THREE.Mesh(WeaponsView.beamGeo, mat);
+        mesh.scale.set(r, r, 1);
+        mesh.renderOrder = 8;
+        mesh.frustumCulled = false;
+        return mesh;
+      };
+      const core = mk('#eaffff', 0.045);
+      const halo = mk('#2fd8ff', 0.15);
+      const g = new THREE.Group();
+      g.add(core, halo);
+      this.group.add(g);
+      this.beams.push({ g, core: core.material, halo: halo.material, t: 0 });
+      this.beamNext = this.beams.length - 1;
+    } else this.beamNext = (this.beamNext + 1) % this.beams.length;
+    const b = this.beams[this.beamNext];
+    b.g.position.copy(from);
+    b.g.lookAt(to);
+    b.g.scale.set(1, 1, from.distanceTo(to));
+    b.g.visible = true;
+    b.t = 0.13;
+    // muzzle flash, bubbles shed along the beam, and a pop where it lands
+    this.fx.emit(from.x, from.y, from.z, { n: 3, color: ['#ffffff', '#8ff0ff'], speed: 1.4, up: 0.4, life: 0.14, size: 0.34 });
+    for (let k = 1; k <= 3; k++) {
+      const u = (k - Math.random()) / 3.2;
+      this.fx.emit(from.x + (to.x - from.x) * u, from.y + (to.y - from.y) * u, from.z + (to.z - from.z) * u, { n: 1, color: ['#bff8ff', '#ffc6f0'], speed: 0.5, up: 0.5, life: 0.3, size: 0.22 });
+    }
+    this.fx.emit(to.x, to.y, to.z, { n: hit ? 12 : 5, color: hit ? ['#ffffff', '#ff7ac8', '#8ff0ff'] : ['#bff8ff', '#ffffff'], speed: hit ? 4 : 2.4, up: 1.2, life: 0.28, size: hit ? 0.34 : 0.22 });
+  }
+
+  private tickBeams(dt: number) {
+    for (const b of this.beams) {
+      if (!b.g.visible) continue;
+      b.t -= dt;
+      const k = Math.max(0, b.t / 0.13);
+      b.core.opacity = k;
+      b.halo.opacity = k * 0.6;
+      if (b.t <= 0) b.g.visible = false;
+    }
+  }
+
   /** A box was opened: its weapon icon pops up out of it (called by the game on 'boxPick'). */
   pickup(x: number, z: number, k: WeaponKind) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.weaponTex(k), transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
@@ -360,6 +411,7 @@ export class WeaponsView {
   }
 
   update(dt: number, time: number) {
+    this.tickBeams(dt);
     const w = this.world;
     if (w.mode !== 'weapons') return;
     const br = w.brawl;
@@ -631,7 +683,8 @@ export class WeaponsView {
         b.scale.set(1.15 * wob, 1.15 / wob, 1.15 * wob);
       }
       const h = this.held[i];
-      h.visible = !!p.weapon && !inBubble && p.state !== 'falling';
+      // rivals show what they carry; yours is on the rack, so nothing floats in front of your aim
+      h.visible = i !== this.localId && !!p.weapon && !inBubble && p.state !== 'falling';
       if (h.visible) {
         const tex = this.weaponTex(p.weapon!);
         if (h.material.map !== tex) {

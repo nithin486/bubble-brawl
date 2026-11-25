@@ -24,6 +24,14 @@ const SEE_VERT_HEAD = 'varying vec3 vSeeWP;\n';
 const SEE_VERT = 'vSeeWP = (modelMatrix * vec4(transformed, 1.0)).xyz;\n';
 const SEE_FRAG_HEAD = 'varying vec3 vSeeWP; uniform vec3 seeCam; uniform vec3 seeFocus; uniform float seeOn; uniform float seeR;\n';
 const SEE_FRAG = `
+  // whatever is right in front of the lens (a mushroom cap, a candy pillar) thins out: the camera never sits "inside" a prop
+  float sn = distance(vSeeWP, seeCam);
+  // (tall things such as caps thin out a little farther away than waist-high cover)
+  float far = vSeeWP.y > seeFocus.y + 0.9 ? 7.0 : 4.2;
+  if (sn < far && vSeeWP.y > 0.6) {
+    float k = clamp((sn - far * 0.5) / (far * 0.5), 0.0, 1.0);
+    if (fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453) > k) discard;
+  }
   if (seeOn > 0.5 && vSeeWP.y > 0.3) {
     // true 3D test: only geometry close to the camera→hero line (and below the hero's head) blocks the view,
     // so a deck wall or ramp the camera looks OVER is never dithered away

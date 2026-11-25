@@ -1,3 +1,4 @@
+import type { WeaponKind } from './types.ts';
 // Coin Clash simulation. Pure TypeScript: no Three.js, no DOM.
 // The client renders it; in Step 2 the Colyseus server runs this same file.
 import { TUNING } from '../config/tuning.ts';
@@ -7,7 +8,7 @@ import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng } from './math
 import { Terrain } from './terrain.ts';
 import { MAPS, type MapDef, type MapId, type Obstacle } from '../config/maps.ts';
 import { Brawl } from './brawl.ts';
-import { NO_INPUT, type GameMode, type Hazard, type RoundMod, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent } from './types.ts';
+import { NO_INPUT, type GameMode, type Hazard, type RoundMod, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent, WEAPONS } from './types.ts';
 
 const T = TUNING;
 
@@ -21,6 +22,10 @@ export class World {
   /** 'weapons' = mystery boxes + KO points; 'coins' = the original carry-and-bank game. */
   mode: GameMode = 'weapons';
   brawl: Brawl;
+  /** How good the bots are, 0 (gentle) .. 1 (sharp). */
+  skill = 0.5;
+  /** Weapons the mystery boxes may hold (levels unlock more). Round twists can still hand out a locked one as a taster. */
+  pool: readonly WeaponKind[] = WEAPONS;
   phase: Phase = 'countdown';
   phaseT = 0;
   round = 0;
@@ -273,6 +278,12 @@ export class World {
     this.tickBombs(dt);
     this.tickHazards(dt);
     for (const p of this.players) this.tickPlayer(p, inputs[p.id] ?? NO_INPUT, dt);
+    // shooter aim: with a weapon in hand you face where you point, however you are running
+    if (this.mode === 'weapons')
+      for (const p of this.players) {
+        const aim = inputs[p.id]?.aim;
+        if (p.weapon && !p.cast && p.state === 'normal' && aim !== undefined && Number.isFinite(aim)) p.facing = aim;
+      }
     this.separate();
     this.tickCoins(dt);
     this.tickTiles();

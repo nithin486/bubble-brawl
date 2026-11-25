@@ -34,7 +34,8 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
 
 // ------------------------------------------------------------ desktop: lobby
 {
-  const { ctx, page } = await open({ viewport: { width: 1366, height: 768 } });
+  const veteran = { matches: 20, coins: 5, xp: 99999, map: 'bubblegum', mapV: 3, name: '', camera: 'third', hero: 'ranger', firstSeen: '2026-11-01', lastSeen: '2026-11-01', sound: false, shake: true, quality: 'low' };
+  const { ctx, page } = await open({ viewport: { width: 1366, height: 768 } }, '?debug&q=low', veteran);
   const start = await saved(page);
   check('home loads', await visible(page, '#home .play'));
   await page.click('.snd');
@@ -92,11 +93,14 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   check('map picker goes back', (await page.textContent('.mapcard b')) === maps[1]);
   await until(page, (n) => window.__bb.world.map.name === n, maps[1]);
 
-  await page.click('.friends');
-  check('friends panel opens', await visible(page, '.friends-panel'));
-  await shot(page, 'friends');
-  await page.click('.fp-x');
-  check('friends panel closes', !(await page.locator('.friends-panel').count()) && (await visible(page, '#home .play')));
+  check('friends button says SOON and is off', (await page.locator('.friends').isDisabled()) && /SOON/.test(await page.textContent('.friends')));
+  await page.click('.set');
+  await row('Aim speed').click();
+  check('settings: aim speed cycles', (await saved(page)).aimSpeed === 'high');
+  await row('Credits').click();
+  check('credits open and name the authors', /Kay Lousberg/.test(await page.textContent('.credits')));
+  await page.locator('.big-btn', { hasText: 'BACK' }).click();
+  await page.locator('.menu-panel .big-btn', { hasText: 'DONE' }).click();
 
   // ---------------------------------------------------------- match: keyboard + mouse
   await page.click('.play', { force: true });
@@ -139,6 +143,20 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
     }
     check(`${w}: rack selects it and J fires it`, held && fired);
   }
+  await bb(page, () => Object.assign(window.__bb.world.players[0], { weapon: 'blaster', ammo: 20, fireCd: 0, state: 'normal', stateT: 0, invuln: 30 }));
+  await page.keyboard.down('KeyJ');
+  await page.waitForTimeout(1200);
+  await page.keyboard.up('KeyJ');
+  const left = await bb(page, () => window.__bb.world.players[0].ammo);
+  check('holding fire keeps the laser shooting', left <= 15, `${20 - left} shots`);
+  await page.waitForTimeout(700);
+  check('releasing fire stops it', (await bb(page, () => window.__bb.world.players[0].ammo)) === left);
+  check('an armed hero faces the crosshair', await until(page, () => {
+    const me = window.__bb.world.players[0];
+    const a = window.__bb.aimInfo;
+    return a && Math.abs(Math.atan2(Math.sin(me.facing - a.heading), Math.cos(me.facing - a.heading))) < 0.15;
+  }, null, 3000));
+
   await bb(page, () => {
     const w = window.__bb.world;
     const me = w.players[0];
@@ -164,7 +182,7 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   check('next round starts by itself', await until(page, () => window.__bb.world.round === 2, null, 30000));
   await bb(page, () => {
     const w = window.__bb.world;
-    w.round = 5;
+    w.round = 3;
     w.phase = 'playing';
     w.roundTime = 999;
   });
@@ -232,9 +250,57 @@ const until = (page, fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { tim
   await ctx.close();
 }
 
+// ------------------------------------------------------------ new player: defaults, locks, level-up
+{
+  const { ctx, page } = await open({ viewport: { width: 1366, height: 768 } });
+  check('default hero is the Ranger', (await page.textContent('.hero-name h2')) === 'Ranger');
+  check('default map is Bubblegum Islands', (await page.textContent('.mapcard b')) === 'Bubblegum Islands' && (await bb(page, () => window.__bb.world.map.id)) === 'bubblegum');
+  check('new players see how to play', /How to play/.test(await page.textContent('.howto')));
+  check('three heroes start locked', (await page.locator('.pick.locked').count()) === 3);
+  await page.click('.pick[data-hero="grizzle"]');
+  check('a locked hero cannot be played', (await page.locator('.play').isDisabled()) && /level 8/i.test(await page.textContent('.play')));
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(500);
+  check('Enter does not start a locked hero', (await bb(page, () => window.__bb.mode)) === 'home');
+  await page.click('.pick[data-hero="ranger"]');
+  await page.click('.mp.r');
+  check('a locked map cannot be played', await page.locator('.play').isDisabled());
+  check('a locked map is not saved', (await saved(page)).map === 'bubblegum');
+  await page.click('.mp.l');
+  await page.click('.play', { force: true });
+  await until(page, () => window.__bb.mode === 'match' && window.__bb.world.phase === 'playing');
+  check('new players get only unlocked weapons', await bb(page, () => !window.__bb.world.pool.includes('freeze') && !window.__bb.world.pool.includes('hammer')));
+  check('new players meet gentle bots', await bb(page, () => window.__bb.world.skill < 0.3));
+  await bb(page, () => {
+    const w = window.__bb.world;
+    const me = w.players[0];
+    me.kos = 6;
+    me.bankedTotal = 12;
+    me.roundsWon = 3;
+    window.__bb.tally.boxes = 7;
+    w.round = 3;
+    w.roundTime = 999;
+  });
+  check('results show', await until(page, () => document.querySelector('.panel.results'), null, 30000));
+  const after = await saved(page);
+  check('XP is earned and saved', after.xp > 100, `${after.xp} XP`);
+  check('finished missions pay out', (await page.locator('.mdone').count()) >= 2);
+  check('level-up shows what unlocked', /UNLOCKED: CANDY TOWN/.test(await page.textContent('.panel.results')));
+  await shot(page, 'levelup');
+  await page.locator('.big-btn', { hasText: 'HOME' }).click();
+  await until(page, () => document.getElementById('home'));
+  check('lobby now shows missions', /Missions/.test(await page.textContent('.howto')));
+  await page.click('.mp.r');
+  check('the unlocked map can be played', !(await page.locator('.play').isDisabled()));
+  await page.reload();
+  await until(page, () => !document.getElementById('boot'), null, 60000);
+  check('progress survives a reload', (await saved(page)).xp === after.xp);
+  await ctx.close();
+}
+
 // ------------------------------------------------------------ saved map survives a reload (the earlier crash)
 for (const map of ['bubblegum', 'candy', 'desert']) {
-  const p = { matches: 3, coins: 5, xp: 10, map, mapV: 2, name: '', camera: 'third', unlocked: [], hero: 'bones', firstSeen: '2026-11-01', lastSeen: '2026-11-01', sound: false, shake: true, quality: 'low' };
+  const p = { matches: 3, coins: 5, xp: 99999, map, mapV: 3, name: '', camera: 'third', hero: 'bones', firstSeen: '2026-11-01', lastSeen: '2026-11-01', sound: false, shake: true, quality: 'low' };
   const { ctx, page } = await open({ viewport: { width: 1280, height: 720 } }, '?debug', p);
   check(`saved map ${map} loads`, (await bb(page, () => window.__bb.world.map.id)) === map);
   await ctx.close();
@@ -250,8 +316,9 @@ for (const map of ['bubblegum', 'candy', 'desert']) {
     return r.left < 0 || r.top < 0 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1;
   }).map((b) => b.className));
   check('phone lobby: no button off screen', !off.length, off.join(','));
-  await page.tap('.pick[data-hero="pinch"]');
-  check('tap picks a hero', (await page.textContent('.hero-name h2')) === 'Pinch');
+  await page.tap('.pick[data-hero="bones"]');
+  check('tap picks a hero', (await page.textContent('.hero-name h2')) === 'Bones');
+  await page.tap('.pick[data-hero="ranger"]');
   await page.tap('.set');
   check('tap opens settings', await visible(page, '.menu-panel'));
   await page.locator('.menu-panel .big-btn', { hasText: 'DONE' }).tap();
@@ -279,8 +346,18 @@ for (const map of ['bubblegum', 'candy', 'desert']) {
   await page.tap('.btn.skill');
   check('tap skill', await until(page, () => window.__bb.world.players[0].skillCd > 0, null, 3000));
   await bb(page, () => Object.assign(window.__bb.world.players[0], { weapon: 'blaster', ammo: 5, fireCd: 0, state: 'normal', stateT: 0 }));
+  await page.waitForTimeout(800); // let the skill's wind-up finish
   await page.tap('.btn.grab');
   check('tap fires the weapon', await until(page, () => window.__bb.world.players[0].ammo < 5, null, 3000));
+  await bb(page, () => {
+    const g = window.__bb;
+    g.brains.forEach((br) => (br.update = () => ({ mx: 0, mz: 0, dash: false, grab: false, skill: false })));
+    const [me, o] = g.world.players;
+    Object.assign(me, { x: 12, z: 2, weapon: 'blaster', ammo: 20, fireCd: 0, state: 'normal', invuln: 30 });
+    Object.assign(o, { x: 12, z: -4, state: 'normal', invuln: 0, hp: 100 });
+    g.updateAim = () => ((g.aimLocked = true), (g.aimInfo = { heading: Math.PI, dist: 6 }));
+  });
+  check('touch auto-fire shoots a rival under the crosshair', await until(page, () => window.__bb.world.players[0].ammo < 17, null, 5000));
   const sizes = [await c('.btn.dash'), await c('.btn.skill'), await c('.btn.grab')].map((s) => Math.round(s.w));
   check('phone action buttons are finger sized', sizes.every((s) => s >= 44), sizes.join('/') + ' px');
   const overlap = await bb(page, () => {

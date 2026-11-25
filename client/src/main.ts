@@ -6,6 +6,7 @@ import { Game } from './game.ts';
 import { Sfx } from './audio.ts';
 import { loadProfile, saveProfile } from './save.ts';
 import { track } from './analytics.ts';
+import { DEFAULT_MAP } from './progress.ts';
 import { HERO_IDS } from '../../shared/config/heroes.ts';
 
 async function boot() {
@@ -26,7 +27,7 @@ async function boot() {
   const assets = await loadAssets(HERO_IDS, (f) => progress(f * 0.85));
   // the first screen shows the ?map= or saved map: its art pack must be here before the game builds it
   const wanted = new URLSearchParams(location.search).get('map') ?? profile.map;
-  const first = (MAP_ROTATION as string[]).includes(wanted) ? (wanted as MapId) : MAP_ROTATION[0];
+  const first = (MAP_ROTATION as string[]).includes(wanted) ? (wanted as MapId) : DEFAULT_MAP;
   const pack = MAP_PACK[first];
   // a failed download is not fatal: the game falls back to a map that needs no pack
   if (pack) await loadPack(assets, pack, (f) => progress(0.85 + f * 0.15)).catch((e) => console.warn(e));

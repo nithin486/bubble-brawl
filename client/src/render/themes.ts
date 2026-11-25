@@ -126,11 +126,9 @@ const candy: Theme = {
         break;
       case 'gumdrop':
         add(['candy_gumdrop_red', 'candy_gumdrop_green', 'candy_gumdrop_blue'][Math.abs(Math.round(o.x + o.z)) % 3], CANDY_K);
-        add('candy_garden', 0.7, 1.15, 0, 0.7, 0); // low flowers round the foot: walk-through decoration
         break;
       case 'cupcake':
         add('candy_cupcake', CANDY_K);
-        add('candy_garden', 0.6, -1.25, 0, 0.6, 2);
         break;
       case 'icecream':
         add('candy_icecream', CANDY_K);
@@ -686,14 +684,11 @@ const desert: Theme = {
         // a ridge of layered sandstone along the collision row (prop's z axis)
         for (let k = -1; k <= 1; k++) {
           const h = dhash(o.x + k, o.z - k);
-          add('desert_rock', 2.4 + h * 0.35, (h - 0.5) * 0.3, k * 2.9, h * 6.28); // ~3.6–4 m: the size of the collision circles
+          add('desert_rock', 1.75 + h * 0.15, (h - 0.5) * 0.15, k * 1.75, h * 6.28); // inside the collision circles
         }
-        add('desert_prickly', 0.8, 1.5, 1.4, 1.2);
-        add('desert_grass', 2.2, -1.7, -1.5);
         break;
       case 'dboulder':
-        add('desert_rock', D.boulder.s * 1.35);
-        add('desert_grass', 1.7, 1.2, 0.5, 2);
+        add('desert_rock', D.boulder.s * 1.26);
         break;
       case 'dcrate':
         add('desert_crate_a', D.crate.s);
@@ -712,27 +707,20 @@ const desert: Theme = {
         add('desert_car', D.car.s);
         break;
       case 'dquiverA':
-        add('desert_cactus', 1.15);
-        add('desert_grass', 1.4, 0.35, -0.3);
+        add('desert_cactus', 1.05);
         break;
       case 'dquiverB':
-        add('desert_prickly', 0.82);
+        add('desert_prickly', 0.72);
         break;
       case 'ddead':
         add('desert_deadtree', D.dead.s);
         break;
       case 'dstone':
-        add('desert_rock', 0.32, 0, -0.05, o.rot * 3);
-        break;
       case 'dpebbles':
-        add('desert_grass', 1.3, 0, 0, o.rot * 5);
-        break;
       case 'dtyre':
-        add('desert_grass', 1.0, 0, 0, o.rot);
-        add('desert_rock', 0.2, 0.45, -0.04, o.rot * 4);
-        break;
       case 'dplanks':
-        add('desert_grass', 1.6, 0, 0, o.rot * 7);
+        // low grass tufts you can run through (nothing that looks solid without being solid)
+        add('desert_grass', 0.75, 0, 0, o.rot * 5);
         break;
     }
   },

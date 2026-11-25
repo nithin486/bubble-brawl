@@ -15,7 +15,7 @@ const open = async () => {
   const page = await (await browser.newContext({ viewport: { width: 900, height: 600 } })).newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto(base + '?debug&q=low');
+  await page.goto(base + '?debug&q=low&friends');
   await page.waitForFunction(() => !document.getElementById('boot'), null, { timeout: 90000 });
   return page;
 };

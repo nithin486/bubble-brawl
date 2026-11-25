@@ -8,6 +8,11 @@ export class InputManager {
   private keys = new Set<string>();
   private latch = { dash: false, grab: false, skill: false };
   private stick = { x: 0, y: 0, active: false };
+  /** Fire held down: mouse button, J key or the touch fire button (automatic weapons keep shooting). */
+  private mouseHeld = false;
+  private touchHeld = false;
+  /** Look speed multiplier (Settings). */
+  sensitivity = 1;
   onFirstInput: (() => void) | null = null;
   onAnyKey: ((code: string) => void) | null = null;
   enabled = true;
@@ -33,14 +38,20 @@ export class InputManager {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.mouseHeld = this.touchHeld = false;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.mouseHeld = false;
+    });
     window.addEventListener('mousemove', (e) => {
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
       this.mouse.t = performance.now();
       if (document.pointerLockElement === canvas) {
-        this.yaw -= e.movementX * 0.0032;
-        this.pitch -= e.movementY * 0.0026; // mouse up = look up
+        this.yaw -= e.movementX * 0.0025 * this.sensitivity;
+        this.pitch -= e.movementY * 0.0021 * this.sensitivity; // mouse up = look up
       }
     });
     canvas.addEventListener('mousedown', (e) => {
@@ -49,7 +60,10 @@ export class InputManager {
         canvas.requestPointerLock?.();
         return;
       }
-      if (e.button === 0) this.press('grab');
+      if (e.button === 0) {
+        this.press('grab');
+        this.mouseHeld = true;
+      }
       if (e.button === 2) this.press('skill');
       this.first();
     });
@@ -79,8 +93,16 @@ export class InputManager {
 
   /** Drag-to-look from the touch look zone. */
   look(dx: number, dy = 0) {
-    this.yaw -= dx * 0.0085;
-    this.pitch -= dy * 0.006; // drag up = look up
+    this.yaw -= dx * 0.0068 * this.sensitivity;
+    this.pitch -= dy * 0.0048 * this.sensitivity; // drag up = look up
+  }
+
+  holdFire(on: boolean) {
+    this.touchHeld = on;
+  }
+
+  get firing() {
+    return this.enabled && (this.mouseHeld || this.touchHeld || this.keys.has('KeyJ'));
   }
 
   /** Camera turn since last call (mouse, touch drag, Q/E). */

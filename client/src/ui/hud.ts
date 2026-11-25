@@ -10,6 +10,7 @@ import type { InputManager } from '../input.ts';
 import { powerIconCanvas, POWER_INFO } from '../render/powerups.ts';
 import type { PowerKind } from '../../../shared/sim/types.ts';
 import { UI } from './icons.ts';
+import { CREDITS_HTML } from './credits.ts';
 
 export const ICONS = {
   grab: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V3.5a1.5 1.5 0 0 1 3 0V10h.5V4.5a1.5 1.5 0 0 1 3 0V11h.5V7.5a1.5 1.5 0 0 1 3 0V14c0 4.4-3.1 8-7.5 8-3 0-4.8-1.3-6.3-3.6L3.8 14.6a1.5 1.5 0 0 1 2.4-1.8L7 13.8z"/></svg>`,
@@ -67,7 +68,7 @@ export const MOD_INFO: Record<string, { name: string; text: string; icon: string
   rapid: { name: 'RAPID FIRE', text: 'Every weapon reloads twice as fast', icon: UI.bolt, color: '#5fe3ff' },
   ammo: { name: 'DOUBLE AMMO', text: 'Every box gives you twice the ammo', icon: UI.ammo, color: '#9dff7a' },
   rockets: { name: 'ROCKET PARTY', text: 'Every mystery box is a Rocket Launcher — boom!', icon: UI.rocket, color: '#ff7a3d' },
-  blasters: { name: 'BLASTER BASH', text: 'Every mystery box is a Bubble Blaster', icon: UI.bubble, color: '#5fe3ff' },
+  blasters: { name: 'LASER PARTY', text: 'Every mystery box is a Bubble Laser', icon: UI.bubble, color: '#5fe3ff' },
   frost: { name: 'DEEP FREEZE', text: 'Every mystery box is a Freeze Bomb — keep moving!', icon: UI.snow, color: '#9fe8ff' },
   boxfest: { name: 'BOX FEST', text: 'Mystery boxes come back almost instantly', icon: UI.gift, color: '#ffd84a' },
 };
@@ -205,12 +206,36 @@ export class Hud {
       const up = () => b.classList.remove('down');
       b.addEventListener('pointerdown', down);
       b.addEventListener('pointerup', up);
-      b.addEventListener('pointerleave', up);
+      if (k !== 'grab') b.addEventListener('pointerleave', up);
       b.addEventListener('pointercancel', up);
     };
     bind(this.btnSkill, 'skill');
     bind(this.btnGrab, 'grab');
     bind(this.btnDash, 'dash');
+    // the fire button: hold to keep firing, and slide the thumb to aim while you shoot
+    let aimId = -1;
+    let ax = 0;
+    let ay = 0;
+    this.btnGrab.addEventListener('pointerdown', (e) => {
+      aimId = e.pointerId;
+      ax = e.clientX;
+      ay = e.clientY;
+      this.btnGrab.setPointerCapture(e.pointerId);
+      input.holdFire(true);
+    });
+    this.btnGrab.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== aimId) return;
+      input.look(e.clientX - ax, e.clientY - ay);
+      ax = e.clientX;
+      ay = e.clientY;
+    });
+    const release = (e: PointerEvent) => {
+      if (e.pointerId !== aimId) return;
+      aimId = -1;
+      input.holdFire(false);
+    };
+    this.btnGrab.addEventListener('pointerup', release);
+    this.btnGrab.addEventListener('pointercancel', release);
 
     // floating joystick on the left half
     const zone = el('div', 'stick-zone');
@@ -657,6 +682,25 @@ export class Hud {
     this.xhair.classList.toggle('armed', armed);
   }
 
+  /** The crosshair kicks open on every shot. */
+  shotKick() {
+    const x = this.xhair;
+    if (!x) return;
+    x.classList.remove('kick');
+    void x.offsetWidth;
+    x.classList.add('kick');
+  }
+
+  private marker: HTMLElement | null = null;
+  /** The X over the crosshair that says your shot landed (gold and bigger for a knock-out). */
+  hitMarker(ko: boolean) {
+    this.marker?.remove();
+    const m = el('div', `hitx${ko ? ' ko' : ''}`, '<i></i><i></i><i></i><i></i>');
+    this.root.append(m);
+    this.marker = m;
+    setTimeout(() => m.remove(), ko ? 520 : 200);
+  }
+
   private wcard: HTMLElement | null = null;
   /** Weapon pickup card: big icon, name and what it does (slides up above the buttons, 2.2 s). */
   weaponCard(kind: keyof typeof WEAPON_INFO) {
@@ -792,13 +836,14 @@ export class Hud {
     localId: number,
     opts: {
       podium: { name: string; place: number }[];
-      unlocked: HeroId | null;
+      unlocks: { name: string; img: string }[];
+      missions: { text: string; xp: number }[];
+      next: { level: number; name: string; img: string } | null;
       coinsWon: number;
       xpWon: number;
       level: number;
       levelUp: boolean;
       xpFrac: number;
-      trial: HeroId | null;
       waitForHost?: boolean;
       onRematch: () => void;
       onHome: () => void;
@@ -828,9 +873,10 @@ export class Hud {
     rw.innerHTML = `<div class="rw-coins stroke"><i class="coin-ico"></i>+${opts.coinsWon}</div>
       <div class="rw-xp"><span class="lv">${opts.level}</span><span class="bar"><i style="width:${Math.round(opts.xpFrac * 100)}%"></i></span><b class="stroke">+${opts.xpWon} XP</b></div>`;
     p.append(rw);
+    for (const m of opts.missions) p.append(el('div', 'mdone', `<span>MISSION COMPLETE</span><b>${m.text}</b><em>+${m.xp} XP</em>`));
     if (opts.levelUp) p.append(el('div', 'unlock stroke', `LEVEL UP! You are level ${opts.level}`));
-    if (opts.unlocked) p.append(el('div', 'unlock stroke', `<img src="${this.portraits.get(opts.unlocked)}"> NEW HERO: ${HEROES[opts.unlocked].name.toUpperCase()}!`));
-    else if (opts.trial) p.append(el('div', 'sub', `That was a free trial of ${HEROES[opts.trial].name}. Keep playing to unlock!`));
+    for (const u of opts.unlocks) p.append(el('div', 'unlock stroke', `<img src="${u.img}" alt=""> UNLOCKED: ${u.name.toUpperCase()}`));
+    if (!opts.unlocks.length && opts.next) p.append(el('div', 'sub', `Next: ${opts.next.name} at level ${opts.next.level}`));
 
     const row = el('div', 'btn-row');
     const home = el('button', 'big-btn alt tap', `${UI.home}HOME`);
@@ -862,9 +908,22 @@ export class Hud {
     window.addEventListener('keydown', key);
   }
 
+  /** Art and sound credits (CC-BY models must be named). */
+  showCredits(back: () => void) {
+    const p = el('div', 'panel menu-panel credits');
+    p.append(el('h1', 'stroke', 'Credits'));
+    p.append(el('div', 'cr', CREDITS_HTML));
+    const row = el('div', 'btn-row');
+    const b = el('button', 'big-btn tap', 'BACK');
+    b.addEventListener('click', back);
+    row.append(b);
+    p.append(row);
+    this.open(p);
+  }
+
   showPause(
-    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; canUnlockAll: boolean; camera: string },
-    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; unlockAll: () => void; camera: () => void },
+    state: { sound: boolean; shake: boolean; quality: string; inMatch: boolean; camera: string; aimSpeed: string; autoFire: boolean | null },
+    on: { resume: () => void; toggle: (k: 'sound' | 'shake') => void; quality: () => void; home: () => void; camera: () => void; aimSpeed: () => void; autoFire: () => void; credits: () => void },
   ) {
     const p = el('div', 'panel menu-panel');
     p.append(el('h1', 'stroke', state.inMatch ? 'Paused' : 'Settings'));
@@ -880,8 +939,9 @@ export class Hud {
     t(UI.shake, 'Screen shake', state.shake ? 'ON' : 'OFF', () => on.toggle('shake'), 'switch', state.shake);
     t(UI.camera, 'Camera view', state.camera, () => on.camera(), 'cycle');
     t(UI.display, 'Graphics', state.quality.toUpperCase(), () => on.quality(), 'cycle');
-    // playtest builds only: skip the unlock flow
-    if (state.canUnlockAll) t(UI.heroes, 'All heroes (playtest)', 'UNLOCK', () => on.unlockAll(), 'act');
+    t(UI.bolt, 'Aim speed', state.aimSpeed.toUpperCase(), () => on.aimSpeed(), 'cycle');
+    if (state.autoFire !== null) t(UI.star, 'Auto-fire laser', state.autoFire ? 'ON' : 'OFF', () => on.autoFire(), 'switch', state.autoFire);
+    if (!state.inMatch) t(UI.heroes, 'Credits', 'VIEW', () => on.credits(), 'act');
     const row = el('div', 'btn-row');
     if (state.inMatch) {
       const h = el('button', 'big-btn alt tap', `${UI.home}QUIT`);

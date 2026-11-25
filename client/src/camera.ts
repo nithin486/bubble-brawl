@@ -46,6 +46,10 @@ export class CameraRig {
   /** Desired vertical FOV for this preset (Stage keeps aspect handling). */
   presetFov = 45;
 
+  /** Third person with a weapon: the camera moves over the right shoulder so the crosshair is clear of your hero. */
+  armed = false;
+  private armedS = 0;
+
   /** Vertical look (third person): 1 = default; bigger = higher, more top-down; smaller = lower, looking farther. */
   heightMul = 1;
   private heightS = 1;
@@ -62,7 +66,7 @@ export class CameraRig {
   pitch = 0;
   addPitch(d: number) {
     if (!this.turns || !d) return;
-    this.pitch = Math.min(0.55, Math.max(-0.5, this.pitch + d));
+    this.pitch = Math.min(0.6, Math.max(-0.55, this.pitch + d));
   }
 
   /** Manual turn (mouse / right-side drag / Q-E). */
@@ -143,10 +147,17 @@ export class CameraRig {
       off.z += Math.abs(this.pitch) * 0.6;
     }
     const yaw = this.turns ? this.yaw : 0;
+    this.armedS += ((this.armed && this.turns ? 1 : 0) - this.armedS) * Math.min(1, dt * 7);
+    const sh = this.armedS * (1 - this.zoom);
+    off.multiplyScalar(1 - sh * 0.04);
+    off.x += sh * 1.25;
+    off.y += sh * 0.15;
     off.applyAxisAngle(UP, yaw);
     this.camera.position.copy(this.target).add(off);
     const lo = this.lookOffset.clone();
     if (this.turns) lo.y += this.pitch * 7.5;
+    lo.x += sh * 1.25;
+    lo.y -= sh * 0.15;
     const look = new THREE.Vector3().copy(this.target).add(lo.applyAxisAngle(UP, yaw));
     look.y += this.zoom * 0.6;
     if (this.shakeT > 0) {

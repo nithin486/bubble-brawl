@@ -22,7 +22,8 @@ import { InputManager } from './input.ts';
 import { Hud, PLAYER_COLORS } from './ui/hud.ts';
 import { Sfx } from './audio.ts';
 import { track } from './analytics.ts';
-import { saveProfile, levelOf, type Profile } from './save.ts';
+import { saveProfile, type Profile } from './save.ts';
+import { DEFAULT_MAP, advanceMissions, botSkill, levelOf, mapLevel, missionText, nextForm, nextUnlock, UNLOCK_TRACK, weaponLevel, weaponPool, type Stat } from './progress.ts';
 import { Home } from './ui/home.ts';
 import { Showcase } from './render/showcase.ts';
 import { PowerView, POWER_INFO } from './render/powerups.ts';
@@ -73,11 +74,8 @@ let LOCAL = 0;
 const PARAMS = new URLSearchParams(location.search);
 const AUTOPLAY = PARAMS.has('autoplay');
 const SPEED = Number(PARAMS.get('speed')) || 1;
-const UNLOCKS: { hero: HeroId; afterMatches: number }[] = [
-  { hero: 'pinch', afterMatches: 1 },
-  { hero: 'grizzle', afterMatches: 2 },
-  { hero: 'ranger', afterMatches: 3 },
-];
+/** Friends rooms are switched off for this release (the button says "soon"). */
+const FRIENDS_ON = new URLSearchParams(location.search).has('friends');
 
 type TutStep = 'move' | 'coins' | 'bank' | 'done';
 
@@ -89,7 +87,9 @@ export class Game {
   private autoBrain: BotBrain | null = null;
   private heroes: HeroView[] = [];
   private island!: ArenaView;
-  private mapId: MapId = 'candy';
+  private mapId: MapId = DEFAULT_MAP;
+  /** This match's mission counters. */
+  private tally: Partial<Record<Stat, number>> = {};
   private coins: CoinsView;
   private bank!: BankView;
   private fx: Fx;
@@ -127,7 +127,6 @@ export class Game {
   private mode: 'home' | 'match' = 'home';
   private home: Home | null = null;
   private showcase: Showcase;
-  private trial = false;
   private powers: PowerView | null = null;
   /** Weapon tips already shown this session. */
   private weaponTips = new Set<string>();
@@ -179,6 +178,7 @@ export class Game {
     this.rig.shakeEnabled = profile.shake;
     this.applyCamera((PARAMS.get('cam') as CamPreset) || profile.camera || 'close');
     this.sfx.muted = !profile.sound;
+    this.applyAimSpeed();
     this.fx = new Fx(stage.scene, this.glowTex);
     this.fx.ground = (x, z) => this.world?.terrain.heightAt(x, z) ?? 0; // ground effects ride raised plazas and ramps
     this.coins = new CoinsView(assets.env, stage.scene, this.glowTex);
@@ -214,7 +214,7 @@ export class Game {
     } else this.goHome();
     // invite link: straight into the friend's room
     const invite = PARAMS.get('room');
-    if (invite && !AUTOPLAY) setTimeout(() => this.openFriends(invite.toUpperCase().slice(0, 5)), 300);
+    if (invite && !AUTOPLAY && FRIENDS_ON) setTimeout(() => this.openFriends(invite.toUpperCase().slice(0, 5)), 300);
     requestAnimationFrame(this.frame);
     if (PARAMS.has('debug') || AUTOPLAY) (window as unknown as { __bb: Game }).__bb = this;
   }
@@ -284,7 +284,7 @@ export class Game {
   private goHome() {
     this.mode = 'home';
     this.paused = false;
-    this.mapId = (MAP_ROTATION as string[]).includes(this.profile.map) ? (this.profile.map as MapId) : MAP_ROTATION[0];
+    this.mapId = (MAP_ROTATION as string[]).includes(this.profile.map) ? (this.profile.map as MapId) : DEFAULT_MAP;
     this.startMatch(this.profile.hero, true);
     const lv = levelOf(this.profile.xp);
     this.home?.destroy();
@@ -293,19 +293,19 @@ export class Game {
       level: lv.level,
       xpFrac: lv.frac,
       hero: this.profile.hero,
-      unlocked: this.profile.unlocked,
-      lockText: (h) => {
-        const u = UNLOCKS.find((x) => x.hero === h);
-        const n = u ? u.afterMatches - this.profile.matches : 0;
-        return `Unlocks after ${n} more match${n === 1 ? '' : 'es'}`;
-      },
+      matches: this.profile.matches,
+      friends: FRIENDS_ON,
+      xpLeft: lv.left,
+      xpNeed: lv.need,
+      missions: this.profile.missions,
+      next: this.nextReward(lv.level),
       touch: this.touch,
       maps: MAP_ROTATION.map((id) => ({ id, name: MAPS[id].name, blurb: MAPS[id].blurb })),
       map: this.mapId,
       name: this.profile.name || 'Player',
       sound: this.profile.sound,
       portraits: this.portraits,
-      weapons: (Object.keys(WEAPON_INFO) as (keyof typeof WEAPON_INFO)[]).map((k) => ({ ...WEAPON_INFO[k], img: weaponShot(k) })),
+      weapons: (Object.keys(WEAPON_INFO) as (keyof typeof WEAPON_INFO)[]).map((k) => ({ ...WEAPON_INFO[k], img: weaponShot(k), level: weaponLevel(k) })),
     });
     this.home.onSound = () => {
       this.profile.sound = !this.profile.sound;
@@ -322,8 +322,11 @@ export class Game {
     this.home.onMap = (id) => {
       this.sfx.click();
       this.mapId = id as MapId;
-      this.profile.map = id;
-      saveProfile(this.profile);
+      // a locked map can be looked at, but is not remembered
+      if (mapLevel(id) <= levelOf(this.profile.xp).level) {
+        this.profile.map = id;
+        saveProfile(this.profile);
+      }
       track('map_selected', { map: id });
       if (this.mapReady(this.mapId)) {
         this.startMatch(this.profile.hero, true);
@@ -338,11 +341,15 @@ export class Game {
     };
     this.home.onHero = (h, locked) => {
       this.showcase.set([{ hero: h, anim: locked ? 'Idle' : 'Cheer', locked, color: HEROES[h].color, height: 0.45 }]);
+      if (!locked) {
+        this.profile.hero = h;
+        saveProfile(this.profile);
+      }
       this.showcase.screenX = 0;
       this.showcase.screenY = 0.22;
       this.sfx.click();
     };
-    this.home.onHero(this.home.hero, !this.profile.unlocked.includes(this.home.hero));
+    this.home.onHero(this.home.hero, false);
     this.home.onSettings = () => this.setPaused(true);
     this.home.onFriends = () => {
       this.sfx.click();
@@ -351,18 +358,14 @@ export class Game {
     this.home.onPlay = (h) => {
       this.sfx.unlock();
       this.sfx.click();
-      const trial = !this.profile.unlocked.includes(h);
-      track('play_click', { hero: h, trial });
-      if (!trial) {
-        this.profile.hero = h;
-        saveProfile(this.profile);
-      }
+      track('play_click', { hero: h });
+      this.profile.hero = h;
+      saveProfile(this.profile);
       const go = () => {
         this.home?.destroy();
         this.home = null;
         this.showcase.clear();
         this.mode = 'match';
-        this.trial = trial;
         this.startMatch(h);
       };
       if (this.mapReady(this.mapId)) go();
@@ -371,6 +374,18 @@ export class Game {
         void this.ensureMap(this.mapId).then(go);
       }
     };
+  }
+
+  /** The next thing on the level track, ready for the lobby card. */
+  private nextReward(level: number) {
+    const u = nextUnlock(level);
+    return u ? { level: u.level, ...this.rewardCard(u) } : null;
+  }
+
+  private rewardCard(u: NonNullable<ReturnType<typeof nextUnlock>>) {
+    if ('hero' in u) return { name: HEROES[u.hero].name, img: this.portraits.get(u.hero)! };
+    if ('map' in u) return { name: MAPS[u.map].name, img: `thumbs/${u.map}.webp` };
+    return { name: WEAPON_INFO[u.weapon].name, img: weaponShot(u.weapon) };
   }
 
   /** Download a map's art pack if it has one (resolved at once when it is already here). */
@@ -385,10 +400,10 @@ export class Game {
   }
 
   private startMatch(hero: HeroId, attract = false, net?: { start: StartMsg; seat: number }) {
-    if (!net && !this.mapReady(this.mapId)) this.mapId = MAP_ROTATION.find((id) => this.mapReady(id))!; // art still downloading: play on a map that is here (one has no pack)
+    if (!net && !this.mapReady(this.mapId)) this.mapId = MAP_ROTATION.find((id) => this.mapReady(id))!; // art still downloading // art still downloading: play on a map that is here (one has no pack)
     const rng = new Rng((Math.random() * 1e9) | 0);
     const names = [...BOT_NAMES].sort(() => rng.next() - 0.5);
-    const botHeroes: HeroId[] = HERO_IDS;
+    const botHeroes: HeroId[] = HERO_IDS; // bots show off every hero, including ones still to unlock
     let setups = [{ name: attract ? names[0] : 'You', hero, isBot: attract }];
     const off = rng.int(0, botHeroes.length - 1);
     // spread bots evenly over the roster so every match shows every hero
@@ -401,6 +416,12 @@ export class Game {
       this.firstMatch = false;
     }
     this.world = new World(setups, { firstMatch: this.firstMatch && !attract && !net, map: this.mapId, seed: net?.start.seed });
+    const level = levelOf(this.profile.xp).level;
+    if (!attract && !net) {
+      this.world.skill = botSkill(level, this.profile.form);
+      this.world.pool = weaponPool(level);
+      this.tally = {};
+    }
     if (this.world.players[LOCAL]) this.world.players[LOCAL].name = 'You';
     if ((this.firstMatch || attract) && !net) this.world.phaseT = 0.6; // no countdown wait in the very first round
     // bots: offline every bot seat; in a room only the host runs them (clients never tick the sim)
@@ -430,6 +451,7 @@ export class Game {
     document.body.classList.toggle('mode-coins', this.world.mode === 'coins');
     if (!this.weapons) this.weapons = new WeaponsView(this.world, this.stage.scene, this.fx, this.glowTex, this.assets.env);
     else this.weapons.setWorld(this.world);
+    this.weapons.localId = attract ? -1 : LOCAL;
     if (!this.powers) this.powers = new PowerView(this.world, this.stage.scene, this.glowTex);
     else this.powers.setWorld(this.world);
     if (!this.markers) this.markers = new Markers(this.stage.scene, this.assets.env, this.glowTex);
@@ -461,7 +483,7 @@ export class Game {
     this.roundStats = { stolen: 0, steals: 0 };
     this.matchStart = performance.now();
     this.input.enabled = !attract;
-    if (!attract) track('match_start', { hero, first: this.firstMatch, trial: this.trial });
+    if (!attract) track('match_start', { hero, first: this.firstMatch });
   }
 
   // ---------------------------------------------------------------- loop
@@ -568,6 +590,7 @@ export class Game {
       const me = this.world.players[LOCAL];
       const on = this.mode === 'match' && this.rig.turns && this.world.mode === 'weapons' && this.world.phase === 'playing' && me.state !== 'bubble' && me.state !== 'falling';
       this.hud.crosshair(on, this.aimLocked, !!me.weapon);
+      this.rig.armed = this.mode === 'match' && this.world.mode === 'weapons' && !!me.weapon && this.world.phase === 'playing';
     }
     if (this.mode === 'match') this.chatterHunting();
     // trails: speed boots (yellow streaks), sticky fingers (pink sparkles), magnet (red bits)
@@ -677,7 +700,7 @@ export class Game {
     const w = this.world;
     const inp = this.readLocal();
     // buttons latch until the next send
-    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill };
+    this.netInput = { mx: inp.mx, mz: inp.mz, dash: this.netInput.dash || inp.dash, grab: this.netInput.grab || inp.grab, skill: this.netInput.skill || inp.skill, aim: inp.aim, aimD: inp.aimD };
     this.sendT += dt;
     if (this.sendT >= 1 / 30) {
       this.sendT = 0;
@@ -804,7 +827,6 @@ export class Game {
     this.hud?.closePanel();
     this.mode = 'match';
     this.paused = false;
-    this.trial = false;
     void this.ensureMap(start.map).then(() => this.startMatch(start.seats[seat].hero, false, { start, seat }));
   }
 
@@ -997,6 +1019,7 @@ export class Game {
         break;
       }
       case 'boxPick': {
+        if (e.p === LOCAL) this.tally.boxes = (this.tally.boxes ?? 0) + 1;
         const info = WEAPON_INFO[e.weapon];
         this.fx.emit(e.x, 0.9, e.z, { n: 26, color: ['#ffd84a', '#ffffff', info.color], speed: 5, up: 4, life: 0.5, size: 0.45 });
         this.fx.ring(e.x, e.z, info.color, 2.2, 0.35, 0.4);
@@ -1012,10 +1035,22 @@ export class Game {
         }
         break;
       }
+      case 'laser': {
+        const H = hv(e.p);
+        const from = H.muzzle(new THREE.Vector3()) ?? new THREE.Vector3(w.players[e.p].x, w.players[e.p].y + 1.05, w.players[e.p].z);
+        const to = new THREE.Vector3(e.tx, w.terrain.heightAt(e.tx, e.tz) + 1.05, e.tz);
+        this.weapons?.laser(from, to, e.hit >= 0);
+        if (e.p === LOCAL) {
+          this.hud.shotKick();
+          if (e.hit >= 0) this.hud.hitMarker(false);
+        }
+        break;
+      }
       case 'fire': {
         const H = hv(e.p);
         const anim = e.weapon === 'banana' ? 'Interact' : e.weapon === 'freeze' ? 'Throw' : e.weapon === 'hammer' ? '2H_Melee_Attack_Spin' : e.weapon === 'hook' ? 'Spellcast_Raise' : '1H_Ranged_Shoot';
-        H.oneShot(anim, this.time, e.weapon === 'blaster' ? 2.2 : 1.6, 0.45);
+        if (e.weapon === 'blaster' || e.weapon === 'rocket') H.shoot(this.time);
+        else H.oneShot(anim, this.time, 1.6, 0.45);
         H.onFire(e.weapon, this.time);
         const near = e.p === LOCAL || Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 14;
         if (near) this.sfx.shoot(e.weapon);
@@ -1023,12 +1058,11 @@ export class Game {
           const fx = e.x + Math.sin(e.facing) * 0.8;
           const fz = e.z + Math.cos(e.facing) * 0.8;
           const my = w.players[e.p].y + 1.05;
-          if (e.weapon === 'blaster') this.fx.emit(fx, my, fz, { n: 7, color: ['#bff8ff', '#ffffff', '#ffb3ec'], speed: 3.2, up: 1.2, life: 0.28, size: 0.32 });
-          else {
+          if (e.weapon === 'rocket') {
             this.fx.emit(fx, my, fz, { n: 14, color: [WEAPON_INFO[e.weapon].color, '#ffffff', '#ffd23f'], speed: 3, up: 1, life: 0.2, size: 0.45 });
             this.fx.emit(e.x - Math.sin(e.facing) * 0.9, my, e.z - Math.cos(e.facing) * 0.9, { n: 10, color: ['#bbbbbb', '#ffffff'], speed: 2.5, up: 0.8, life: 0.5, size: 0.7 }); // backblast smoke
           }
-          if (e.p === LOCAL) this.rig.punch(e.weapon === 'rocket' ? 4 : 1.2);
+          if (e.p === LOCAL && e.weapon === 'rocket') this.rig.punch(4);
         }
         if (e.weapon === 'hammer') this.fx.cone(e.x, e.z, e.facing, TUNING.weapons.hammer.radius, 360, '#ffd23f', TUNING.weapons.hammer.windup + 0.05, 0.4);
         break;
@@ -1091,6 +1125,7 @@ export class Game {
         break;
       case 'ko': {
         const P = w.players[e.victim];
+        if (e.by === LOCAL) this.hud.hitMarker(true);
         this.fx.emit(e.x, 1.2, e.z, { n: 30, color: ['#ffffff', '#b38cff', '#bff8ff'], speed: 6, up: 3, life: 0.5, size: 0.5 });
         this.fx.ring(e.x, e.z, '#b38cff', 2.6, 0.4, 0.4);
         if (e.by === LOCAL) {
@@ -1121,6 +1156,7 @@ export class Game {
         break;
       }
       case 'pop': {
+        if (e.by === LOCAL) this.tally.pops = (this.tally.pops ?? 0) + 1;
         this.weapons?.popAt(e.x, w.players[e.victim].y, e.z);
         this.sfx.pop();
         if (e.by === LOCAL) {
@@ -1467,22 +1503,27 @@ export class Game {
     }
     if (this.mode === 'home') return;
     this.profile.matches++;
-    const coinsWon = 20 + Math.round(me.bankedTotal / 4) + (rank === 1 ? 50 : 0);
-    const xpWon = 40 + me.bankedTotal + (rank === 1 ? 60 : 0);
+    const rounds = TUNING.match.rounds;
+    const coinsWon = 20 + Math.round(me.bankedTotal / 2) + (rank === 1 ? 50 : 0);
+    const matchXp = 60 + me.bankedTotal * 4 + me.roundsWon * 20 + (rank === 1 ? 80 : rank <= 3 ? 40 : 0);
     const before = levelOf(this.profile.xp);
+    const t = this.tally;
+    t.kos = me.kos;
+    t.hits = me.stats.hitsLanded;
+    t.matches = 1;
+    t.wins = rank === 1 ? 1 : 0;
+    t.podiums = rank <= 3 ? 1 : 0;
+    const missions = advanceMissions(this.profile.missions, t, before.level, this.profile.matches);
+    const xpWon = matchXp + missions.xp;
+    this.profile.missions = missions.board;
     this.profile.coins += coinsWon;
     this.profile.xp += xpWon;
+    this.profile.form = nextForm(this.profile.form, rank, this.world.players.length);
     const after = levelOf(this.profile.xp);
-    let unlocked: HeroId | null = null;
-    for (const u of UNLOCKS) {
-      if (this.profile.matches >= u.afterMatches && !this.profile.unlocked.includes(u.hero)) {
-        this.profile.unlocked.push(u.hero);
-        unlocked = u.hero;
-      }
-    }
+    const unlocks = UNLOCK_TRACK.filter((u) => u.level > before.level && u.level <= after.level).map((u) => this.rewardCard(u));
     this.profile.lastSeen = new Date().toISOString().slice(0, 10);
     saveProfile(this.profile);
-    track('match_end', { rank, banked: me.bankedTotal, seconds: Math.round((performance.now() - this.matchStart) / 1000) });
+    track('match_end', { rank, rounds, level: after.level, banked: me.bankedTotal, seconds: Math.round((performance.now() - this.matchStart) / 1000) });
     setTimeout(() => {
       // 3D podium: 2nd · 1st · 3rd
       const top = ranking.slice(0, 3).map((id) => this.world.players[id]);
@@ -1499,13 +1540,14 @@ export class Game {
       this.showcase.screenY = -0.12;
       this.hud.showResults(this.world, LOCAL, {
         podium: order.map((p) => ({ name: p.id === LOCAL ? 'You' : p.name, place: ranking.indexOf(p.id) + 1 })),
-        unlocked,
+        unlocks,
+        missions: missions.finished.map((m) => ({ text: missionText(m), xp: m.xp })),
+        next: this.nextReward(after.level),
         coinsWon,
         xpWon,
         level: after.level,
         levelUp: after.level > before.level,
         xpFrac: after.frac,
-        trial: this.trial ? this.world.players[LOCAL].hero : null,
         waitForHost: !!this.room && !this.room.isHost,
         onRematch: () => {
           this.sfx.click();
@@ -1520,14 +1562,12 @@ export class Game {
           this.firstMatch = false;
           this.showcase.clear();
           this.hud.closePanel();
-          this.startMatch(this.trial ? this.profile.hero : this.world.players[LOCAL].hero);
-          this.trial = false;
+          this.startMatch(this.world.players[LOCAL].hero);
         },
         onHome: () => {
           this.sfx.click();
           this.leaveRoom();
           this.firstMatch = false;
-          this.trial = false;
           this.showcase.clear();
           this.hud.closePanel();
           this.goHome();
@@ -1622,7 +1662,10 @@ export class Game {
     const i = this.input.read();
     const w = this.rig.toWorld(i.mx, i.mz);
     this.lastStickFwd = -i.mz;
-    return { ...i, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist };
+    // the laser is automatic: hold fire, or (touch, optional) just keep the crosshair on a rival
+    const me = this.world.players[LOCAL];
+    const auto = me.weapon === 'blaster' && (this.input.firing || (this.touch && this.profile.autoFire && this.aimLocked));
+    return { ...i, grab: i.grab || auto, mx: w.x, mz: w.z, aim: this.aimInfo?.heading, aimD: this.aimInfo?.dist };
   }
   private lastStickFwd = 0;
   /** Where the local player is pointing this frame (camera centre line in 3rd person, cursor on desktop top-down). */
@@ -1647,6 +1690,8 @@ export class Game {
       const W = this.world;
       let hitT = Infinity;
       let locked = false;
+      let best = Infinity;
+      let target: { x: number; z: number } | null = null;
       for (const q of W.players) {
         if (q === me || q.state === 'falling' || q.state === 'launched') continue;
         // closest approach of the ray to the rival's chest
@@ -1656,10 +1701,14 @@ export class Game {
         const t = cx * dir.x + cy * dir.y + cz * dir.z;
         if (t <= 0) continue;
         const d2 = cx * cx + cy * cy + cz * cz - t * t;
-        const r = q.state === 'bubble' ? 1.3 : 0.85;
-        if (d2 < r * r && t < hitT) {
+        // aim assist: a little cone round the crosshair (wider for thumbs than for a mouse)
+        const r = (q.state === 'bubble' ? 1.2 : 0.75) + t * (this.touch ? 0.075 : 0.032);
+        const score = Math.sqrt(Math.max(0, d2)) / r;
+        if (score < 1 && score < best && Math.hypot(q.x - me.x, q.z - me.z) < 22 && this.canSee(me, q)) {
+          best = score;
           hitT = t;
           locked = true;
+          target = q;
         }
       }
       if (!locked) {
@@ -1675,8 +1724,8 @@ export class Game {
         }
       }
       const t = Number.isFinite(hitT) ? hitT : 40;
-      const tx = o.x + dir.x * t - me.x;
-      const tz = o.z + dir.z * t - me.z;
+      const tx = target ? target.x - me.x : o.x + dir.x * t - me.x;
+      const tz = target ? target.z - me.z : o.z + dir.z * t - me.z;
       const dd = Math.hypot(tx, tz);
       this.aimLocked = locked;
       this.aimInfo = dd > 1 ? { heading: Math.atan2(tx, tz), dist: dd } : { heading: Math.atan2(dir.x, dir.z), dist: 30 };
@@ -1694,6 +1743,13 @@ export class Game {
     const hz = o.z + d.z * t - me.z;
     if (Math.hypot(hx, hz) < 0.4) return;
     this.aimInfo = { heading: Math.atan2(hx, hz), dist: Math.hypot(hx, hz) };
+  }
+
+  /** Nothing solid between two heroes (aim assist must not drag the aim behind a wall). */
+  private canSee(a: { x: number; z: number }, b: { x: number; z: number }) {
+    const d = Math.hypot(b.x - a.x, b.z - a.z);
+    for (let s = 0.7; s < d - 0.7; s += 0.4) if (!this.world.clear(a.x + ((b.x - a.x) * s) / d, a.z + ((b.z - a.z) * s) / d, 0.05)) return false;
+    return true;
   }
 
   /** Is (x, z) standing between the camera and the point (fx, fz)? (any camera direction) */
@@ -1756,6 +1812,10 @@ export class Game {
     this.stage.resize();
   }
 
+  private applyAimSpeed() {
+    this.input.sensitivity = { low: 0.6, normal: 1, high: 1.6 }[this.profile.aimSpeed] ?? 1;
+  }
+
   private togglePause() {
     if (this.world.phase === 'matchEnd' && this.mode === 'match') return;
     this.setPaused(!this.paused);
@@ -1774,17 +1834,25 @@ export class Game {
           quality: this.autoQuality ? `auto (${this.stage.quality})` : this.stage.quality,
           inMatch: this.mode === 'match',
           camera: CAM_PRESETS[this.rig.preset].label,
-          canUnlockAll: this.mode === 'home' && HERO_IDS.some((h) => !this.profile.unlocked.includes(h)),
+          aimSpeed: this.profile.aimSpeed,
+          autoFire: this.touch ? this.profile.autoFire : null,
         },
         {
           resume: () => this.setPaused(false),
           home: () => {
             this.sfx.click();
             track('quit_match', { round: this.world.round });
+            if (this.mode === 'match' && !this.room && this.world.phase !== 'matchEnd') {
+              const me = this.world.players[LOCAL];
+              const done = this.world.round - 1;
+              if (done > 0) {
+                this.profile.xp += done * 20 + me.bankedTotal * 4;
+                saveProfile(this.profile);
+              }
+            }
             this.paused = false;
             this.hud.closePanel();
             this.firstMatch = false;
-            this.trial = false;
             this.goHome();
           },
           toggle: (k) => {
@@ -1794,15 +1862,19 @@ export class Game {
             saveProfile(this.profile);
             this.setPaused(true);
           },
-          unlockAll: () => {
-            this.sfx.click();
-            this.profile.unlocked = [...HERO_IDS];
+          aimSpeed: () => {
+            const order = ['low', 'normal', 'high'] as const;
+            this.profile.aimSpeed = order[(order.indexOf(this.profile.aimSpeed) + 1) % 3];
+            this.applyAimSpeed();
             saveProfile(this.profile);
-            track('unlock_all_playtest');
-            this.paused = false;
-            this.hud.closePanel();
-            this.goHome();
+            this.setPaused(true);
           },
+          autoFire: () => {
+            this.profile.autoFire = !this.profile.autoFire;
+            saveProfile(this.profile);
+            this.setPaused(true);
+          },
+          credits: () => this.hud.showCredits(() => this.setPaused(true)),
           camera: () => {
             const order: PlayerCam[] = ['third', 'close', 'far', 'action'];
             const cur = order.indexOf(this.rig.preset as PlayerCam);

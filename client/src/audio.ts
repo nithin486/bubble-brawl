@@ -68,8 +68,9 @@ export class Sfx {
   /** One sound per weapon. */
   shoot(kind: string) {
     if (kind === 'blaster') {
-      this.tone(900, 0.09, { type: 'square', vol: 0.1, slide: 0.45 });
-      this.noise(0.05, { vol: 0.08, freq: 3000 });
+      // laser zap: a short falling chirp with a bubbly top
+      this.tone(1500, 0.08, { type: 'sawtooth', vol: 0.07, slide: 0.3 });
+      this.tone(2400, 0.05, { type: 'sine', vol: 0.07, slide: 0.6 });
     } else if (kind === 'rocket') {
       this.noise(0.35, { vol: 0.25, freq: 600, sweep: 2400 });
       this.tone(160, 0.25, { type: 'sawtooth', vol: 0.12, slide: 1.8 });

@@ -43,7 +43,7 @@ const park = (w: World, ...except: Player[]) => {
 const give = (p: Player, k: WeaponKind, ammo = 5) => { p.weapon = k; p.ammo = ammo; p.fireCd = 0; };
 const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
 
-// ------------------------------------------------------------------ Bubble Blaster
+// ------------------------------------------------------------------ Bubble Laser
 {
   const w = arena();
   const [a, b] = w.players;
@@ -51,18 +51,45 @@ const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
   place(a, BX, BZ, Math.PI / 2); // facing +x
   place(b, BX + 8, BZ);
   give(a, 'blaster');
-  check('blaster fires', w.brawl.fire(a));
-  check('blaster cooldown blocks an instant second shot', !w.brawl.fire(a), `cd ${W.blaster.cooldown}s`);
-  run(w, 0.6);
-  check('blaster bubble hits for 1 hit of damage', hits(b.hp) === W.blaster.damage, `hp ${b.hp}`);
-  check('blaster knocks the target back', b.x > -1 + 0.01 || Math.hypot(b.kx, b.kz) > 0 || b.x > -1, `x ${b.x.toFixed(2)}`);
-  check('blaster ammo goes down', a.ammo === 4);
-  run(w, 3);
-  check('hit player recovers', b.state === 'normal');
-  place(a, BX, BZ, Math.PI / 2); place(b, BX, BZ + 7, 0);
+  w.events.length = 0;
+  check('laser fires', w.brawl.fire(a));
+  const beam = w.events.find((e) => e.t === 'laser') as { hit: number; tx: number } | undefined;
+  check('laser hits instantly', beam?.hit === b.id, `hit ${beam?.hit}`);
+  check('laser damage = tuning', Math.abs(W.hp - b.hp - W.blaster.damage * W.hitHp) < 1e-6, `hp ${b.hp.toFixed(1)}`);
+  check('laser does not stagger (no stun-lock)', b.state === 'normal', b.state);
+  check('laser cooldown blocks an instant second shot', !w.brawl.fire(a), `cd ${W.blaster.cooldown}s`);
+  check('laser ammo goes down', a.ammo === 4);
+  place(a, BX, BZ, Math.PI / 2); place(b, BX + 8, BZ + 4, 0);
   give(a, 'blaster', 1);
-  w.brawl.fire(a);
-  check('last bubble empties the weapon', a.weapon === null);
+  w.events.length = 0;
+  w.brawl.fire(a, { d: 8 });
+  const miss = w.events.find((e) => e.t === 'laser') as { hit: number } | undefined;
+  check('laser misses a rival that is not under the aim', miss?.hit === -1 && b.hp === W.hp, `hit ${miss?.hit}`);
+  check('last beam empties the weapon', a.weapon === null);
+  place(a, BX, BZ, Math.PI / 2); place(b, BX + 6, BZ);
+  w.obstacles.push({ kind: 'test', x: BX + 3, z: BZ, r: 0.6, rot: 0 });
+  give(a, 'blaster');
+  w.brawl.fire(a, { d: 6 });
+  check('laser is stopped by a prop', b.hp === W.hp, `hp ${b.hp}`);
+  w.obstacles.pop();
+  let n = 0;
+  place(b, BX + 6, BZ);
+  while (b.state !== 'bubble' && n < 40) { a.fireCd = 0; give(a, 'blaster'); w.brawl.fire(a, { d: 6 }); place(a, BX, BZ, Math.PI / 2); b.x = BX + 6; b.z = BZ; b.kx = b.kz = 0; n++; }
+  check('about eight laser hits knock a rival out', n === Math.ceil(1 / (W.blaster.damage * W.hitHp / W.hp)), `${n} hits`);
+  // free aim: with a weapon in hand the hero faces the aim while running another way
+  const w2 = arena();
+  const [c] = w2.players;
+  park(w2, c);
+  place(c, BX, BZ, 0);
+  give(c, 'blaster');
+  w2.tick(DT, w2.players.map((q) => (q === c ? { ...noInput, mx: 0, mz: 1, aim: Math.PI / 2 } : noInput)));
+  check('armed hero faces the aim while moving', Math.abs(c.facing - Math.PI / 2) < 1e-6, c.facing.toFixed(2));
+  // locked weapons never come out of the player's boxes
+  const w3 = arena();
+  w3.pool = ['blaster', 'rocket'];
+  const got = new Set<string>();
+  for (let i = 0; i < 200; i++) got.add((w3.brawl as unknown as { roll(p: Player): string }).roll(w3.players[0]));
+  if (w3.mod === 'none' || w3.mod === 'turbo') check('boxes respect the unlocked weapon pool', [...got].every((k) => k === 'blaster' || k === 'rocket'), [...got].join(','));
 }
 
 // ------------------------------------------------------------------ Rocket Launcher
@@ -84,7 +111,6 @@ const hits = (hp: number) => Math.round((W.hp - hp) / W.hitHp);
   check('rocket explosion radius = tuning', !!boom && Math.abs(boom.r - W.rocket.blast) < 1e-6, `${boom?.r}`);
   check('rocket direct hit does 2 damage (2 hits)', hits(b.hp) === W.rocket.damage || b.state === 'bubble', `hp ${b.hp}`);
   check('rocket splash reaches a nearby player', c.hp < W.hp || c.state === 'bubble', `hp ${c.hp}`);
-  check('rocket is slower than the blaster', W.rocket.speed < W.blaster.speed, `${W.rocket.speed} vs ${W.blaster.speed}`);
 }
 {
   // explosion radius, measured directly (the launcher aims itself at rivals, so we detonate at a chosen spot)

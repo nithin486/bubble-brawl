@@ -101,7 +101,7 @@ export class BotBrain {
     this.thinkT -= dt;
     if (this.thinkT <= 0) {
       this.thinkT += 1 / B.thinkHz;
-      const reaction = this.easy(w) ? B.firstMatch.reaction : this.reaction;
+      const reaction = this.easy(w) ? B.firstMatch.reaction : this.reaction * (1.45 - 0.75 * w.skill);
       this.queue.push({ ...this.think(w, me), due: this.clock + reaction });
     }
     // reflex: see an attack winding up at me → maybe dash out (one roll per attack)
@@ -149,7 +149,7 @@ export class BotBrain {
     let dx = wp.x - me.x;
     let dz = wp.z - me.z;
     const d = len(dx, dz);
-    const speed = this.easy(w) ? B.firstMatch.speed : this.speed;
+    const speed = this.easy(w) ? B.firstMatch.speed : this.speed * (0.9 + 0.14 * w.skill);
     let mx = 0;
     let mz = 0;
     if (d > 0.25) {
@@ -461,7 +461,7 @@ export class BotBrain {
     tz += ux * side;
     // banana: drop it when someone is chasing right behind
     const chaser = k === 'banana' && rivals.some((o) => dist(o) < 4 && (me.x - o.x) * Math.sin(me.facing) + (me.z - o.z) * Math.cos(me.facing) > 0);
-    const fire = (inRange || chaser) && me.fireCd <= 0 && this.rng.next() < (easy ? 0.25 : 0.7);
+    const fire = (inRange || chaser) && me.fireCd <= 0 && this.rng.next() < (easy ? 0.2 : 0.28 + 0.55 * w.skill);
     return { mode: 'steal', tx, tz, dash: d > 9 && me.dashCd <= 0 && this.rng.next() < 0.2, grab: fire, skill: this.wantSkill(w, me, rivals) };
   }
 

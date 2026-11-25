@@ -9,7 +9,7 @@ export const TUNING = {
   },
 
   match: {
-    rounds: 5,
+    rounds: 3,
     roundSeconds: 75,
     /** Long enough to read the round twist card. */
     countdownSeconds: 4,
@@ -233,7 +233,10 @@ export const TUNING = {
     boxes: { count: 6, respawn: 5, pickupRadius: 1.1 },
     /** Box odds (relative). */
     odds: { blaster: 3, rocket: 2, banana: 2, freeze: 1.5, hook: 2, hammer: 2 },
-    blaster: { ammo: 8, cooldown: 0.22, speed: 20, range: 14, damage: 1, knock: 0.7 },
+    /** The Bubble Laser: an instant beam. Hold fire to keep shooting; about eight hits knock a rival out. */
+    blaster: { ammo: 26, cooldown: 0.16, range: 18, damage: 0.4, knock: 0.22 },
+    /** Bot beam wobble in degrees: [weakest, strongest] bots. */
+    botSpreadDeg: [11, 3.5],
     rocket: { ammo: 2, cooldown: 0.6, speed: 15, range: 16, damage: 2, knock: 4, blast: 1.3 },
     banana: { ammo: 3, cooldown: 0.4, trigger: 0.85, slip: 1.3, damage: 1, life: 25, arm: 0.6 },
     freeze: { ammo: 1, cooldown: 0.5, throw: 7, flight: 0.7, radius: 2.8, freeze: 1.8, damage: 1 },

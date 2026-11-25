@@ -3,6 +3,7 @@ import { HEROES, HERO_IDS, type HeroId } from '../../../shared/config/heroes.ts'
 import { TUNING } from '../../../shared/config/tuning.ts';
 import { ICONS } from './hud.ts';
 import { UI } from './icons.ts';
+import { heroLevel, mapLevel, missionText, type Mission } from '../progress.ts';
 
 export interface HomeState {
   coins: number;
@@ -10,15 +11,22 @@ export interface HomeState {
   xpFrac: number;
   name: string;
   hero: HeroId;
-  unlocked: HeroId[];
-  lockText: (h: HeroId) => string;
+  /** Matches played: new players see how to play, everyone else their missions. */
+  matches: number;
+  /** Friends rooms are off for this release (test builds can turn them on). */
+  friends: boolean;
+  xpLeft: number;
+  xpNeed: number;
+  missions: Mission[];
+  /** The next reward on the level track. */
+  next: { level: number; name: string; img: string } | null;
   touch: boolean;
   maps: { id: string; name: string; blurb: string }[];
   map: string;
   sound: boolean;
   portraits: Map<HeroId, string>;
   /** The arsenal found in mystery boxes (information, not a loadout: the game deals weapons at random). */
-  weapons: { name: string; tip: string; color: string; img: string }[];
+  weapons: { name: string; tip: string; color: string; img: string; level: number }[];
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -36,10 +44,10 @@ export class Home {
   private picks: HTMLButtonElement[];
   onHero: ((h: HeroId, locked: boolean) => void) | null = null;
   onPlay: ((h: HeroId) => void) | null = null;
+  onFriends: (() => void) | null = null;
   onSettings: (() => void) | null = null;
   onSound: (() => boolean) | null = null;
   onMap: ((id: string) => void) | null = null;
-  onFriends: (() => void) | null = null;
   private mapIdx = 0;
 
   constructor(state: HomeState) {
@@ -47,11 +55,24 @@ export class Home {
     this.idx = Math.max(0, HERO_IDS.indexOf(state.hero));
     const r = this.root;
     r.id = 'home';
-    const picks = HERO_IDS.map(
+    const order = [...HERO_IDS].sort((a, b) => heroLevel(a) - heroLevel(b));
+    const picks = order.map(
       (h) =>
-        `<button class="pick tap${state.unlocked.includes(h) ? '' : ' locked'}" data-hero="${h}" aria-label="${HEROES[h].name}" style="--hc:${HEROES[h].color};background-image:url(${state.portraits.get(h)})">${state.unlocked.includes(h) ? '' : UI.lock}<span>${HEROES[h].name}</span></button>`,
+        `<button class="pick tap${heroLevel(h) <= state.level ? '' : ' locked'}" data-hero="${h}" aria-label="${HEROES[h].name}${heroLevel(h) <= state.level ? '' : `, unlocks at level ${heroLevel(h)}`}" style="--hc:${HEROES[h].color};background-image:url(${state.portraits.get(h)})">${heroLevel(h) <= state.level ? '' : UI.lock}<span>${heroLevel(h) <= state.level ? HEROES[h].name : `LV ${heroLevel(h)}`}</span></button>`,
     ).join('');
-    const arsenal = state.weapons.map((w) => `<li style="--wc:${w.color}" title="${w.name}: ${w.tip}"><img src="${w.img}" alt="${w.name}"></li>`).join('');
+    const arsenal = state.weapons
+      .map((w) => `<li class="${w.level <= state.level ? '' : 'locked'}" style="--wc:${w.color}" title="${w.name}: ${w.level <= state.level ? w.tip : `unlocks at level ${w.level}`}"><img src="${w.img}" alt="${w.name}">${w.level <= state.level ? '' : `<em>LV ${w.level}</em>`}</li>`)
+      .join('');
+    const howto = `<h3>How to play</h3>
+        <ol>
+          <li><i class="a">${UI.gift}</i><div><b>Grab mystery boxes</b><small>Each one holds a random weapon</small></div></li>
+          <li><i class="b">${UI.bolt}</i><div><b>Shoot your rivals</b><small>Aim with the crosshair, hold to fire the laser</small></div></li>
+          <li><i class="c">${UI.bubble}</i><div><b>Pop the bubbles</b><small>Touch a knocked-out rival to score again</small></div></li>
+        </ol>`;
+    const missions = `<h3>Missions</h3>
+        <ol class="missions">${state.missions
+          .map((m) => `<li><div><b>${missionText(m)}</b><span class="bar"><i style="width:${Math.round((m.done / m.goal) * 100)}%"></i></span><small>${m.done} / ${m.goal}</small></div><em>+${m.xp} XP</em></li>`)
+          .join('')}</ol>`;
     r.innerHTML = `
       <div class="shade"></div>
       <div class="motes">${'<i></i>'.repeat(9)}</div>
@@ -64,24 +85,20 @@ export class Home {
         <div class="profile glass">
           <div class="avatar"></div>
           <div class="who"><b>${esc(state.name)}</b><span class="xp"><i style="width:${Math.round(state.xpFrac * 100)}%"></i></span></div>
-          <div class="lv" title="Player level">${state.level}</div>
+          <div class="lv" title="Player level ${state.level}: ${state.xpLeft} / ${state.xpNeed} XP">${state.level}</div>
         </div>
         <div class="wallet glass" title="Coins">${UI.coin}<b>${state.coins}</b></div>
         <button class="round-btn snd tap" aria-label="Sound"></button>
         <button class="round-btn set tap" aria-label="Settings">${UI.gear}</button>
       </header>
       <aside class="howto glass">
-        <h3>How to play</h3>
-        <ol>
-          <li><i class="a">${UI.gift}</i><div><b>Grab mystery boxes</b><small>Each one holds a random weapon</small></div></li>
-          <li><i class="b">${UI.bolt}</i><div><b>Shoot your rivals</b><small>Drain their health to knock them out</small></div></li>
-          <li><i class="c">${UI.bubble}</i><div><b>Pop the bubbles</b><small>Touch a knocked-out rival to score again</small></div></li>
-        </ol>
+        ${state.matches ? missions : howto}
         <div class="arsenal"><span>IN THE BOXES</span><ul>${arsenal}</ul></div>
       </aside>
       <button class="arrow l tap" aria-label="Previous hero">${UI.left}</button>
       <button class="arrow r tap" aria-label="Next hero">${UI.right}</button>
       <div class="lockbadge">${UI.lock}<span></span></div>
+      ${state.next ? `<div class="nextup glass"><img src="${state.next.img}" alt=""><div><small>LEVEL ${state.next.level} REWARD</small><b>${state.next.name}</b><span class="bar"><i style="width:${Math.round(state.xpFrac * 100)}%"></i></span></div></div>` : ''}
       <section class="hero-dock">
         <div class="hero-name"><h2></h2><span class="role"></span></div>
         <div class="picks">${picks}</div>
@@ -96,7 +113,7 @@ export class Home {
         </div>
         <div class="mode glass">${UI.trophy}<div><b>Weapon Brawl</b><span>${TUNING.match.rounds} rounds · ${TUNING.match.playersPerMatch} fighters · bots fill empty seats</span></div></div>
         <button class="play tap">PLAY<small></small></button>
-        <button class="friends tap">${UI.friends}<span>Play with friends</span></button>
+        <button class="friends tap"${state.friends ? '' : ' disabled'}>${UI.friends}<span>Play with friends</span>${state.friends ? '' : '<em>SOON</em>'}</button>
         <div class="keyhint">${state.touch ? '' : '<kbd>Enter</kbd> play <kbd>←</kbd><kbd>→</kbd> hero'}</div>
       </nav>`;
     document.body.appendChild(r);
@@ -117,17 +134,18 @@ export class Home {
     r.querySelector('.set')!.addEventListener('click', () => this.onSettings?.());
     this.setSound(state.sound);
     this.soundBtn.addEventListener('click', () => this.setSound(this.onSound?.() ?? true));
-    r.querySelector('.friends')!.addEventListener('click', () => this.onFriends?.());
     this.mapIdx = Math.max(0, state.maps.findIndex((m) => m.id === state.map));
     this.showMap();
     const stepMap = (d: number) => {
       this.mapIdx = (this.mapIdx + d + state.maps.length) % state.maps.length;
       this.showMap();
+      this.refreshPlay();
       this.onMap?.(state.maps[this.mapIdx].id);
     };
     r.querySelector('.mp.l')!.addEventListener('click', () => stepMap(-1));
     r.querySelector('.mp.r')!.addEventListener('click', () => stepMap(1));
-    this.playBtn.addEventListener('click', () => this.onPlay?.(this.hero));
+    this.playBtn.addEventListener('click', () => this.play());
+    r.querySelector('.friends')!.addEventListener('click', () => this.onFriends?.());
     window.addEventListener('keydown', this.onKey);
     // swipe on the hero to change
     let sx = -1;
@@ -145,6 +163,16 @@ export class Home {
     this.refresh();
   }
 
+  /** The level still missing for the hero or map on screen (0 = ready to play). */
+  private lockedAt() {
+    const need = Math.max(heroLevel(this.hero), mapLevel(this.state.maps[this.mapIdx].id));
+    return need > this.state.level ? need : 0;
+  }
+
+  private play() {
+    if (!this.lockedAt()) this.onPlay?.(this.hero);
+  }
+
   private showMap() {
     const m = this.state.maps[this.mapIdx];
     const card = this.root.querySelector('.mapcard')!;
@@ -152,6 +180,8 @@ export class Home {
     card.querySelector('small')!.textContent = `MAP ${this.mapIdx + 1} / ${this.state.maps.length}`;
     card.querySelector('b')!.textContent = m.name;
     card.querySelector('span')!.textContent = m.blurb;
+    card.classList.toggle('locked', mapLevel(m.id) > this.state.level);
+    (card.querySelector('.thumb') as HTMLElement).dataset.lock = `Unlocks at level ${mapLevel(m.id)}`;
   }
 
   /** Map card sub-line: a loading note while a map's art downloads (empty = show the map's description again). */
@@ -176,7 +206,7 @@ export class Home {
       // a focused button handles Enter/Space itself
       if ((e.target as HTMLElement).tagName === 'BUTTON') return;
       e.preventDefault();
-      this.onPlay?.(this.hero);
+      this.play();
     }
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.step(-1);
     if (e.code === 'ArrowRight' || e.code === 'KeyD') this.step(1);
@@ -189,17 +219,23 @@ export class Home {
 
   private refresh() {
     const h = HEROES[this.hero];
-    const locked = !this.state.unlocked.includes(h.id);
+    const locked = heroLevel(h.id) > this.state.level;
     this.nameEl.textContent = h.name;
     this.roleEl.textContent = h.role.toUpperCase();
     this.roleEl.style.color = h.color;
     this.abilityEl.innerHTML = `<div class="ic">${ICONS[h.ability]}</div><div><b>${h.abilityName}</b><span>${h.abilityText}</span></div><div class="cdt">${TUNING.abilities[h.ability].cooldown}s</div>`;
     this.lockEl.classList.toggle('on', locked);
-    this.lockEl.querySelector('span')!.textContent = locked ? this.state.lockText(h.id) : '';
-    this.playBtn.innerHTML = locked ? `TRY<small>free trial match as ${h.name}</small>` : `PLAY<small>as ${h.name}</small>`;
+    this.lockEl.querySelector('span')!.textContent = locked ? `Reach level ${heroLevel(h.id)} to unlock ${h.name}` : '';
+    this.refreshPlay();
     (this.root.querySelector('.avatar') as HTMLElement).style.backgroundImage = `url(${this.state.portraits.get(h.id)})`;
     for (const b of this.picks) b.classList.toggle('sel', b.dataset.hero === h.id);
     this.onHero?.(h.id, locked);
+  }
+
+  private refreshPlay() {
+    const need = this.lockedAt();
+    this.playBtn.disabled = !!need;
+    this.playBtn.innerHTML = need ? `LOCKED<small>reach level ${need}</small>` : `PLAY<small>as ${HEROES[this.hero].name}</small>`;
   }
 
   show(on: boolean) {

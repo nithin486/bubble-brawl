@@ -85,9 +85,10 @@ export class Brawl {
     if (w.mod === 'rockets') return 'rocket';
     if (w.mod === 'blasters') return 'blaster';
     if (w.mod === 'frost') return 'freeze';
-    const total = WEAPONS.reduce((a, k) => a + W.odds[k], 0);
+    const pool = p.isBot ? WEAPONS : w.pool;
+    const total = pool.reduce((a, k) => a + W.odds[k], 0);
     let r = w.rng.next() * total;
-    for (const k of WEAPONS) {
+    for (const k of pool) {
       r -= W.odds[k];
       if (r <= 0) return k;
     }
@@ -152,8 +153,6 @@ export class Brawl {
           const r = o.state === 'bubble' ? W.bubble.popRadius : HERO_R + 0.35;
           if ((o.x - s.x) ** 2 + (o.z - s.z) ** 2 > r * r) continue;
           done = true;
-          const sp = Math.hypot(s.vx, s.vz) || 1;
-          if (s.kind === 'blaster') this.damage(o, w.players[s.owner], 'blaster', W.blaster.damage, s.vx / sp, s.vz / sp, W.blaster.knock);
           break;
         }
       if (done) {
@@ -241,7 +240,9 @@ export class Brawl {
     // aim assist toward the best rival in front (a small cone when the player is aiming with the scope)
     // bots keep a wider snap (they can't fine-aim a stick), players get precise shots
     const aim = (range: number, cone: number) => w.aimAt(p, range, aimed ? Math.min(cone, AIMED_CONE) : p.isBot ? 110 : cone);
-    if (k === 'blaster' || k === 'rocket') {
+    if (k === 'blaster') {
+      this.laser(p, aimed);
+    } else if (k === 'rocket') {
       const g = W[k];
       aim(g.range * 0.8, AIM_CONE);
       const sp = g.speed;
@@ -304,6 +305,42 @@ export class Brawl {
     return true;
   }
 
+  /** Bubble Laser: an instant beam from the muzzle to the first rival, wall or prop in the way. */
+  private laser(p: Player, aimed?: { d: number }) {
+    const w = this.w;
+    const c = W.blaster;
+    if (!aimed) w.aimAt(p, c.range * 0.85, p.isBot ? 110 : AIM_CONE);
+    else if (!p.isBot) w.aimAt(p, c.range, AIMED_CONE);
+    let facing = p.facing;
+    if (p.isBot) {
+      const [weak, strong] = W.botSpreadDeg;
+      facing += (w.rng.next() * 2 - 1) * (weak + (strong - weak) * w.skill) * (Math.PI / 180);
+    }
+    const dx = dirX(facing);
+    const dz = dirZ(facing);
+    const from = w.terrain.heightAt(p.x, p.z);
+    let end = 0.6;
+    let victim: Player | null = null;
+    for (let s = 0.6; s <= c.range && !victim; s += 0.2) {
+      const x = p.x + dx * s;
+      const z = p.z + dz * s;
+      end = s;
+      for (const o of w.players) {
+        if (o === p || o.state === 'falling' || o.state === 'launched') continue;
+        const r = o.state === 'bubble' ? W.bubble.popRadius * 0.7 : HERO_R + 0.3;
+        if ((o.x - x) ** 2 + (o.z - z) ** 2 > r * r) continue;
+        victim = o;
+        break;
+      }
+      // cliffs and props stop the beam
+      if (!victim && (w.terrain.heightAt(x, z) > from + 1.2 || !w.clear(x, z, 0.05))) break;
+    }
+    const tx = victim ? victim.x : p.x + dx * end;
+    const tz = victim ? victim.z : p.z + dz * end;
+    w.events.push({ t: 'laser', p: p.id, tx, tz, hit: victim?.id ?? -1 });
+    if (victim) this.damage(victim, p, 'blaster', c.damage, dx, dz, c.knock);
+  }
+
   /** First point along a→b where an obstacle (rock, tree, rail) blocks a hook cable, or null if the line is clear. */
   private cableBlock(ax: number, az: number, bx: number, bz: number): { x: number; z: number } | null {
     const d = Math.hypot(bx - ax, bz - az);
@@ -354,9 +391,12 @@ export class Brawl {
       by.stats.hitsLanded++;
     }
     w.knock(o, nx, nz, knock);
-    o.state = 'stagger';
-    o.stateT = TUNING.hit.staggerSeconds;
-    o.cast = null;
+    // the rapid laser only flinches: a stagger on every beam would lock the victim in place
+    if (kind !== 'blaster') {
+      o.state = 'stagger';
+      o.stateT = TUNING.hit.staggerSeconds;
+      o.cast = null;
+    }
     w.events.push({ t: 'hit', victim: o.id, by: by?.id ?? -1, kind, drop: 0, x: o.x, z: o.z });
     w.events.push({ t: 'damage', victim: o.id, by: by?.id ?? -1, n, hp: o.hp });
     if (o.hp <= 0) this.ko(o);
