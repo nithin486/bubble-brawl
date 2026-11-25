@@ -89,12 +89,12 @@ export class FriendsPanel {
     share.append(copy);
     if (externalShare) {
       const wa = el('button', 'big-btn wa', 'WHATSAPP');
-      wa.addEventListener('click', () => window.open(`https://wa.me/?text=${encodeURIComponent(`Join my Bubble Brawl room ${code}! ${link}`)}`, '_blank', 'noopener'));
+      wa.addEventListener('click', () => window.open(`https://wa.me/?text=${encodeURIComponent(`Join my Bubblaze room ${code}! ${link}`)}`, '_blank', 'noopener'));
       share.append(wa);
     }
     if (externalShare && navigator.share) {
       const sh = el('button', 'big-btn alt', 'SHARE');
-      sh.addEventListener('click', () => navigator.share({ title: 'Bubble Brawl', text: `Join my Bubble Brawl room ${code}!`, url: link }).catch(() => {}));
+      sh.addEventListener('click', () => navigator.share({ title: 'Bubblaze', text: `Join my Bubblaze room ${code}!`, url: link }).catch(() => {}));
       share.append(sh);
     }
     this.box.append(share);

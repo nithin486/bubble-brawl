@@ -9,12 +9,16 @@ Run `npm run release:check` at any time to see what is still missing.
 | CrazyGames | `npm run package:crazygames` | upload `release/crazygames-upload.zip` contents (section 1) |
 | Google Play | publish the website first | package the live address (section 3) |
 
-## First: three decisions only you can make
+## Name and identity
 
-1. **Name.** Google Play already lists a "Bubble Brawl" (by Pasha Utt) and a "Bubble Brawl : Sort & Conquer". Search
-   Play, CrazyGames and a trademark database, and pick the final name before uploading anywhere.
-2. **Android package id.** `android/app.json` holds `in.nithin486.bubblebrawl`. It can never change after the first upload.
-3. **Contact email** for the privacy policy: `contactEmail` in `client/src/platform/release.ts`. It will be public.
+* **Name: Bubblaze** (renamed from Bubble Brawl, which Google Play already lists). On 25 November 2026 no match was found
+  on Trademarkia, Apple's App Store, Steam or Google Play, as far as those pages could be read. USPTO and WIPO were not
+  searched. This is not legal clearance. ("Popzooka" was rejected: registered US trademark for toy blasters.)
+* **Android package id:** `android/app.json` holds `in.nithin486.bubblaze`. It can never change after the first upload;
+  set `packageIdConfirmed` to true when you are sure.
+* **Web address:** still `bubble-brawl.<account>.workers.dev`. To change it, rename the Worker (`name` in
+  `wrangler.jsonc`), deploy, and update `siteUrl` in `client/src/platform/release.ts` **before** building the app.
+* **Contact email** for the privacy policy: set in `client/src/platform/release.ts`. It is public.
 
 ## Where money can come from
 
@@ -88,6 +92,8 @@ API 36 or newer, then continue at step 4. If billing is not offered there, use t
 The app shows no ads: whether Google's web ads are allowed inside this kind of app could not be confirmed.
 
 ## Listing text (draft)
+
+**Name:** Bubblaze
 
 **Short:** A cartoon arena shooter: grab mystery boxes, blast your rivals and pop their bubbles.
 

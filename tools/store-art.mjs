@@ -42,7 +42,7 @@ for (const [file, viewport, logo] of covers) {
   await page.addStyleTag({
     content: `#home > :not(.logo):not(.shade), #hud, .logo .tag, .logo .crown { display: none !important; }
       #home .logo { position: absolute !important; left: 50% !important; right: auto !important; top: 4% !important; transform: translateX(-50%) rotate(-3deg) !important; font-size: ${logo}vmin !important; width: max-content; text-align: center; }
-      #home .logo .w { font-size: ${logo}vmin !important; line-height: .95 !important; display: block; }`,
+      #home .logo .w { font-size: ${logo}vmin !important; line-height: .95 !important; }`,
   });
   await page.evaluate(() => {
     const g = window.__bb;

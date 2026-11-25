@@ -72,5 +72,5 @@ window.addEventListener(
 boot().catch((e) => {
   console.error(e);
   const b = document.getElementById('boot');
-  if (b) b.innerHTML = `<div class="logo">Bubble Brawl</div><div>Could not start: ${String(e?.message ?? e)}</div>`;
+  if (b) b.innerHTML = `<div class="logo">Bubblaze</div><div>Could not start: ${String(e?.message ?? e)}</div>`;
 });

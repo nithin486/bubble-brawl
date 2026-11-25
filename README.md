@@ -1,4 +1,6 @@
-# Bubble Brawl
+# Bubblaze
+
+Formerly Bubble Brawl (the repository, folder and web address keep the old name).
 
 A cartoon arena shooter for the web, CrazyGames and Google Play: 3-minute brawls, solo against bots or 2–6 friends.
 

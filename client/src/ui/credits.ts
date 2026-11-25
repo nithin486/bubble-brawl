@@ -20,7 +20,7 @@ const models = [...byAuthor].map(([who, set]) => `<li><b>${esc(who)}</b>: ${[...
 
 export const CREDITS_HTML = `
   <h4>Heroes</h4>
-  <ul><li>KayKit Adventurers and Skeletons by Kay Lousberg (CC0)</li><li>Bubble Ranger, weapons and map pieces: original Bubble Brawl art</li></ul>
+  <ul><li>KayKit Adventurers and Skeletons by Kay Lousberg (CC0)</li><li>Bubble Ranger, weapons and map pieces: original Bubblaze art</li></ul>
   <h4>3D models</h4><ul>${models}</ul>
   <h4>Scenery</h4><ul><li>KayKit Hexagon, City, Halloween and Dungeon packs by Kay Lousberg (CC0)</li></ul>
   <h4>Fonts and code</h4><ul><li>Lilita One and Nunito (SIL Open Font License)</li><li>three.js and PeerJS (MIT)</li></ul>`;

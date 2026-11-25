@@ -79,7 +79,7 @@ export class Home {
       <div class="motes">${'<i></i>'.repeat(9)}</div>
       <div class="logo">
         <span class="crown">${UI.crown}</span>
-        <span class="w">BUBBLE</span><span class="w b">BRAWL</span>
+        <span class="word"><span class="w">BUB</span><span class="w b">BLAZE</span></span>
         <span class="tag">GRAB · SHOOT · POP</span>
       </div>
       <header class="home-top">

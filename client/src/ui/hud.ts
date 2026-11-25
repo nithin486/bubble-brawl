@@ -342,7 +342,7 @@ export class Hud {
     zone.addEventListener('pointercancel', end);
 
     this.root.append(this.fpsEl);
-    const rot = el('div', 'rotate', `<div class="phone"></div><div>Rotate your phone</div><div style="font-size:16px;opacity:.8">Bubble Brawl plays in landscape</div>`);
+    const rot = el('div', 'rotate', `<div class="phone"></div><div>Rotate your phone</div><div style="font-size:16px;opacity:.8">Bubblaze plays in landscape</div>`);
     if (!document.querySelector('.rotate')) document.body.append(rot);
   }
 
