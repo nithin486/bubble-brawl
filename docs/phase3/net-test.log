@@ -1,0 +1,12 @@
+PASS  host creates a room
+PASS  guest joins with the code
+PASS  host sees both players
+PASS  both are in the match
+PASS  same map on both
+PASS  guest has the six-slot weapon rack
+PASS  guest movement reaches the host  (7.3 m)
+PASS  guest and host agree on the position  (0.0 m apart)
+PASS  round end reaches the guest
+
+multiplayer checks passed
+browser errors: none

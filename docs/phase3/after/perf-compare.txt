@@ -1,0 +1,13 @@
+# fixed quality, phone viewport 844x390 @2x, Intel HD 620, two runs each (fps shown as run1/run2)
+desert,low,before fps 46.2/42.9 p50 20.9 p95 25.8 calls 171 tris 231005 heap 55 low
+desert,low,after fps 44.8/44.2 p50 21.3 p95 28.7 calls 180.5 tris 326207 heap 80.5 low
+desert,medium,before fps 8.3/8.2 p50 119.3 p95 343.3 calls 348 tris 401039.5 heap 69.5 medium
+desert,medium,after fps 29.1/22.2 p50 35.5 p95 57.6 calls 313.5 tris 523366 heap 93.5 medium
+candy,low,before fps 43.2/43 p50 21.5 p95 27.4 calls 191 tris 247327.5 heap 58 low
+candy,low,after fps 35.5/40.7 p50 25.3 p95 33.3 calls 189 tris 334509.5 heap 88 low
+candy,medium,before fps 8/6.8 p50 125 p95 351.6 calls 329.5 tris 428399.5 heap 48 medium
+candy,medium,after fps 25.7/23.8 p50 39.4 p95 50 calls 261 tris 454524 heap 81 medium
+bubblegum,low,before fps 46.7/38.8 p50 22.1 p95 31.5 calls 196 tris 356078.5 heap 72 low
+bubblegum,low,after fps 39.9/37.1 p50 23.6 p95 33.7 calls 181.5 tris 348919 heap 83.5 low
+bubblegum,medium,before fps 8.5/9 p50 111 p95 319 calls 342 tris 617466 heap 85 medium
+bubblegum,medium,after fps 28/27.5 p50 34 p95 49 calls 319 tris 597213 heap 77 medium

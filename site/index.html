@@ -3,24 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#3a1f8f" />
+    <meta name="theme-color" content="#16204f" />
     <meta name="description" content="Grab it, steal it, bank it. A carry-and-bank party brawler." />
     <title>Bubble Brawl</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%231f6fe6' stroke='%23ffd23f' stroke-width='6'/%3E%3Ccircle cx='23' cy='22' r='8' fill='%23fff'/%3E%3C/svg%3E" />
     <style>
-      html,body{margin:0;height:100%;background:#4a2fd0;overflow:hidden}
-      #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
-        background:radial-gradient(circle at 50% 38%,#9b8cff 0%,#5a3be6 45%,#2a1580 100%);color:#fff;font:800 16px system-ui,sans-serif;z-index:50;transition:opacity .4s}
-      #boot .logo{font:900 58px/0.9 system-ui,sans-serif;text-align:center;transform:rotate(-4deg);color:#fff;-webkit-text-stroke:9px #3a1fb0;paint-order:stroke fill;text-shadow:0 7px 0 #1d0d52}
-      #boot .logo b{display:block;color:#ffd84a;font-size:70px}
-      #boot .bar{width:240px;height:16px;border-radius:10px;background:#1d0d52;overflow:hidden;box-shadow:inset 0 2px 4px #0008,0 0 0 3px #ffffff40}
-      #boot .bar i{display:block;height:100%;width:5%;background:linear-gradient(90deg,#ffe27a,#ff9a3d);border-radius:10px;transition:width .2s}
-      #boot .tip{opacity:.85;letter-spacing:.5px}
+      html,body{margin:0;height:100%;background:#16204f;overflow:hidden}
+      #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:min(20px,3.5vh);
+        background:radial-gradient(circle at 50% 38%,#4d78e8 0%,#23398c 45%,#0a102c 100%);color:#fff;font:800 15px system-ui,sans-serif;z-index:50;transition:opacity .4s;text-align:center;padding:0 16px}
+      #boot .logo{font:900 min(60px,14vh)/0.9 system-ui,sans-serif;transform:rotate(-4deg);color:#fff;-webkit-text-stroke:9px #1a57c4;paint-order:stroke fill;text-shadow:0 7px 0 #0a1f5c}
+      #boot .logo b{display:block;color:#ffd23f;font-size:1.2em}
+      #boot .bar{width:min(300px,70vw);height:18px;border-radius:99px;background:#0a102c;overflow:hidden;box-shadow:inset 0 2px 4px #0008,0 0 0 2.5px #ffffffb0}
+      #boot .bar i{display:block;height:100%;width:5%;border-radius:99px;transition:width .2s;
+        background:repeating-linear-gradient(115deg,#ffffff00 0 10px,#ffffff45 10px 18px),linear-gradient(180deg,#fff59a,#ff9f1a);animation:stripe .7s linear infinite;background-size:36px 100%,100% 100%}
+      #boot .pct{font-size:13px;letter-spacing:2px;color:#8fe9ff;margin-top:-8px}
+      #boot .tip{opacity:.85;letter-spacing:.3px;max-width:420px}
+      #boot .bub{position:absolute;bottom:-80px;border-radius:50%;animation:rise 7s linear infinite;
+        background:radial-gradient(circle at 32% 28%,#fff 0 10%,#c9fbff88 24%,#5fe3ff2a 60%,#ff9fe055 100%);box-shadow:inset 0 0 0 1.5px #ffffff90}
+      @keyframes stripe{to{background-position:36px 0,0 0}}
+      @keyframes rise{to{transform:translateY(-120vh)}}
     </style>
-    <script type="module" crossorigin src="./assets/index-DBOm4a0-.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DENt_RwA.css">
+    <script type="module" crossorigin src="./assets/index-DED98Rxq.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-SA2lcqcb.css">
   </head>
   <body>
-    <div id="boot"><div class="logo">BUBBLE<b>BRAWL</b></div><div class="bar"><i id="bootbar"></i></div><div class="tip">Tip: grab a mystery box, then fire it at a rival!</div></div>
+    <div id="boot">
+      <span class="bub" style="left:12%;width:34px;height:34px"></span>
+      <span class="bub" style="left:30%;width:16px;height:16px;animation-delay:2.2s"></span>
+      <span class="bub" style="left:68%;width:22px;height:22px;animation-delay:.9s"></span>
+      <span class="bub" style="left:85%;width:44px;height:44px;animation-delay:3.4s"></span>
+      <div class="logo">BUBBLE<b>BRAWL</b></div>
+      <div class="bar" role="progressbar" aria-label="Loading"><i id="bootbar"></i></div>
+      <div class="pct" id="bootpct">LOADING</div>
+      <div class="tip">Tip: grab a mystery box, then fire it at a rival!</div>
+    </div>
     <div id="app"></div>
   </body>
 </html>

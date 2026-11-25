@@ -1,0 +1,74 @@
+PASS  home loads
+PASS  sound button toggles and saves
+PASS  sound button toggles back
+PASS  settings opens
+PASS  settings: Sound toggles
+PASS  settings: Screen shake toggles
+PASS  settings: camera cycles through 4 views  (close,far,action,third)
+PASS  settings: graphics cycles low/medium/high  (medium,high,low)
+PASS  settings closes, lobby returns
+PASS  hero portraits select each hero  (Bones,Pinch,Grizzle,Ranger)
+PASS  hero arrow right
+PASS  hero arrow left
+PASS  keyboard changes hero
+PASS  map picker loads Desert Outpost
+PASS  map picker loads Bubblegum Islands
+PASS  map picker loads Candy Town
+PASS  map picker goes back
+PASS  friends panel opens
+PASS  friends panel closes
+PASS  PLAY starts a match on the chosen map
+PASS  weapon rack shows six slots
+PASS  KeyW moves the hero  (3.7 m)
+PASS  KeyS moves the hero  (4.2 m)
+PASS  KeyA moves the hero  (2.3 m)
+PASS  KeyD moves the hero  (3.2 m)
+PASS  Space dashes (cooldown starts)
+PASS  K uses the skill (cooldown starts)
+PASS  skill cooldown is shown
+PASS  blaster: rack selects it and J fires it
+PASS  rocket: rack selects it and J fires it
+PASS  banana: rack selects it and J fires it
+PASS  freeze: rack selects it and J fires it
+PASS  hook: rack selects it and J fires it
+PASS  hammer: rack selects it and J fires it
+PASS  knocked out shows the respawn card
+PASS  pause button pauses
+PASS  the clock stops while paused
+PASS  Escape resumes
+PASS  P pauses, RESUME resumes
+PASS  round end panel
+PASS  next round starts by itself
+PASS  final results panel
+PASS  REMATCH starts a new match
+PASS  QUIT returns to the lobby
+memory after 3 map loads {"heap":63,"geo":138,"tex":95,"nodes":376} after 18 {"heap":65,"geo":139,"tex":86,"nodes":376}
+PASS  15 more map switches do not grow GPU geometry  (138 → 139)
+PASS  15 more map switches do not grow textures  (95 → 86)
+PASS  15 more map switches do not grow the heap much  (63 → 65 MB)
+PASS  no DOM build-up  (376 → 376)
+memory after 1 session {"heap":63,"geo":138,"tex":91,"nodes":376} after 7 {"heap":65,"geo":129,"tex":87,"nodes":376} after 13 {"heap":63,"geo":127,"tex":94,"nodes":376}
+PASS  repeated matches do not leak
+PASS  Enter starts a match
+PASS  saved map bubblegum loads
+PASS  saved map candy loads
+PASS  saved map desert loads
+PASS  phone lobby: every button is at least 32 px
+PASS  phone lobby: no button off screen
+PASS  tap picks a hero
+PASS  tap opens settings
+PASS  tap PLAY starts a match
+PASS  joystick appears under the thumb
+PASS  dash while steering (multi-touch)
+PASS  joystick moves the hero
+PASS  tap skill
+PASS  tap fires the weapon
+PASS  phone action buttons are finger sized  (55/83/61 px)
+PASS  phone HUD pieces do not overlap
+PASS  tap pause
+PASS  tap quit
+PASS  portrait phone asks to rotate
+PASS  a failed download shows an error message
+
+all UI checks passed
+browser errors: none
