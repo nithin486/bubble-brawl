@@ -38,6 +38,7 @@ import { GuestNet } from './net/guest.ts';
 import { FriendsPanel } from './ui/friends.ts';
 import { SnapshotEncoder, applySnapshot, type Snapshot } from '../../shared/sim/snapshot.ts';
 import type { Personality } from '../../shared/sim/bots.ts';
+import { len as hyp } from '../../shared/sim/math.ts';
 
 /** What bots say, by personality. Short, readable, and they tell you what's going on. */
 const LINES: Record<string, Record<Personality, string[]>> = {
@@ -289,11 +290,28 @@ export class Game {
       this.fx.ring(0, 0, '#ffffff', 1, 0.1, 0.5);
       this.fx.cone(0, 0, 0, 2, 60, '#ffffff', 0.1, 0.4);
       this.fx.emit(0, -50, 0, { n: 1, color: '#ffffff', speed: 0, up: 0, life: 0.05, size: 0.1 });
+      this.fx.warm();
+      const pw = this.powers?.warm();
+      if (pw) extra.add(pw);
       this.weapons?.laser(o, o.clone().setZ(1), false);
       this.stage.scene.add(extra);
       const compile = Promise.all([this.stage.renderer.compileAsync(this.stage.scene, this.stage.camera), this.stage.renderer.compileAsync(this.showcase.scene, this.showcase.camera)]);
       await Promise.race([compile.catch(() => {}), wait(45000)]);
+      // upload their pictures too (compiling does not): the first box, power bubble or crack must not stall the GPU
+      const texs = new Set<THREE.Texture>(this.weapons?.iconTextures() ?? []);
+      this.stage.scene.traverse((o) => {
+        const ms = (o as THREE.Mesh).material;
+        for (const m of Array.isArray(ms) ? ms : ms ? [ms] : []) for (const v of Object.values(m)) if (v instanceof THREE.Texture) texs.add(v);
+      });
+      for (const t of texs) {
+        try {
+          this.stage.renderer.initTexture(t);
+        } catch {
+          /* a texture whose image is not ready yet uploads on first draw as before */
+        }
+      }
       this.stage.scene.remove(extra);
+      this.powers?.afterWarm();
     }
     this.ready = true;
     this.last = performance.now();
@@ -617,7 +635,7 @@ export class Game {
         h.loudGlow = this.mode !== 'match' || p.id === LOCAL || p.id === this.world.crownId;
         const dx = p.x - me.x;
         const dz = p.z - me.z;
-        const d = Math.hypot(dx, dz);
+        const d = hyp(dx, dz);
         if (p.id !== LOCAL && d < 5 && p.state !== 'falling') near++;
         void dz;
         h.fadeTarget = this.mode === 'match' && p.id !== LOCAL && this.blocksView(p.x, p.z, me.x, me.z, 1.0) ? 0.35 : 1;
@@ -656,10 +674,10 @@ export class Game {
       for (const p of this.world.players) {
         if (p.state === 'falling' || p.gone) continue;
         const trail = item(this.looks[p.id]?.trail ?? '')?.colors;
-        if (trail?.length && Math.hypot(p.vx, p.vz) > 2) this.fx.emit(p.x, p.y + 0.35, p.z, { n: 2, color: trail, speed: 0.4, up: 0.6, life: 0.55, size: 0.36, spread: 0.5 });
+        if (trail?.length && hyp(p.vx, p.vz) > 2) this.fx.emit(p.x, p.y + 0.35, p.z, { n: 2, color: trail, speed: 0.4, up: 0.6, life: 0.55, size: 0.36, spread: 0.5 });
         if (p.superT > 0) this.fx.emit(p.x, p.y + 0.9, p.z, { n: 3, color: [HEROES[p.hero].color, '#ffffff'], speed: 1.2, up: 1.6, life: 0.45, size: 0.45, spread: 0.8 });
         if (p.rageT > 0) this.fx.emit(p.x, p.y + 1.2, p.z, { n: 1, color: ['#ff4a6e', '#ffd23f'], speed: 0.8, up: 1.8, life: 0.45, size: 0.4, spread: 0.7 });
-        if (p.speedT > 0 && Math.hypot(p.vx, p.vz) > 2) this.fx.emit(p.x, 0.5, p.z, { n: 2, color: ['#ffd23f', '#fff6b0'], speed: 0.3, up: 0.5, life: 0.4, size: 0.45 });
+        if (p.speedT > 0 && hyp(p.vx, p.vz) > 2) this.fx.emit(p.x, 0.5, p.z, { n: 2, color: ['#ffd23f', '#fff6b0'], speed: 0.3, up: 0.5, life: 0.4, size: 0.45 });
         if (p.stickyT > 0) this.fx.emit(p.x, 1.1, p.z, { n: 2, color: ['#ff5fd2', '#ffb3ec'], speed: 0.8, up: 1.2, life: 0.5, size: 0.3, spread: 0.7 });
         if (p.magnetT > 0) this.fx.emit(p.x, 0.4, p.z, { n: 1, color: ['#ff5f7a'], speed: 3.5, up: 0.2, life: 0.4, size: 0.25 });
       }
@@ -668,8 +686,8 @@ export class Game {
       if (this.wellWarnT > 0) this.fx.emit(J.x, 1.6, J.z, { n: 4, color: ['#7ff3ff', '#ffffff', '#ffe27a'], speed: 1.2, up: 5, life: 0.7, size: 0.4, gravity: 6, spread: 0.8 });
     }
     if (this.wellWarnT > 0) this.wellWarnT -= dt;
-    this.island.focus = this.mode === 'match' ? this.v.set(this.world.players[LOCAL].x, this.world.players[LOCAL].y, this.world.players[LOCAL].z).clone() : null;
-    this.island.blocks = (x, z, fx, fz) => this.blocksView(x, z, fx, fz, 1.9);
+    this.island.focus = this.mode === 'match' ? this.islandFocus.set(this.world.players[LOCAL].x, this.world.players[LOCAL].y, this.world.players[LOCAL].z) : null;
+    this.island.blocks ??= (x, z, fx, fz) => this.blocksView(x, z, fx, fz, 1.9);
     this.island.camPos = this.stage.camera.position;
     this.island.update(dt, this.time);
     this.coins.update(this.world, dt, this.time);
@@ -707,7 +725,7 @@ export class Game {
       const me = this.world.players[LOCAL];
       for (const b of this.brains) {
         const p = this.world.players[b.id];
-        if (b.targetId === LOCAL && Math.hypot(p.x - me.x, p.z - me.z) < 9) threats.add(b.id);
+        if (b.targetId === LOCAL && hyp(p.x - me.x, p.z - me.z) < 9) threats.add(b.id);
       }
     }
     this.hud.update(this.world, this.stage.camera, LOCAL, this.time, {
@@ -764,7 +782,14 @@ export class Game {
             if (peer && i !== LOCAL) inputs[i] = this.room!.takeInput(peer, this.world.time, this.world.players[i]) ?? NO_INPUT;
           });
         const prevRound = this.world.round;
-        this.prevPos = this.world.players.map((q) => ({ x: q.x, y: q.y, z: q.z }));
+        const pl = this.world.players;
+        if (this.prevPos.length !== pl.length) this.prevPos = pl.map(() => ({ x: 0, y: 0, z: 0 }));
+        for (let k = 0; k < pl.length; k++) {
+          const a = this.prevPos[k];
+          a.x = pl[k].x;
+          a.y = pl[k].y;
+          a.z = pl[k].z;
+        }
         this.world.tick(step, inputs);
         if (this.room?.isHost && this.mode === 'match') this.pending.push(...this.world.events);
         if (this.world.round !== prevRound) this.brains.forEach((b) => b.newRound());
@@ -855,7 +880,7 @@ export class Game {
     this.shotWait = c.cooldown * (w.mod === 'rapid' ? TUNING.mods.rapid.cooldownMult : 1) * (me.superT > 0 && me.hero === 'ranger' ? TUNING.weapons.super.overdrive.cooldownMult : 1);
     const oy = me.y + GUN_HEIGHT;
     const rise = inp.aimY === undefined ? 0 : (inp.aimY - oy) / Math.max(0.6, inp.aimD ?? 8);
-    const n = Math.hypot(1, rise);
+    const n = hyp(1, rise);
     const hit = castRay(w, me.x, oy, me.z, Math.sin(inp.aim) / n, rise / n, Math.cos(inp.aim) / n, c.range, me);
     this.onEvent({ t: 'fire', p: LOCAL, weapon: 'blaster', x: me.x, z: me.z, facing: inp.aim });
     this.onEvent({ t: 'laser', p: LOCAL, tx: hit.x, ty: hit.y, tz: hit.z, hit: -1 });
@@ -1053,7 +1078,7 @@ export class Game {
     for (const b of this.brains) {
       if (b.targetId !== LOCAL) continue;
       const p = this.world.players[b.id];
-      if (Math.hypot(p.x - me.x, p.z - me.z) > 8) continue;
+      if (hyp(p.x - me.x, p.z - me.z) > 8) continue;
       const last = this.lastHunt.get(b.id) ?? -99;
       if (this.time - last < 10) continue;
       this.lastHunt.set(b.id, this.time);
@@ -1225,7 +1250,7 @@ export class Game {
         if (e.weapon === 'blaster' || e.weapon === 'rocket') H.shoot(this.time);
         else H.oneShot(anim, this.time, 1.6, 0.45);
         H.onFire(e.weapon, this.time);
-        const near = e.p === LOCAL || Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 14;
+        const near = e.p === LOCAL || hyp(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 14;
         if (near) this.sfx.shoot(e.weapon);
         if (e.weapon === 'blaster' || e.weapon === 'rocket') {
           const fx = e.x + Math.sin(e.facing) * 0.8;
@@ -1257,7 +1282,7 @@ export class Game {
           haptics.buzz([30, 40, 60]);
         } else {
           this.hud.feed(`${this.who(e.p)} unleashed <b>${def.superName}</b>!`);
-          if (Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 18) this.sfx.warn();
+          if (hyp(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z) < 18) this.sfx.warn();
         }
         break;
       }
@@ -1310,7 +1335,7 @@ export class Game {
             this.fx.lightning(this.v.set(e.x, gy + 0.4, e.z).clone(), new THREE.Vector3(e.x + Math.sin(a) * e.r, gy + 0.3, e.z + Math.cos(a) * e.r), k % 2 ? '#fff6a8' : '#b9a0ff');
           }
         }
-        const d = Math.hypot(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z);
+        const d = hyp(e.x - w.players[LOCAL].x, e.z - w.players[LOCAL].z);
         if (d < 16) {
           this.sfx.boom();
           this.rig.shake(Math.max(0.1, 0.45 - d * 0.025));
@@ -1377,7 +1402,7 @@ export class Game {
           this.hud.banner(e.by >= 0 ? `${w.players[e.by].name} KO'd you — MASH to escape!` : 'KO! MASH to escape!', 'red');
           this.rig.shake(0.5);
         }
-        if (e.by >= 0) this.hud.feed(`${this.who(e.by)} 🫧 ${this.who(e.victim)}`);
+        if (e.by >= 0) this.hud.feed(`${this.who(e.by)} knocked out ${this.who(e.victim)}`); // (a newer emoji shows as an empty box on older systems)
         if (e.by >= 0 && e.by !== LOCAL) this.say(e.by, 'youRobbed', false);
         void P;
         break;
@@ -1508,7 +1533,7 @@ export class Game {
         this.fx.debris(e.x, 0.6, e.z, 10, ['#2a2440', '#ff8a3d', '#8a8aa0'], 9, 9, 0.8);
         this.fx.crack(e.x, e.z, 5);
         this.sfx.boom();
-        const d = Math.hypot(w.players[LOCAL].x - e.x, w.players[LOCAL].z - e.z);
+        const d = hyp(w.players[LOCAL].x - e.x, w.players[LOCAL].z - e.z);
         this.rig.shake(d < 8 ? 0.7 : 0.25);
         if (d < 8) this.hud.flash('#ffb03a', 0.45);
         if (e.owner === LOCAL && e.hits > 0) {
@@ -1558,7 +1583,7 @@ export class Game {
           this.fx.pillar(e.x, e.z, '#7ff3ff', 12, 1, 1.8);
           this.fx.confetti(e.x, 3, e.z, e.mult >= 2 ? 160 : 70);
         }
-        if (e.n >= TUNING.bankPopAt) this.hud.feed('🫧 The bank bubble overloaded — it\'s moving!');
+        if (e.n >= TUNING.bankPopAt) this.hud.feed('The bank bubble overloaded — it\'s moving!');
         if (e.p === LOCAL) {
           this.sfx.bank(e.n);
           if (e.label) {
@@ -1852,7 +1877,7 @@ export class Game {
     this.tutT += dt;
     if (this.tut === 'move') {
       if (this.tutT < dt * 1.5) this.tutAdvance('move');
-      this.movedDist += Math.hypot(me.vx, me.vz) * dt;
+      this.movedDist += hyp(me.vx, me.vz) * dt;
       if (this.movedDist > 2.5) this.tutAdvance('coins');
     } else if (w.mode === 'weapons') {
       // box → attack → done (KO bubbles explain themselves with "POP ME!")
@@ -1870,7 +1895,7 @@ export class Game {
     // skill hint: first time a rival is within range and the skill is ready
     if (!this.skillHintShown && me.skillCd <= 0 && this.firstMatch) {
       const range = HEROES[me.hero].ability === 'groundSlam' ? 3.2 : 2.8;
-      const near = w.players.some((o) => o.id !== LOCAL && o.state !== 'falling' && Math.hypot(o.x - me.x, o.z - me.z) < range);
+      const near = w.players.some((o) => o.id !== LOCAL && o.state !== 'falling' && hyp(o.x - me.x, o.z - me.z) < range);
       if (near && w.roundTime > 6) {
         this.skillHintShown = true;
         this.skillHintT = 5;
@@ -1883,7 +1908,7 @@ export class Game {
     }
     // grab hint: a rival carrying coins is right next to you
     if (!this.grabHintShown && this.firstMatch && me.grabCd <= 0 && this.skillHintT <= 0) {
-      const rich = w.players.find((o) => o.id !== LOCAL && o.carried >= 3 && Math.hypot(o.x - me.x, o.z - me.z) < 2.6);
+      const rich = w.players.find((o) => o.id !== LOCAL && o.carried >= 3 && hyp(o.x - me.x, o.z - me.z) < 2.6);
       if (rich && w.roundTime > 10) {
         this.grabHintShown = true;
         this.grabHintT = 4;
@@ -1938,7 +1963,7 @@ export class Game {
   /** Phones: should the held weapon (or fist) attack by itself right now? */
   private autoAttack(me: Player) {
     const T = TUNING.weapons;
-    const near = (r: number) => this.world.players.some((q) => q !== me && targetable(q) && Math.hypot(q.x - me.x, q.z - me.z) < r);
+    const near = (r: number) => this.world.players.some((q) => q !== me && targetable(q) && hyp(q.x - me.x, q.z - me.z) < r);
     if (!me.weapon) return near(1.7);
     if (me.weapon === 'hammer') return near(T.hammer.radius * 0.85);
     if (me.weapon === 'banana') return false; // a trap is a choice
@@ -1957,7 +1982,7 @@ export class Game {
     let best = (11 * Math.PI) / 180;
     let turn = 0;
     for (const q of this.world.players) {
-      if (q === me || !targetable(q) || Math.hypot(q.x - me.x, q.z - me.z) > 18) continue;
+      if (q === me || !targetable(q) || hyp(q.x - me.x, q.z - me.z) > 18) continue;
       let off = Math.atan2(q.x - cam.x, q.z - cam.z) - view;
       off = Math.atan2(Math.sin(off), Math.cos(off));
       if (Math.abs(off) < best && this.canSee(me, q)) {
@@ -1994,7 +2019,7 @@ export class Game {
       let pz = hit.z;
       if (hit.player) {
         // aim for the body's centre line at that height: the same shot from your gun, a hand's width off your eye line
-        const h = Math.hypot(d.x, d.z) || 1;
+        const h = hyp(d.x, d.z) || 1;
         const along = ((hit.player.x - px) * d.x + (hit.player.z - pz) * d.z) / h;
         px += (d.x / h) * Math.max(0, along);
         pz += (d.z / h) * Math.max(0, along);
@@ -2021,7 +2046,7 @@ export class Game {
       }
       const tx = px - me.x;
       const tz = pz - me.z;
-      const dd = Math.hypot(tx, tz);
+      const dd = hyp(tx, tz);
       const heading = dd > 0.8 ? Math.atan2(tx, tz) : Math.atan2(d.x, d.z);
       this.aimInfo = { heading, dist: Math.max(0.8, dd), y: py };
       return;
@@ -2036,13 +2061,13 @@ export class Game {
     const t = (me.y - o.y) / d.y;
     const hx = o.x + d.x * t - me.x;
     const hz = o.z + d.z * t - me.z;
-    if (Math.hypot(hx, hz) < 0.4) return;
-    this.aimInfo = { heading: Math.atan2(hx, hz), dist: Math.hypot(hx, hz) };
+    if (hyp(hx, hz) < 0.4) return;
+    this.aimInfo = { heading: Math.atan2(hx, hz), dist: hyp(hx, hz) };
   }
 
   /** Nothing solid between two heroes (aim assist must not drag the aim behind a wall). */
   private canSee(a: { x: number; z: number }, b: { x: number; z: number }) {
-    const d = Math.hypot(b.x - a.x, b.z - a.z);
+    const d = hyp(b.x - a.x, b.z - a.z);
     for (let s = 0.7; s < d - 0.7; s += 0.4) if (!this.world.clear(a.x + ((b.x - a.x) * s) / d, a.z + ((b.z - a.z) * s) / d, 0.05)) return false;
     return true;
   }
@@ -2050,12 +2075,13 @@ export class Game {
   /** Is (x, z) standing between the camera and the point (fx, fz)? (any camera direction) */
   private prevPos: { x: number; y: number; z: number }[] = [];
   private lerpA = 1;
+  private islandFocus = new THREE.Vector3();
   /** Position to draw a player at: blended between the previous and current sim step (null = draw as is). */
   private visPos(id: number) {
     const q = this.world.players[id];
     const a = this.prevPos[id];
     if (!a || this.lerpA >= 1) return null;
-    if (q.state === 'falling' || q.state === 'launched' || Math.hypot(q.x - a.x, q.z - a.z) > 2) return null;
+    if (q.state === 'falling' || q.state === 'launched' || hyp(q.x - a.x, q.z - a.z) > 2) return null;
     const t = this.lerpA;
     return { x: a.x + (q.x - a.x) * t, y: a.y + (q.y - a.y) * t, z: a.z + (q.z - a.z) * t };
   }

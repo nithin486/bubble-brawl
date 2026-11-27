@@ -1,6 +1,7 @@
 // Hex-tile island. The ground is a set of KayKit hex tiles; you stand on a tile or you fall.
 import { TUNING } from '../config/tuning.ts';
 import { len, type V2 } from './math.ts';
+import { len as hyp } from './math.ts';
 
 export type TileState = 0 | 1 | 2; // 0 solid, 1 warning (shaking), 2 gone
 
@@ -35,6 +36,7 @@ export function worldToHex(x: number, z: number) {
   return { q, r };
 }
 
+const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 export const key = (q: number, r: number) => (q + 64) * 256 + (r + 64);
 
 export interface ArenaShape {
@@ -79,6 +81,7 @@ export class Arena {
   }
 
   reset() {
+    this.paths.clear();
     for (const t of this.tiles) {
       t.state = 0;
       t.fallAt = 0;
@@ -112,18 +115,14 @@ export class Arena {
     if (!this.shape.mask) return { x: tx, z: tz };
     const dx = tx - x;
     const dz = tz - z;
-    const d = Math.hypot(dx, dz);
+    const d = hyp(dx, dz);
     const n = Math.ceil(d / 0.8);
     let clear = true;
-    const narrow = (px: number, pz: number) => {
-      const t = this.tileAt(px, pz);
-      return !!t && !!this.shape.narrow?.(t.q, t.r);
-    };
-    if (narrow(x, z)) clear = false;
+    if (this.narrowAt(x, z)) clear = false;
     for (let i = 1; i <= n && clear; i++) {
       const px = x + (dx * i) / n;
       const pz = z + (dz * i) / n;
-      if (!this.safe(px, pz) || narrow(px, pz)) clear = false;
+      if (!this.safe(px, pz) || this.narrowAt(px, pz)) clear = false;
     }
     if (clear) return { x: tx, z: tz };
     const s = this.tileAt(x, z);
@@ -142,11 +141,16 @@ export class Arena {
       }
     }
     if (!g) return { x: tx, z: tz };
+    // the same start and goal tiles give the same search result while every tile on it still stands: reuse it
+    // (8 bots searching the tile graph 60 times a second was most of the game's memory churn)
+    const ck = key(s.q, s.r) * 65536 + key(g.q, g.r);
+    const hit = this.paths.get(ck);
+    if (hit && hit.every((t) => t.state === 0)) return this.step(hit, g, tx, tz);
     const prev = new Map<Tile, Tile | null>([[s, null]]);
     const queue: Tile[] = [s];
     for (let h = 0; h < queue.length && !prev.has(g); h++) {
       const t = queue[h];
-      for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (const [a, b] of NEIGHBOURS) {
         const o = this.map.get(key(t.q + a, t.r + b));
         if (!o || o.state !== 0 || prev.has(o)) continue;
         prev.set(o, t);
@@ -157,6 +161,17 @@ export class Arena {
     const path: Tile[] = [];
     for (let t: Tile | null | undefined = g; t; t = prev.get(t)) path.push(t);
     path.reverse();
+    if (this.paths.size > 600) this.paths.clear();
+    this.paths.set(ck, path);
+    return this.step(path, g, tx, tz);
+  }
+
+  private paths = new Map<number, Tile[]>();
+  private narrowAt(px: number, pz: number) {
+    const t = this.tileAt(px, pz);
+    return !!t && !!this.shape.narrow?.(t.q, t.r);
+  }
+  private step(path: Tile[], g: Tile, tx: number, tz: number) {
     const next = path[Math.min(path.length - 1, 1)];
     // the last tile: go to the real target; otherwise to the next tile's centre
     return path.length <= 2 && g === this.tileAt(tx, tz) ? { x: tx, z: tz } : { x: next.x, z: next.z };

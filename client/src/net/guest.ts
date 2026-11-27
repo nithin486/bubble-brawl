@@ -5,6 +5,7 @@ import type { World } from '../../../shared/sim/world.ts';
 import type { Input } from '../../../shared/sim/types.ts';
 import type { Snapshot } from '../../../shared/sim/snapshot.ts';
 import { TUNING } from '../../../shared/config/tuning.ts';
+import { len as hyp } from '../../../shared/sim/math.ts';
 
 interface Sample {
   t: number;
@@ -104,14 +105,14 @@ export class GuestNet {
     if (!mine) return;
     const ex = server[0] - mine.x;
     const ez = server[1] - mine.z;
-    if (Math.hypot(ex, ez) > 2.5) {
+    if (hyp(ex, ez) > 2.5) {
       // thrown, teleported or far off: take the host's position at once
       p.x = server[0];
       p.z = server[1];
       p.y = server[2];
       this.trail = [];
       this.fix = { x: 0, z: 0 };
-    } else this.fix = Math.hypot(ex, ez) < 0.06 ? { x: 0, z: 0 } : { x: ex, z: ez };
+    } else this.fix = hyp(ex, ez) < 0.06 ? { x: 0, z: 0 } : { x: ex, z: ez };
   }
 
   private where(at: number) {
@@ -172,7 +173,7 @@ export class GuestNet {
     const span = b.t - a.t;
     let k = span > 0 ? (t - a.t) / span : 1;
     k = clamp(k, 0, 1 + 0.12 / (span || 1));
-    if (Math.hypot(b.x - a.x, b.z - a.z) > 3) k = 1; // a respawn or a swap: no sliding across the map
+    if (hyp(b.x - a.x, b.z - a.z) > 3) k = 1; // a respawn or a swap: no sliding across the map
     q.x = a.x + (b.x - a.x) * k;
     q.z = a.z + (b.z - a.z) * k;
     q.y = a.y + (b.y - a.y) * Math.min(1, k);
@@ -185,7 +186,7 @@ export class GuestNet {
     const D = TUNING.dash;
     this.dashWait = Math.max(0, this.dashWait - dt);
     if (inp.dash && this.dashWait <= 0 && p.dashCd <= 0.1 && this.dashT <= 0) {
-      const m = Math.hypot(inp.mx, inp.mz);
+      const m = hyp(inp.mx, inp.mz);
       this.dashDir = m < 0.2 ? { x: Math.sin(p.facing), z: Math.cos(p.facing) } : { x: inp.mx / m, z: inp.mz / m };
       this.dashT = D.duration;
       this.dashWait = D.cooldown;

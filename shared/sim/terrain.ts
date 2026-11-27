@@ -1,3 +1,4 @@
+import { len as hyp } from './math.ts';
 // Walkable height: raised decks and ramps (no gravity mechanics: you simply walk up a ramp).
 // Everything is a rotated rectangle; the ground height at a point is the max over all features.
 
@@ -102,7 +103,7 @@ export class Terrain {
   /** Walking a→b would climb a cliff somewhere along the line? (dropping down is fine) */
   blocked(ax: number, az: number, bx: number, bz: number): boolean {
     if (this.flat) return false;
-    const d = Math.hypot(bx - ax, bz - az);
+    const d = hyp(bx - ax, bz - az);
     const n = Math.max(1, Math.ceil(d / 0.5));
     let prev = this.heightAt(ax, az);
     for (let i = 1; i <= n; i++) {
@@ -155,11 +156,11 @@ export class Terrain {
     const done = new Array<boolean>(n).fill(false);
     // start edges from the walker (skip nodes it is standing on)
     for (let i = 0; i < n; i++) {
-      const d = Math.hypot(pts[i].x - x, pts[i].z - z);
+      const d = hyp(pts[i].x - x, pts[i].z - z);
       if (d > 0.9 && !this.blocked(x, z, pts[i].x, pts[i].z)) dist[i] = d;
     }
     // end edges to the target
-    const toT = pts.map((p) => (!this.blocked(p.x, p.z, tx, tz) ? Math.hypot(tx - p.x, tz - p.z) : Infinity));
+    const toT = pts.map((p) => (!this.blocked(p.x, p.z, tx, tz) ? hyp(tx - p.x, tz - p.z) : Infinity));
     let best = Infinity;
     let bestNode = -1;
     for (let it = 0; it < n; it++) {
@@ -172,7 +173,7 @@ export class Terrain {
         bestNode = u;
       }
       for (const v of adj[u]) {
-        const w = dist[u] + Math.hypot(pts[v].x - pts[u].x, pts[v].z - pts[u].z);
+        const w = dist[u] + hyp(pts[v].x - pts[u].x, pts[v].z - pts[u].z);
         if (w < dist[v]) {
           dist[v] = w;
           prev[v] = u;

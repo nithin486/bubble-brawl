@@ -5,6 +5,7 @@ import { dirX, dirZ, facingOf, len } from './math.ts';
 import { castRay, GUN_HEIGHT } from './ray.ts';
 import { WEAPONS, type MysteryBox, type Mine, type Player, type Projectile, type Throw, type WeaponKind } from './types.ts';
 import type { World } from './world.ts';
+import { len as hyp } from './math.ts';
 
 const W = TUNING.weapons;
 const HERO_R = TUNING.hero.radius;
@@ -150,7 +151,7 @@ export class Brawl {
     const w = this.w;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const s = this.projectiles[i];
-      const step = Math.hypot(s.vx, s.vz) * dt;
+      const step = hyp(s.vx, s.vz) * dt;
       s.x += s.vx * dt;
       s.z += s.vz * dt;
       s.left -= step;
@@ -178,7 +179,7 @@ export class Brawl {
       if (o === by) continue;
       const dx = o.x - x;
       const dz = o.z - z;
-      const d = Math.hypot(dx, dz);
+      const d = hyp(dx, dz);
       if (d > c.blast + HERO_R + (o.state === 'bubble' ? 0.6 : 0)) continue;
       hits++;
       this.damage(o, by, 'rocket', c.damage, d > 0.01 ? dx / d : dirX(by.facing), d > 0.01 ? dz / d : dirZ(by.facing), c.knock);
@@ -204,7 +205,7 @@ export class Brawl {
         this.mines.splice(i, 1);
         const by = w.players[m.owner];
         // slip: spin out in the direction you were running
-        const sp = Math.hypot(o.vx, o.vz);
+        const sp = hyp(o.vx, o.vz);
         const nx = sp > 0.5 ? o.vx / sp : dirX(o.facing);
         const nz = sp > 0.5 ? o.vz / sp : dirZ(o.facing);
         if (this.damage(o, by.id === o.id ? null : by, 'banana', c.damage, nx, nz, 1.8)) this.stun(o, c.slip, 'slip');
@@ -229,7 +230,7 @@ export class Brawl {
         hits++;
         const dx = o.x - t.tx;
         const dz = o.z - t.tz;
-        const d = Math.hypot(dx, dz) || 1;
+        const d = hyp(dx, dz) || 1;
         if (this.damage(o, by, 'freeze', c.damage, dx / d, dz / d, 0.3)) this.stun(o, c.freeze, 'frozen');
       }
       w.events.push({ t: 'boom', kind: 'freeze', x: t.tx, z: t.tz, r: c.radius, hits });
@@ -423,7 +424,7 @@ export class Brawl {
         p.facing = facingOf(t.x - p.x, t.z - p.z);
         const dx = t.x - p.x;
         const dz = t.z - p.z;
-        const d = Math.hypot(dx, dz) || 1;
+        const d = hyp(dx, dz) || 1;
         // yank towards you, a step at a time, and stop at the last good spot: never through a wall or off the island
         const goal = Math.max(W.hook.pullTo, 0);
         let px = t.x;
@@ -469,7 +470,7 @@ export class Brawl {
       const [weak, strong] = W.botSpreadDeg;
       facing += (w.rng.next() * 2 - 1) * (weak + (strong - weak) * w.skill) * (Math.PI / 180);
     }
-    const n = Math.hypot(1, rise);
+    const n = hyp(1, rise);
     const cast = () => castRay(w, p.x, oy, p.z, dirX(facing) / n, rise / n, dirZ(facing) / n, c.range, p);
     // a friend's shot is judged against where they saw their target
     const hit = aimed?.rewind ? w.rewound(p.id, aimed.rewind, cast) : cast();
@@ -479,7 +480,7 @@ export class Brawl {
 
   /** First point along a→b where an obstacle (rock, tree, rail) blocks a hook cable, or null if the line is clear. */
   private cableBlock(ax: number, az: number, bx: number, bz: number): { x: number; z: number } | null {
-    const d = Math.hypot(bx - ax, bz - az);
+    const d = hyp(bx - ax, bz - az);
     for (let s = 0.5; s < d - 0.3; s += 0.4) {
       const x = ax + ((bx - ax) * s) / d;
       const z = az + ((bz - az) * s) / d;

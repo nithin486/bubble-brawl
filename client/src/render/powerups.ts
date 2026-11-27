@@ -1,4 +1,3 @@
-import { release } from './dispose.ts';
 import * as THREE from 'three';
 import type { World } from '../../../shared/sim/world.ts';
 import type { PowerKind } from '../../../shared/sim/types.ts';
@@ -145,7 +144,12 @@ const bubbleMat = () =>
 interface BubbleView {
   g: THREE.Group;
   born: number;
+  kind: PowerKind;
 }
+// shared by every bubble: spawning one mid-fight creates no new GPU buffers
+const SHADOW_GEO = new THREE.CircleGeometry(0.45, 20);
+const MARK_GEO = new THREE.RingGeometry(0.75, 0.95, 40);
+const BOMB_GEO = { ball: new THREE.SphereGeometry(0.42, 24, 16), cap: new THREE.CylinderGeometry(0.12, 0.14, 0.14, 12), ring: new THREE.RingGeometry(0.9, 1, 64) };
 interface BombView {
   g: THREE.Group;
   ring: THREE.Mesh;
@@ -166,6 +170,37 @@ export class PowerView {
   private world: World;
   private bubbles = new Map<number, BubbleView>();
   private bombs = new Map<number, BombView>();
+  /** Popped bubbles and exploded bombs wait here for the next spawn. */
+  private freeBubbles = new Map<PowerKind, THREE.Group[]>();
+  private freeBombs: BombView[] = [];
+  private warmed: { bubbles: BubbleView[]; bombs: BombView[] } | null = null;
+
+  /** One bubble of every kind and a bomb, for the shader build behind the loading screen; call afterWarm() when done. */
+  warm() {
+    const g = new THREE.Group();
+    const bubbles = (Object.keys(POWER_INFO) as PowerKind[]).map((kind) => ({ g: this.makeBubble(kind), born: 0, kind }));
+    const bombs = [this.makeBomb()];
+    for (const b of bubbles) g.add(b.g);
+    for (const b of bombs) g.add(b.g);
+    this.warmed = { bubbles, bombs };
+    return g;
+  }
+  afterWarm() {
+    if (!this.warmed) return;
+    for (const b of this.warmed.bubbles) this.park(b);
+    for (const b of this.warmed.bombs) this.parkBomb(b);
+    this.warmed = null;
+  }
+  private park(b: BubbleView) {
+    b.g.removeFromParent();
+    let a = this.freeBubbles.get(b.kind);
+    if (!a) this.freeBubbles.set(b.kind, (a = []));
+    a.push(b.g);
+  }
+  private parkBomb(b: BombView) {
+    b.g.removeFromParent();
+    this.freeBombs.push(b);
+  }
   private auras: Aura[] = [];
   private icons = new Map<PowerKind, THREE.Texture>();
   private glowTex: THREE.Texture;
@@ -211,13 +246,15 @@ export class PowerView {
   /** Swap in a new world (rematch) without rebuilding textures. */
   setWorld(world: World) {
     this.world = world;
-    for (const b of this.bubbles.values()) release(b.g);
-    for (const b of this.bombs.values()) release(b.g);
+    for (const b of this.bubbles.values()) this.park(b);
+    for (const b of this.bombs.values()) this.parkBomb(b);
     this.bubbles.clear();
     this.bombs.clear();
   }
 
   private makeBubble(kind: PowerKind) {
+    const reuse = this.freeBubbles.get(kind)?.pop();
+    if (reuse) return reuse;
     const g = new THREE.Group();
     const mat = bubbleMat();
     mat.uniforms.tint.value.set(POWER_INFO[kind].color);
@@ -227,12 +264,12 @@ export class PowerView {
     icon.scale.setScalar(1.05);
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: POWER_INFO[kind].color, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     glow.scale.setScalar(2.4);
-    const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.45, 20), new THREE.MeshBasicMaterial({ color: '#1a0b40', transparent: true, opacity: 0.3, depthWrite: false }));
+    const shadow = new THREE.Mesh(SHADOW_GEO, new THREE.MeshBasicMaterial({ color: '#1a0b40', transparent: true, opacity: 0.3, depthWrite: false }));
     shadow.rotation.x = -Math.PI / 2;
     shadow.name = 'shadow';
     // glowing ground marker so you can spot power bubbles from across the island
     const mark = new THREE.Mesh(
-      new THREE.RingGeometry(0.75, 0.95, 40),
+      MARK_GEO,
       new THREE.MeshBasicMaterial({ color: POWER_INFO[kind].color, transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }),
     );
     mark.rotation.x = -Math.PI / 2;
@@ -244,18 +281,23 @@ export class PowerView {
   }
 
   private makeBomb(): BombView {
+    const reuse = this.freeBombs.pop();
+    if (reuse) {
+      this.scene.add(reuse.g);
+      return reuse;
+    }
     const g = new THREE.Group();
     const ballMat = new THREE.MeshStandardMaterial({ color: '#2a2440', roughness: 0.35, metalness: 0.3, emissive: '#ff2a2a', emissiveIntensity: 0 });
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 16), ballMat);
+    const ball = new THREE.Mesh(BOMB_GEO.ball, ballMat);
     ball.position.y = 0.45;
     ball.castShadow = true;
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.14, 12), new THREE.MeshStandardMaterial({ color: '#8a8aa0', metalness: 0.6, roughness: 0.3 }));
+    const cap = new THREE.Mesh(BOMB_GEO.cap, new THREE.MeshStandardMaterial({ color: '#8a8aa0', metalness: 0.6, roughness: 0.3 }));
     cap.position.y = 0.88;
     const spark = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: '#ffd23f', blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     spark.position.y = 1.02;
     spark.scale.setScalar(0.6);
     const ringMat = new THREE.MeshBasicMaterial({ color: '#ff4a3d', transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 64), ringMat);
+    const ring = new THREE.Mesh(BOMB_GEO.ring, ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.06;
     g.add(ball, cap, spark, ring);
@@ -271,7 +313,7 @@ export class PowerView {
       live.add(u.id);
       let v = this.bubbles.get(u.id);
       if (!v) {
-        v = { g: this.makeBubble(u.kind), born: time };
+        v = { g: this.makeBubble(u.kind), born: time, kind: u.kind };
         this.scene.add(v.g);
         this.bubbles.set(u.id, v);
       }
@@ -288,7 +330,7 @@ export class PowerView {
       });
     }
     for (const [id, v] of this.bubbles) if (!live.has(id)) {
-      this.scene.remove(v.g);
+      this.park(v);
       this.bubbles.delete(id);
     }
 
@@ -313,7 +355,7 @@ export class PowerView {
       v.spark.scale.setScalar(0.5 + Math.random() * 0.4);
     }
     for (const [id, v] of this.bombs) if (!liveB.has(id)) {
-      this.scene.remove(v.g);
+      this.parkBomb(v);
       this.bombs.delete(id);
     }
 

@@ -110,8 +110,9 @@ export class CameraRig {
     if (this.shakeT > 0) {
       this.shakeT -= dt;
       const a = this.shakeAmp * (this.shakeT / 0.3) * (this.armed ? 0.25 : 0.7);
-      cam.position.x += (Math.random() - 0.5) * a;
-      cam.position.y += (Math.random() - 0.5) * a;
+      this.shakePh += dt;
+      cam.position.x += this.wobble(0) * a;
+      cam.position.y += this.wobble(1.7) * a;
     }
     cam.lookAt(tmpB.copy(cam.position).add(f));
     cam.updateMatrixWorld();
@@ -169,6 +170,13 @@ export class CameraRig {
     this.vel.set(0, 0, 0);
   }
 
+  /** Shake follows a smooth ~20 Hz wobble in time, not a new random jump every frame: the same feel at 30, 60 or 120 fps. */
+  private shakePh = 0;
+  private wobble(seed: number) {
+    const t = this.shakePh;
+    return 0.5 * (Math.sin(t * 131 + seed) * 0.6 + Math.sin(t * 83 + seed * 2.3) * 0.4);
+  }
+
   shake(amount: number) {
     if (!this.shakeEnabled) return;
     this.shakeAmp = Math.max(this.shakeAmp, amount);
@@ -224,9 +232,10 @@ export class CameraRig {
     if (this.shakeT > 0) {
       this.shakeT -= dt;
       const a = this.shakeAmp * (this.shakeT / 0.3);
-      this.camera.position.x += (Math.random() - 0.5) * a;
-      this.camera.position.y += (Math.random() - 0.5) * a;
-      look.x += (Math.random() - 0.5) * a * 0.5;
+      this.shakePh += dt;
+      this.camera.position.x += this.wobble(0) * a;
+      this.camera.position.y += this.wobble(1.7) * a;
+      look.x += this.wobble(3.1) * a * 0.5;
     }
     this.camera.lookAt(look);
     // FOV kick: punch in fast, ease back out
