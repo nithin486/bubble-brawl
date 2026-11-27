@@ -90,3 +90,14 @@ Each KayKit model contains every weapon/prop; show only the one each hero uses (
 - `assets/concepts/` — rendered roster images.
 - `assets/models/` — models fetched by `scripts/fetch_model.js` (+ `.json` metadata, `CREDITS.md`; `_raw/` is git-ignored).
 - `scripts/fetch_model.js` — the 3D asset pipeline (see "3D models" above).
+
+## Claude Code Game Studios (installed framework)
+
+This repo also carries the Claude Code Game Studios framework (github.com/Donchitos/Claude-Code-Game-Studios, MIT, v1.3.0):
+49 studio agents in `.claude/agents/`, its skills in `.claude/skills/` (`/start`, `/next-step`, `/adopt`, `/prototype --from`,
+`/cut`, `/project-settings` …), hooks in `.claude/hooks/` (checks on reads, writes, commits, pushes) and settings in `project.yaml`.
+Run `/adopt` once to audit this existing project against the framework.
+
+- **This file wins.** Where the framework's rules disagree with the project rules above (or with what the user asks), follow this file and the user.
+- Coordination rules: @.claude/docs/coordination-rules.md
+- Workflow guide: `docs/WORKFLOW-GUIDE.md`; collaboration principle: `docs/COLLABORATIVE-DESIGN-PRINCIPLE.md`.
