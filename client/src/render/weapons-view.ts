@@ -6,6 +6,7 @@ import type { World } from '../../../shared/sim/world.ts';
 import type { WeaponKind } from '../../../shared/sim/types.ts';
 import { loadModel, type Model } from './models.ts';
 import type { Fx } from './fx.ts';
+import { len as hyp } from '../../../shared/sim/math.ts';
 
 /** Names, colours and icons for the six weapons (HUD, banners, pickups). */
 export const WEAPON_INFO: Record<WeaponKind, { name: string; icon: string; color: string; tip: string }> = {
@@ -279,6 +280,11 @@ export class WeaponsView {
     rocket: new THREE.MeshBasicMaterial({ color: '#ff8a3d', toneMapped: false }),
   };
   private iceMat = new THREE.MeshBasicMaterial({ color: '#c9f6ff', toneMapped: false });
+  private freezeRingGeo: THREE.BufferGeometry | null = null;
+  /** Every weapon's pickup icon, drawn up front (drawing + uploading one the first time a box opens was a hitch). */
+  iconTextures() {
+    return (Object.keys(WEAPON_INFO) as WeaponKind[]).map((k) => this.weaponTex(k));
+  }
   private ringMat = new THREE.MeshBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, toneMapped: false });
 
   constructor(world: World, scene: THREE.Scene, fx: Fx, glowTex: THREE.Texture, env: Map<string, THREE.Object3D>) {
@@ -603,7 +609,7 @@ export class WeaponsView {
         m.scale.set(k * (1 + Math.sin(t * 19) * 0.07), k * (1 - Math.sin(t * 19) * 0.06), k * (1 + Math.cos(t * 23) * 0.06));
       }
       if (s.kind === 'rocket') {
-        const back = 0.35 / (Math.hypot(s.vx, s.vz) || 1);
+        const back = 0.35 / (hyp(s.vx, s.vz) || 1);
         this.fx.emit(s.x - s.vx * back, gy, s.z - s.vz * back, { n: 2, color: ['#ff8a3d', '#ffd23f', '#aaaaaa'], speed: 1, up: 0.5, life: 0.35, size: 0.5 });
       } else if (Math.random() < 0.4) this.fx.emit(s.x, gy, s.z, { n: 1, color: '#bff8ff', speed: 0.4, up: 0.2, life: 0.25, size: 0.25 });
     }
@@ -687,7 +693,9 @@ export class WeaponsView {
           ball = new THREE.Mesh(this.shotGeo, this.iceMat);
           ball.scale.setScalar(0.3);
         }
-        const ring = new THREE.Mesh(new THREE.RingGeometry(W.freeze.radius - 0.15, W.freeze.radius, 48), this.ringMat);
+        this.freezeRingGeo ??= new THREE.RingGeometry(W.freeze.radius - 0.15, W.freeze.radius, 48);
+        this.freezeRingGeo.userData.shared = true;
+        const ring = new THREE.Mesh(this.freezeRingGeo, this.ringMat);
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(t.tx, w.terrain.heightAt(t.tx, t.tz) + 0.06, t.tz);
         this.group.add(ball, ring);

@@ -13,6 +13,7 @@ import { heroScale } from '../../../shared/sim/ray.ts';
 import type { PowerKind } from '../../../shared/sim/types.ts';
 import { UI } from './icons.ts';
 import { CREDITS_HTML } from './credits.ts';
+import { len as hyp } from '../../../shared/sim/math.ts';
 
 export const ICONS = {
   grab: `<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10h.5V3.5a1.5 1.5 0 0 1 3 0V10h.5V4.5a1.5 1.5 0 0 1 3 0V11h.5V7.5a1.5 1.5 0 0 1 3 0V14c0 4.4-3.1 8-7.5 8-3 0-4.8-1.3-6.3-3.6L3.8 14.6a1.5 1.5 0 0 1 2.4-1.8L7 13.8z"/></svg>`,
@@ -316,7 +317,7 @@ export class Hud {
       if (e.pointerId !== sid) return;
       let dx = e.clientX - ox;
       let dy = e.clientY - oy;
-      const d = Math.hypot(dx, dy);
+      const d = hyp(dx, dy);
       if (d > R) {
         // drag the base along so the stick never "runs out"
         ox += (dx / d) * (d - R);
@@ -327,7 +328,7 @@ export class Hud {
         dy = (dy / d) * R;
       }
       knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-      const m = Math.min(1, Math.hypot(dx, dy) / R);
+      const m = Math.min(1, hyp(dx, dy) / R);
       const dead = 0.12;
       const k = m < dead ? 0 : (m - dead) / (1 - dead) / (m || 1);
       input.setStick((dx / R) * k * (R / R), (dy / R) * k, true);

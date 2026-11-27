@@ -2,9 +2,10 @@
 // Re-thinks at TUNING.bots.thinkHz; decisions take effect after a reaction delay.
 import { TUNING } from '../config/tuning.ts';
 import { HEROES } from '../config/heroes.ts';
-import { DEG, inCone, len, Rng } from './math.ts';
+import { DEG, inCone, len, Rng, floats } from './math.ts';
 import { NO_INPUT, type Input, type Player } from './types.ts';
 import { targetable, type World } from './world.ts';
+import { len as hyp } from './math.ts';
 
 const B = TUNING.bots;
 
@@ -15,7 +16,7 @@ const HUNTS = new WeakMap<World, Map<number, number>>();
 function huntersOf(w: World, target: number, except: number) {
   let n = 0;
   const m = HUNTS.get(w);
-  if (m) for (const [bot, t] of m) if (t === target && bot !== except) n++;
+  if (m) m.forEach((t, bot) => t === target && bot !== except && n++);
   return n;
 }
 
@@ -50,6 +51,10 @@ export class BotBrain {
   private stuckT = 0;
   private escapeT = 0;
   private escapeSide = 1;
+  private near: World['obstacles'] = [];
+  private nearW: World | null = null;
+  private nearX = 0.5;
+  private nearZ = 0.5;
   private wpCache: { age: number; tx: number; tz: number; mx: number; mz: number; wp: { x: number; z: number } } | null = null;
   readonly personality: Personality;
   private reaction: number;
@@ -80,6 +85,7 @@ export class BotBrain {
     this.cur = { mode: 'idle', tx: 0, tz: 0, dash: false, grab: false, skill: false, due: 0 };
     this.personality = (['greedy', 'thief', 'coward', 'bully'] as Personality[])[(id + 3) % 4];
     this.dodgeSkill = rng.range(0.2, 0.5) + (this.personality === 'coward' ? 0.2 : 0);
+    floats(this as unknown as Record<string, number>, ['lastX', 'lastZ', 'stuckT', 'escapeT', 'thinkT', 'clock', 'wander', 'reaction', 'speed', 'aimErr', 'dodgeSkill']);
   }
 
   /** Easy mode is active in round 1 of the player's first match. */
@@ -100,7 +106,7 @@ export class BotBrain {
     // trapped in a KO bubble: mash to break out
     if (me.state === 'bubble') return { ...NO_INPUT, grab: this.rng.next() < (this.easy(w) ? 0.05 : 0.15) };
     // Super ready and a rival within reach: use it (weaker bots hesitate)
-    if (me.charge >= 1 && w.mode === 'weapons' && !this.easy(w) && this.rng.next() < dt * (0.25 + w.skill) && w.players.some((o) => o !== me && targetable(o) && Math.hypot(o.x - me.x, o.z - me.z) < (me.hero === 'bones' ? 6 : 12)))
+    if (me.charge >= 1 && w.mode === 'weapons' && !this.easy(w) && this.rng.next() < dt * (0.25 + w.skill) && w.players.some((o) => o !== me && targetable(o) && hyp(o.x - me.x, o.z - me.z) < (me.hero === 'bones' ? 6 : 12)))
       return { ...NO_INPUT, ult: true };
     this.thinkT -= dt;
     if (this.thinkT <= 0) {
@@ -114,7 +120,7 @@ export class BotBrain {
         if (r === me || !r.cast || this.seenCasts.has(r.cast)) continue;
         const dx = me.x - r.x;
         const dz = me.z - r.z;
-        const d = Math.hypot(dx, dz);
+        const d = hyp(dx, dz);
         const ab = HEROES[r.hero].ability;
         const reach = r.cast.kind === 'grab' ? 3 : ab === 'rattleBurst' ? TUNING.abilities.rattleBurst.radius + 0.6 : ab === 'groundSlam' ? TUNING.abilities.groundSlam.range + 0.6 : 0;
         if (d > reach) continue;
@@ -141,7 +147,7 @@ export class BotBrain {
     let wp = { x: c.tx, z: c.tz };
     if (!w.terrain.flat) {
       const k = this.wpCache;
-      if (k && k.age < 5 && Math.hypot(k.tx - c.tx, k.tz - c.tz) < 1 && Math.hypot(k.mx - me.x, k.mz - me.z) < 2) {
+      if (k && k.age < 5 && hyp(k.tx - c.tx, k.tz - c.tz) < 1 && hyp(k.mx - me.x, k.mz - me.z) < 2) {
         k.age++;
         wp = k.wp;
       } else {
@@ -168,20 +174,29 @@ export class BotBrain {
         if (o === me || o.id === this.targetId || o.state === 'falling') continue;
         const ox = me.x - o.x;
         const oz = me.z - o.z;
-        const od = Math.hypot(ox, oz);
+        const od = hyp(ox, oz);
         if (od > 2.2 || od < 0.01) continue;
         const k = (1 - od / 2.2) * 1.4;
         dx += (ox / od) * k;
         dz += (oz / od) * k;
-        const n = Math.hypot(dx, dz) || 1;
+        const n = hyp(dx, dz) || 1;
         dx /= n;
         dz /= n;
       }
       // steer around rocks, trees and the well instead of pushing into them
-      for (const o of w.obstacles) {
+      // only the obstacles around me (the list is rebuilt after I move 2 m): checking every prop on the map, every bot, every step was costly
+      if (this.nearW !== w || Math.abs(me.x - this.nearX) + Math.abs(me.z - this.nearZ) > 2) {
+        this.nearW = w;
+        this.nearX = me.x;
+        this.nearZ = me.z;
+        this.near.length = 0;
+        const pad = TUNING.hero.radius + 1.4 + 3;
+        for (const o of w.obstacles) if (Math.abs(o.x - me.x) < o.r + pad && Math.abs(o.z - me.z) < o.r + pad) this.near.push(o);
+      }
+      for (const o of this.near) {
         const ox = o.x - me.x;
         const oz = o.z - me.z;
-        const od = Math.hypot(ox, oz);
+        const od = hyp(ox, oz);
         const reach = o.r + TUNING.hero.radius + 1.4;
         if (od > reach || od > d + o.r || !w.arena.solid(o.x, o.z)) continue;
         const ahead = (ox * dx + oz * dz) / od;
@@ -195,7 +210,7 @@ export class BotBrain {
         const pz = ox / od;
         dx += px * side * k;
         dz += pz * side * k;
-        const n = Math.hypot(dx, dz) || 1;
+        const n = hyp(dx, dz) || 1;
         dx /= n;
         dz /= n;
       }
@@ -207,7 +222,7 @@ export class BotBrain {
         mz *= d;
       }
     }
-    const moved = Math.hypot(me.x - this.lastX, me.z - this.lastZ);
+    const moved = hyp(me.x - this.lastX, me.z - this.lastZ);
     this.lastX = me.x;
     this.lastZ = me.z;
     if (me.state === 'normal' && (mx !== 0 || mz !== 0) && moved / dt < 0.8) this.stuckT += dt;
@@ -219,7 +234,7 @@ export class BotBrain {
     }
     if (this.escapeT > 0 && (mx !== 0 || mz !== 0)) {
       this.escapeT -= dt;
-      const m = Math.hypot(mx, mz);
+      const m = hyp(mx, mz);
       const ex = ((mx / m) * 0.3 - (mz / m) * this.escapeSide) * speed;
       const ez = ((mz / m) * 0.3 + (mx / m) * this.escapeSide) * speed;
       mx = ex;
@@ -229,8 +244,8 @@ export class BotBrain {
     // never dash off an island edge or bridge
     let dash = c.dash;
     if (dash && w.arena.shape.mask) {
-      const m = Math.hypot(mx, mz) || 1;
-      for (const k of [2.5, 5]) if (!w.arena.safe(me.x + (mx / m) * k, me.z + (mz / m) * k)) dash = false;
+      const m = hyp(mx, mz) || 1;
+      if (!w.arena.safe(me.x + (mx / m) * 2.5, me.z + (mz / m) * 2.5) || !w.arena.safe(me.x + (mx / m) * 5, me.z + (mz / m) * 5)) dash = false;
     }
     const out: Input = { mx, mz, dash, grab: c.grab, skill: c.skill, skipBank };
     c.dash = c.grab = c.skill = false;
@@ -252,11 +267,11 @@ export class BotBrain {
       return { mode: 'flee', tx: me.x * 0.3, tz: me.z * 0.3, dash: me.dashCd <= 0, grab: false, skill: false };
     }
     // a rival's bubble bomb is about to go off next to me → run
-    const bomb = w.bombs.find((bb) => bb.owner !== me.id && Math.hypot(bb.x - me.x, bb.z - me.z) < TUNING.powerups.bomb.radius + 0.6);
+    const bomb = w.bombs.find((bb) => bb.owner !== me.id && hyp(bb.x - me.x, bb.z - me.z) < TUNING.powerups.bomb.radius + 0.6);
     if (bomb) {
       const dx = me.x - bomb.x || 0.1;
       const dz = me.z - bomb.z;
-      const d = Math.hypot(dx, dz);
+      const d = hyp(dx, dz);
       return { mode: 'flee', tx: me.x + (dx / d) * 4, tz: me.z + (dz / d) * 4, dash: me.dashCd <= 0 && d < 2.5, grab: false, skill: false };
     }
 
@@ -270,11 +285,11 @@ export class BotBrain {
           return { mode: 'flee', tx: me.x - h.dz * side * 4, tz: me.z + h.dx * side * 4, dash: h.warn <= 0.4 && me.dashCd <= 0, grab: false, skill: false };
         }
       } else if (h.warn > 0) {
-        const z = h.zones.find((zz) => Math.hypot(me.x - zz.x, me.z - zz.z) < zz.r + 0.6);
+        const z = h.zones.find((zz) => hyp(me.x - zz.x, me.z - zz.z) < zz.r + 0.6);
         if (z) {
           const dx = me.x - z.x || 0.1;
           const dz = me.z - z.z;
-          const d = Math.hypot(dx, dz);
+          const d = hyp(dx, dz);
           return { mode: 'flee', tx: z.x + (dx / d) * (z.r + 1.5), tz: z.z + (dz / d) * (z.r + 1.5), dash: false, grab: false, skill: false };
         }
       }
@@ -288,10 +303,10 @@ export class BotBrain {
       const threat = rivals.find((o) => len(o.x - me.x, o.z - me.z) < B.fleeRange && o.grabCd < 0.4);
       if (threat) {
         // run AWAY into open space; only use the bank as the escape when it's quiet
-        const bankCrowd = w.players.filter((o) => o !== me && Math.hypot(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 1).length;
+        const bankCrowd = w.players.filter((o) => o !== me && hyp(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 1).length;
         const ax = me.x - threat.x;
         const az = me.z - threat.z;
-        const ad = Math.hypot(ax, az) || 1;
+        const ad = hyp(ax, az) || 1;
         let tx = me.x + (ax / ad) * 5;
         let tz = me.z + (az / ad) * 5;
         if (bankCrowd === 0) {
@@ -299,7 +314,7 @@ export class BotBrain {
           tz = (tz + w.bank.z) / 2;
         }
         // stay on the island: pull escape points inward when near the edge
-        const r = Math.hypot(tx, tz);
+        const r = hyp(tx, tz);
         const lim = w.arena.safeRadius - 2.5;
         if (r > lim) {
           tx *= lim / r;
@@ -315,7 +330,7 @@ export class BotBrain {
     // These bots keep carrying instead, which makes them juicy targets to learn Grab on.
     const mayBank = !easy || me.bankedRound + w.bankValue(me.carried).total < human.bankedRound;
     // a busy bank is skipped unless I'm loaded or time is running out — no six-hero piles
-    const inBank = w.players.filter((o) => o !== me && Math.hypot(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 0.8).length;
+    const inBank = w.players.filter((o) => o !== me && hyp(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 0.8).length;
     const bankBusy = inBank >= 2 && !late && me.carried < threshold + 10;
     if ((me.carried >= threshold || late) && mayBank && !bankBusy) {
       const d = len(w.bank.x - me.x, w.bank.z - me.z);
@@ -335,8 +350,8 @@ export class BotBrain {
         if (d > range || o.carried < P.stealMin || (!crown && this.personality !== 'thief' && this.personality !== 'bully' && o.carried <= Math.max(2, me.carried))) continue;
         if (huntersOf(w, o.id, this.id) >= (crown ? 2 : 1)) continue;
         // don't dive after someone into a crowded bank
-        const oBank = Math.hypot(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 0.6;
-        if (oBank && w.players.filter((q) => q !== o && q !== me && Math.hypot(q.x - w.bank.x, q.z - w.bank.z) < TUNING.bank.radius + 1).length >= 1) continue;
+        const oBank = hyp(o.x - w.bank.x, o.z - w.bank.z) < TUNING.bank.radius + 0.6;
+        if (oBank && w.players.filter((q) => q !== o && q !== me && hyp(q.x - w.bank.x, q.z - w.bank.z) < TUNING.bank.radius + 1).length >= 1) continue;
         let score = (o.carried + (crown ? 8 : 0)) / (d + 1);
         if (!o.isBot && !easy) score *= P.human;
         // grudges: go after whoever robbed me
@@ -361,8 +376,8 @@ export class BotBrain {
     }
 
     // power bubbles are worth a short detour
-    const pu = w.powerups.filter((u) => u.age > 0.6).sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z))[0];
-    if (pu && Math.hypot(pu.x - me.x, pu.z - me.z) < (easy ? 4 : 7)) return { mode: 'collect', tx: pu.x, tz: pu.z, dash: false, grab: false, skill };
+    const pu = w.powerups.filter((u) => u.age > 0.6).sort((a, c) => hyp(a.x - me.x, a.z - me.z) - hyp(c.x - me.x, c.z - me.z))[0];
+    if (pu && hyp(pu.x - me.x, pu.z - me.z) < (easy ? 4 : 7)) return { mode: 'collect', tx: pu.x, tz: pu.z, dash: false, grab: false, skill };
 
     // 1. collect: go to the best cluster of loose coins
     const target = this.bestCoinSpot(w, me);
@@ -379,7 +394,7 @@ export class BotBrain {
       const x = Math.sin(a) * r;
       const z = Math.cos(a) * r;
       if (!w.arena.safe(x, z)) continue;
-      const room = Math.min(...w.players.filter((o) => o !== me).map((o) => Math.hypot(o.x - x, o.z - z)));
+      const room = Math.min(...w.players.filter((o) => o !== me).map((o) => hyp(o.x - x, o.z - z)));
       if (room > best) {
         best = room;
         bx = x;
@@ -422,7 +437,7 @@ export class BotBrain {
     this.targetId = -1;
     const idle = { mode: 'idle' as Mode, dash: false, grab: false, skill: false };
     if (!w.arena.safe(me.x, me.z)) return { ...idle, mode: 'flee', tx: me.x * 0.3, tz: me.z * 0.3, dash: me.dashCd <= 0 };
-    const dist = (o: { x: number; z: number }) => Math.hypot(o.x - me.x, o.z - me.z);
+    const dist = (o: { x: number; z: number }) => hyp(o.x - me.x, o.z - me.z);
     const canHit = (o: Player) => !(easy && o === human && !o.isBot);
     // a bubble nearby = a free point
     const bubble = w.players.filter((o) => o !== me && o.state === 'bubble' && dist(o) < 9).sort((a, b) => dist(a) - dist(b))[0];

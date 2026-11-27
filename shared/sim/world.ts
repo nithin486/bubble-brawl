@@ -4,11 +4,12 @@ import type { WeaponKind } from './types.ts';
 import { TUNING } from '../config/tuning.ts';
 import { HEROES, type HeroId } from '../config/heroes.ts';
 import { Arena } from './arena.ts';
-import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng } from './math.ts';
+import { clamp, dirX, dirZ, facingOf, inCone, len, angleDiff, Rng, floats } from './math.ts';
 import { Terrain } from './terrain.ts';
 import { MAPS, type MapDef, type MapId, type Obstacle } from '../config/maps.ts';
 import { Brawl } from './brawl.ts';
 import { NO_INPUT, type GameMode, type Hazard, type RoundMod, type Bomb, type PowerKind, type PowerUp, type Bank, type BouncePad, type Coin, type Input, type Phase, type Player, type SimEvent, WEAPONS } from './types.ts';
+import { len as hyp } from './math.ts';
 
 const T = TUNING;
 
@@ -474,7 +475,7 @@ export class World {
         if (!c.grounded || c.anyT > 0) continue;
         const dx = p.x - c.x;
         const dz = p.z - c.z;
-        const d = Math.hypot(dx, dz);
+        const d = hyp(dx, dz);
         if (d > magR || d < 0.05) continue;
         const step = Math.min(d, M.pull * dt * (1.3 - d / magR));
         c.x += (dx / d) * step;
@@ -682,7 +683,7 @@ export class World {
     {
       const dx0 = target.x - p.x;
       const dz0 = target.z - p.z;
-      const d0 = Math.hypot(dx0, dz0) || 1;
+      const d0 = hyp(dx0, dz0) || 1;
       if (this.shielded(target, dx0 / d0, dz0 / d0)) {
         this.events.push({ t: 'grab', p: p.id, hit: false });
         return;
@@ -852,7 +853,7 @@ export class World {
         if (o === owner || !targetable(o)) continue;
         const dx = o.x - b.x;
         const dz = o.z - b.z;
-        const d = Math.hypot(dx, dz);
+        const d = hyp(dx, dz);
         if (d > B.radius + T.hero.radius) continue;
         hits++;
         const nx = d > 0.01 ? dx / d : 1;
@@ -1356,7 +1357,11 @@ export function targetable(o: Player) {
   return !o.gone && o.state !== 'falling' && o.state !== 'launched' && o.invuln <= 0 && !(o.superT > 0 && o.hero === 'pinch');
 }
 
+const PLAYER_FLOATS = ['x', 'z', 'y', 'vx', 'vz', 'kx', 'kz', 'vy', 'facing', 'stateT', 'dashCd', 'grabCd', 'skillCd', 'invuln', 'stickyT', 'bankT', 'dashDx', 'dashDz', 'padCd', 'magnetT', 'speedT', 'shieldT', 'comboT', 'robbedT', 'hp', 'fireCd', 'bubbleT', 'lastHitT', 'charge', 'superT', 'rageT'] as const;
 function newPlayer(id: number, s: PlayerSetup): Player {
+  return floats(makePlayer(id, s), PLAYER_FLOATS);
+}
+function makePlayer(id: number, s: PlayerSetup): Player {
   return {
     id,
     name: s.name,

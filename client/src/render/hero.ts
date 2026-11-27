@@ -9,6 +9,7 @@ import { HEROES } from '../../../shared/config/heroes.ts';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import { angleDiff } from '../../../shared/sim/math.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { len as hyp } from '../../../shared/sim/math.ts';
 
 let iceGeo: THREE.BufferGeometry | null = null;
 let iceMat: THREE.Material | null = null;
@@ -472,7 +473,7 @@ export class HeroView {
       this.yaw += step;
     }
     // lean into the run (and settle back when stopping): reads as weight, not sliding
-    const spd = Math.min(1.3, Math.hypot(p.vx, p.vz) / TUNING.hero.walkSpeed);
+    const spd = Math.min(1.3, hyp(p.vx, p.vz) / TUNING.hero.walkSpeed);
     this.lean += ((p.state === 'normal' ? spd * 0.13 : 0) - this.lean) * Math.min(1, dt * 9);
     this.model.rotation.order = 'YXZ';
     this.model.rotation.x = this.lean;
@@ -481,7 +482,7 @@ export class HeroView {
 
     let footstep = false;
     let armed = false;
-    const speed = Math.hypot(p.vx, p.vz);
+    const speed = hyp(p.vx, p.vz);
     const busy = now < this.oneShotUntil;
     if (this.celebrating) {
       if (this.currentName !== 'Cheer') this.play('Cheer', 0.2);

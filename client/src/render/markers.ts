@@ -4,6 +4,7 @@ import type { World } from '../../../shared/sim/world.ts';
 import type { Player } from '../../../shared/sim/types.ts';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import { HEROES } from '../../../shared/config/heroes.ts';
+import { len as hyp } from '../../../shared/sim/math.ts';
 
 /**
  * Readability layer: what your Grab would hit, how far your skill reaches, who wears the crown,
@@ -131,7 +132,7 @@ export class Markers {
         dir.x = Math.sin(a);
         dir.z = Math.cos(a);
       }
-      const want = t ? Math.min(g.range, Math.hypot(t.x - me.x, t.z - me.z)) : Math.min(g.range, Math.max(2.5, wished));
+      const want = t ? Math.min(g.range, hyp(t.x - me.x, t.z - me.z)) : Math.min(g.range, Math.max(2.5, wished));
       const r = along(want);
       locked = !!t || r.hit;
       ex = me.x + dir.x * r.d;
@@ -202,14 +203,14 @@ export class Markers {
     this.skillHits = 0;
     if (showSkill && ab === 'rattleBurst') {
       const r = TUNING.abilities.rattleBurst.radius;
-      this.skillHits = world.players.filter((o) => o !== me && o.state !== 'falling' && Math.hypot(o.x - me.x, o.z - me.z) < r + 0.45).length;
+      this.skillHits = world.players.filter((o) => o !== me && o.state !== 'falling' && hyp(o.x - me.x, o.z - me.z) < r + 0.45).length;
     } else if (showSkill && ab === 'groundSlam') {
       const c = TUNING.abilities.groundSlam;
       this.skillHits = world.players.filter((o) => {
         if (o === me || o.state === 'falling') return false;
         const dx = o.x - me.x;
         const dz = o.z - me.z;
-        const d = Math.hypot(dx, dz);
+        const d = hyp(dx, dz);
         if (d > c.range + 1.5) return false; // aim assist turns you toward them
         return true;
       }).length;

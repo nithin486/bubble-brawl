@@ -2,6 +2,7 @@ import { release } from './dispose.ts';
 import * as THREE from 'three';
 import { TUNING } from '../../../shared/config/tuning.ts';
 import type { World } from '../../../shared/sim/world.ts';
+import { len as hyp } from '../../../shared/sim/math.ts';
 
 /** Height the bank bubble floats at — above heads and name tags. */
 const HOVER = 5.0;
@@ -128,7 +129,7 @@ export class BankView {
   update(dt: number, time: number, cam?: THREE.Vector3) {
     const b = this.world.bank;
     // a close (third-person) camera inside the light cone would wash the screen out: fade it
-    const near = cam ? Math.min(1, Math.max(0, (Math.hypot(cam.x - b.x, cam.z - b.z) - 3) / 6)) : 1;
+    const near = cam ? Math.min(1, Math.max(0, (hyp(cam.x - b.x, cam.z - b.z) - 3) / 6)) : 1;
     this.shaftMat.opacity = 0.07 * near;
     this.glowMat.opacity = 0.2 + 0.35 * near;
     this.group.position.set(b.x, 0, b.z);

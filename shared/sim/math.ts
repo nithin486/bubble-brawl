@@ -57,3 +57,18 @@ export class Rng {
     return arr[Math.floor(this.next() * arr.length)];
   }
 }
+
+/**
+ * Mark number fields as decimals up front. JS engines store a field that starts as a whole 0 differently from one holding
+ * 0.37; the first decimal later in a match changes the object's layout, throws away the optimized code that uses it and
+ * runs slow, garbage-making code until it is rebuilt (small stutters on phones). Doing it at creation keeps one layout.
+ */
+export function floats<T extends object>(o: T, keys: readonly (keyof T)[]): T {
+  const r = o as Record<keyof T, unknown>;
+  for (const k of keys) {
+    const v = r[k];
+    r[k] = 0.5;
+    r[k] = v;
+  }
+  return o;
+}

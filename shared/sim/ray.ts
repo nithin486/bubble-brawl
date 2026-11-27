@@ -4,6 +4,7 @@ import { TUNING } from '../config/tuning.ts';
 import type { Obstacle } from '../config/maps.ts';
 import type { Player } from './types.ts';
 import type { World } from './world.ts';
+import { len as hyp } from './math.ts';
 
 /** Height of each prop in metres (measured from the models). Anything not listed counts as tall. */
 const PROP_HEIGHT: Record<string, number> = {
@@ -70,7 +71,7 @@ export function castRay(w: World, ox: number, oy: number, oz: number, dx: number
   for (const o of w.obstacles as Obstacle[]) {
     if (o.r <= 0 || !w.arena.solid(o.x, o.z)) continue;
     // cheap reject: farther from the ray's start than the best hit so far
-    if (Math.hypot(o.x - ox, o.z - oz) - o.r > best) continue;
+    if (hyp(o.x - ox, o.z - oz) - o.r > best) continue;
     const base = w.terrain.heightAt(o.x, o.z);
     const t = cylinder(ox, oy, oz, dx, dy, dz, o.x, o.z, o.r, base, base + propHeight(o.kind));
     if (t < best) {

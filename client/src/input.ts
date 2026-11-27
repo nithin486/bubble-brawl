@@ -1,4 +1,5 @@
 import type { Input } from '../../shared/sim/types.ts';
+import { len as hyp } from '../../shared/sim/math.ts';
 
 /**
  * Keyboard + mouse + touch → sim Input. Camera looks toward -z, so "up" on screen is -z.
@@ -114,7 +115,7 @@ export class InputManager {
   look(dx: number, dy = 0) {
     // slow drags aim finely, quick flicks turn further; the same thumb travel turns the same on any screen width
     const size = 780 / Math.max(480, window.innerWidth);
-    const flick = 0.8 + Math.min(1, Math.max(0, Math.hypot(dx, dy) - 3) / 22) * 0.9;
+    const flick = 0.8 + Math.min(1, Math.max(0, hyp(dx, dy) - 3) / 22) * 0.9;
     const g = this.sensitivity * size * flick;
     this.yaw -= dx * 0.0062 * g;
     this.pitch -= dy * 0.0042 * g; // drag up = look up
@@ -186,7 +187,7 @@ export class InputManager {
       mx += this.stick.x;
       mz += this.stick.y;
     }
-    const m = Math.hypot(mx, mz);
+    const m = hyp(mx, mz);
     if (m > 1) {
       mx /= m;
       mz /= m;
